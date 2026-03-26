@@ -10,7 +10,7 @@ import csv # <--- NEW: For writing log files
 from datetime import datetime # <--- NEW: For timestamps
 
 # --- PyQt6 Imports ---
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit, QPushButton
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings
 from PyQt6.QtGui import QIcon, QAction
 
@@ -48,10 +48,10 @@ DEFAULT_CONFIG = {
     "long_break_duration": 20 * 60,
     "music_folder": "study_music",
     "sound_files": {
-        "start_study": "start_study.mp3",
         "start_short_break": "start_short_break.mp3",
         "start_long_break": "start_long_break.mp3",
-        "end_long_break": "end_long_break.mp3"
+        "end_long_break": "end_long_break.mp3",
+        "victory": "victory.mp3"
     },
     "total_study_time": 0,
     "reset_password": "130130131",
@@ -97,6 +97,11 @@ def load_or_create_config():
                 if key not in user_config:
                     user_config[key] = value
                     updated = True
+                elif isinstance(value, dict) and isinstance(user_config.get(key), dict):
+                    for sub_k, sub_v in value.items():
+                        if sub_k not in user_config[key]:
+                            user_config[key][sub_k] = sub_v
+                            updated = True
             if updated:
                 print("配置文件已更新，添加了新字段。")
                 save_config(user_config)
@@ -249,6 +254,7 @@ class StudyTimerLogic(QObject):
             self._clear_current_session()
 
             if self.current_cycle_study_time >= self.config["long_break_threshold"]:
+                self._play_sound("victory")
                 self.input_summary_requested.emit()
             else:
                 self._run_short_break_cycle()
@@ -257,10 +263,23 @@ class StudyTimerLogic(QObject):
             self._run_study_cycle()
             
         elif self.current_state == "long_breaking":
-            self._play_sound("end_long_break")
-            self.current_state = "long_break_finished"
-            self.state_changed.emit("🎉 长休息结束\n右键开始新征程", self.current_state)
-            self.notification_requested.emit("长休息结束", "精力恢复！可以开始下一轮学习了。")
+            self._finish_long_break()
+
+    def _finish_long_break(self):
+        """结束长休息的共用逻辑"""
+        self.timer.stop()
+        self._play_sound("end_long_break")
+        self.current_state = "long_break_finished"
+        self.state_changed.emit("🎉 长休息结束\n右键开始新征程", self.current_state)
+        self.notification_requested.emit("长休息结束", "精力恢复！可以开始下一轮学习了。")
+
+    def end_break_now(self):
+        """手动结束当前休息（短休息或长休息）"""
+        if self.current_state == "short_breaking":
+            self.timer.stop()
+            self._run_study_cycle()
+        elif self.current_state == "long_breaking":
+            self._finish_long_break()
 
     def commit_large_session(self, summary):
         if self.large_session_start_time and self.large_session_net_duration > 0:
@@ -299,7 +318,9 @@ class StudyTimerLogic(QObject):
         self.current_session_duration = study_duration
 
         self.state_changed.emit(f"📚 学习中...\n(第 {self.cycle_count} 轮)", self.current_state)
-        self._play_sound("start_study")
+        # 仅在非第一次开始时（如短休息结束）播放声音
+        if self.current_cycle_study_time > 0:
+            self._play_sound("start_study")
         self.timer.setProperty("duration", study_duration)
         self.timer.start(study_duration * 1000)
 
@@ -375,6 +396,22 @@ class StudyTimerLogic(QObject):
             self.current_pause_start_time = datetime.now()
             self.state_changed.emit("⏸️ 已暂停", self.current_state)
 
+    @staticmethod
+    def _format_pause_duration(pause_sec):
+        """将秒数格式化为人类可读的时长字符串"""
+        if pause_sec < 60:
+            return f"{pause_sec}秒"
+        elif pause_sec < 3600:
+            m, s = divmod(pause_sec, 60)
+            return f"{m}分{s}秒" if s else f"{m}分"
+        else:
+            h, rem = divmod(pause_sec, 3600)
+            m, s = divmod(rem, 60)
+            parts = f"{h}时{m}分" if m else f"{h}时"
+            if s:
+                parts += f"{s}秒"
+            return parts
+
     def _resume(self):
         if self.is_paused:
             self.timer.start(self.time_remaining_on_pause)
@@ -383,7 +420,8 @@ class StudyTimerLogic(QObject):
             if self.current_pause_start_time:
                 pause_sec = int((datetime.now() - self.current_pause_start_time).total_seconds())
                 self.large_session_pause_count += 1
-                reason_str = f"{self.pending_pause_reason} ({pause_sec}秒)"
+                duration_str = self._format_pause_duration(pause_sec)
+                reason_str = f"{self.pending_pause_reason} ({duration_str})"
                 self.large_session_pause_reasons.append(reason_str)
                 self.current_pause_start_time = None
                 self.pending_pause_reason = "无"
@@ -509,6 +547,7 @@ class StudyTimerGUI(QWidget):
         bg_layout.addWidget(self.total_time_label)
         bg_layout.addStretch()
 
+
         grip_layout = QHBoxLayout()
         grip_layout.setContentsMargins(0, 0, 0, 0)
         grip_layout.addStretch()
@@ -529,6 +568,9 @@ class StudyTimerGUI(QWidget):
         self.logic.input_reason_requested.connect(self.prompt_for_pause_reason)
         self.logic.input_summary_requested.connect(self.prompt_for_session_summary)
         self.logic.session_logged.connect(self.generate_statistics_html)
+
+        # 结束休息按钮
+        self._build_end_break_button()
         
         self.generate_statistics_html()
         
@@ -537,19 +579,53 @@ class StudyTimerGUI(QWidget):
     def show_notification(self, title, message):
         self.tray.showMessage(title, message, self.tray_icon, 5000)
 
+    @staticmethod
+    def _force_foreground(hwnd):
+        """Windows 下强制将窗口设为前台"""
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+
+    def _activate_dialog(self, dialog):
+        """确保弹窗获得前台焦点（Windows 下用 AttachThreadInput 组合拳）"""
+        dialog.activateWindow()
+        dialog.raise_()
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                kernel32 = ctypes.windll.kernel32
+                hwnd = int(dialog.winId())
+                foreground_hwnd = user32.GetForegroundWindow()
+                foreground_tid = user32.GetWindowThreadProcessId(foreground_hwnd, None)
+                current_tid = kernel32.GetCurrentThreadId()
+                if foreground_tid != current_tid:
+                    user32.AttachThreadInput(current_tid, foreground_tid, True)
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+                if foreground_tid != current_tid:
+                    user32.AttachThreadInput(current_tid, foreground_tid, False)
+            except Exception:
+                pass
+
     def prompt_for_pause_reason(self):
         dialog = QInputDialog(self)
         dialog.setWindowTitle("暂停提醒")
         dialog.setLabelText("请输入本次暂停的原因: (直接回车代表无)")
         dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        
-        dialog.show()
-        dialog.activateWindow()
-        dialog.raise_()
-        
-        le = dialog.findChild(QLineEdit)
-        if le: le.setFocus()
-            
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        def _focus():
+            self._activate_dialog(dialog)
+            le = dialog.findChild(QLineEdit)
+            if le:
+                le.setFocus()
+        QTimer.singleShot(100, _focus)
+
         ok = dialog.exec()
         reason = dialog.textValue()
         self.logic.add_pause_reason(reason.strip() if ok and reason.strip() else "无")
@@ -560,11 +636,10 @@ class StudyTimerGUI(QWidget):
         dialog.setWindowTitle("大专注完成！")
         dialog.setLabelText("恭喜完成一段深度专注！请简单总结你做了哪些事：")
         dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        
-        dialog.show()
-        dialog.activateWindow()
-        dialog.raise_()
-        
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+
+        QTimer.singleShot(100, lambda: self._activate_dialog(dialog))
+
         ok = dialog.exec()
         summary = dialog.textValue()
         final_summary = summary.strip() if ok and summary.strip() else "未填写总结"
@@ -740,7 +815,7 @@ class StudyTimerGUI(QWidget):
         open_log_action.triggered.connect(self.open_log_folder)
         
         stat_action = QAction("📊 查看统计 (网页版)", self)
-        stat_action.triggered.connect(self.show_statistics_webpage)
+        stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
 
         quit_action = QAction("❌ 退 出", self); quit_action.triggered.connect(self.close)
 
@@ -768,8 +843,42 @@ class StudyTimerGUI(QWidget):
             QSizeGrip {{ background-color: transparent; width: 15px; height: 15px; }}
         """)
 
+    def _build_end_break_button(self):
+        """创建结束休息按钮，初始隐藏"""
+        self.end_break_btn = QPushButton("⏹ 结束休息", self.background_widget)
+        self.end_break_btn.setObjectName("end_break_btn")
+        self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.end_break_btn.setStyleSheet("""
+            QPushButton#end_break_btn {
+                background-color: #BF616A;
+                color: #ECEFF4;
+                border: none;
+                border-radius: 6px;
+                padding: 5px 14px;
+                font-size: 13px;
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+                font-weight: bold;
+            }
+            QPushButton#end_break_btn:hover {
+                background-color: #D08770;
+            }
+        """)
+        self.end_break_btn.clicked.connect(self.logic.end_break_now)
+        # 插入到 total_time_label 下方
+        bg_layout = self.background_widget.layout()
+        bg_layout.insertWidget(2, self.end_break_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        self.end_break_btn.hide()
+
+    def _update_end_break_btn_visibility(self, state_name):
+        """根据状态显隐结束休息按钮（仅长休息）"""
+        if state_name == "long_breaking":
+            self.end_break_btn.show()
+        else:
+            self.end_break_btn.hide()
+
     def update_status(self, status_text, state_name):
         self.current_state_text = status_text
+        self._update_end_break_btn_visibility(state_name)
         if state_name not in ["stopped", "long_break_finished"]:
             self.countdown_timer.start()
             self.update_countdown_display()
@@ -808,7 +917,16 @@ class StudyTimerGUI(QWidget):
         self.tray_menu.aboutToShow.connect(self.update_tray_menu)
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
-        self.tray.activated.connect(lambda r: self.toggle_mouse_penetration() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
+        self.tray.activated.connect(self._on_tray_activated)
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if self.isVisible():
+                self.hide()
+            else:
+                self.show()
+                self.activateWindow()
+                self.raise_()
 
     def update_tray_menu(self):
         self.populate_context_menu(self.tray_menu)
@@ -912,7 +1030,7 @@ class StudyTimerGUI(QWidget):
         else:
             self.total_time_label.setText(f"{int(mins):02}:{int(secs):02}")
 
-    def generate_statistics_html(self):
+    def generate_statistics_html(self, open_browser=False, *args):
         log_path = resource_path("study_log.csv")
         html_path = resource_path("statistics.html")
         
@@ -1007,12 +1125,13 @@ class StudyTimerGUI(QWidget):
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            if sys.platform == 'win32':
-                os.startfile(html_path)
-            elif sys.platform == 'darwin':
-                os.system(f'open "{html_path}"')
-            else:
-                os.system(f'xdg-open "{html_path}"')
+            if open_browser:
+                if sys.platform == 'win32':
+                    os.startfile(html_path)
+                elif sys.platform == 'darwin':
+                    os.system(f'open "{html_path}"')
+                else:
+                    os.system(f'xdg-open "{html_path}"')
         except Exception as e:
             QMessageBox.warning(self, "错误", f"无法生成统计页面: {e}")
         
