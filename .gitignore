@@ -1,0 +1,5 @@
+﻿build
+dist
+.vscode
+config.json
+study_log.csv
