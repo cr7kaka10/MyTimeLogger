@@ -1050,13 +1050,30 @@ class StudyTimerGUI(QWidget):
         }
 
         cards_html = ""
+        daily_groups = {}
         for row in reversed(rows[-100:]):
             if len(row) >= 5:
+                date_val = row[3]
+                if date_val not in daily_groups:
+                    daily_groups[date_val] = []
+                daily_groups[date_val].append(row)
+
+        for date_val, group_rows in daily_groups.items():
+            day_zh = week_map.get(group_rows[0][4], group_rows[0][4])
+            
+            # 尝试计算当日总专注时长
+            total_duration = 0.0
+            for r in group_rows:
+                try:
+                    total_duration += float(r[2])
+                except ValueError:
+                    pass
+            
+            sessions_html = ""
+            for row in group_rows:
                 start_time = row[0]
                 end_time = row[1]
                 duration = row[2]
-                date_val = row[3]
-                day_zh = week_map.get(row[4], row[4])
                 
                 pause_count = row[5] if len(row) >= 8 else "0"
                 pause_reasons_raw = row[6] if len(row) >= 8 else "无"
@@ -1070,13 +1087,12 @@ class StudyTimerGUI(QWidget):
                 else:
                     reasons_html = "<span class='reason-tag-empty'>无暂停记录</span>"
                 
-                cards_html += f"""
-                <div class="card">
-                    <div class="card-header">
-                        <span class="date-badge">{date_val} {day_zh}</span>
-                        <span class="duration-badge">专注 {duration} 分钟</span>
+                sessions_html += f"""
+                <div class="session-item">
+                    <div class="session-header">
+                        <span class="session-time">⏱️ {start_time} - {end_time}</span>
+                        <span class="session-duration">专注 {duration} 分钟</span>
                     </div>
-                    <div class="card-time">⏱️ {start_time} - {end_time}</div>
                     <div class="card-stats">⏸️ 主动暂停: {pause_count} 次</div>
                     <div class="card-reasons">
                         <div style="margin-bottom:6px;"><strong>暂停明细:</strong></div>
@@ -1085,6 +1101,18 @@ class StudyTimerGUI(QWidget):
                     <div class="card-summary"><strong>专注总结:</strong> {summary}</div>
                 </div>
                 """
+                
+            cards_html += f"""
+            <div class="card">
+                <div class="card-header">
+                    <span class="date-badge">{date_val} {day_zh}</span>
+                    <span class="duration-badge">今日专注 {total_duration:.1f} 分钟</span>
+                </div>
+                <div class="sessions-container">
+                    {sessions_html}
+                </div>
+            </div>
+            """
                 
         content_html = cards_html if cards_html else "<div class='empty'>暂无大专注学习记录，快去开启第一次沉浸式学习吧！</div>"
 
@@ -1098,18 +1126,22 @@ class StudyTimerGUI(QWidget):
         body {{ font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 40px; line-height: 1.5; }}
         h1 {{ text-align: center; color: var(--primary); margin-bottom: 40px; font-weight: 700; letter-spacing: 1px; }}
         .container {{ max-width: 900px; margin: 0 auto; }}
-        .card {{ background: var(--card-bg); border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s; }}
+        .card {{ background: var(--card-bg); border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid var(--border); transition: transform 0.2s, box-shadow 0.2s; }}
         .card:hover {{ transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); }}
-        .card-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }}
-        .date-badge {{ font-weight: 600; color: var(--primary); font-size: 1.1em; }}
-        .duration-badge {{ background: var(--accent); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.9em; font-weight: 600; box-shadow: 0 2px 4px rgba(16,185,129,0.2); }}
-        .card-time {{ color: var(--text-light); font-size: 0.95em; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }}
-        .card-stats {{ color: #eab308; font-size: 0.95em; margin-bottom: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; }}
-        .card-reasons {{ background: var(--bg); padding: 16px; border-radius: 12px; margin-bottom: 12px; font-size: 0.95em; color: var(--text); border-left: 4px solid #f59e0b; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.03); }}
+        .card-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--border); padding-bottom: 16px; }}
+        .date-badge {{ font-weight: 700; color: var(--primary); font-size: 1.25em; }}
+        .duration-badge {{ background: var(--accent); color: white; padding: 6px 14px; border-radius: 20px; font-size: 0.95em; font-weight: 600; box-shadow: 0 2px 4px rgba(16,185,129,0.2); }}
+        .session-item {{ border-bottom: 1px dashed var(--border); padding-bottom: 20px; margin-bottom: 20px; }}
+        .session-item:last-child {{ border-bottom: none; padding-bottom: 0; margin-bottom: 0; }}
+        .session-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }}
+        .session-time {{ color: var(--text-light); font-size: 0.95em; font-weight: 500; }}
+        .session-duration {{ color: var(--accent); font-size: 0.85em; font-weight: 600; background: #d1fae5; padding: 4px 10px; border-radius: 12px; }}
+        .card-stats {{ color: #eab308; font-size: 0.9em; margin-bottom: 10px; font-weight: 600; display: flex; align-items: center; gap: 6px; }}
+        .card-reasons {{ background: #fafafa; padding: 12px 16px; border-radius: 10px; margin-bottom: 12px; font-size: 0.9em; color: var(--text); border-left: 4px solid #f59e0b; box-shadow: inset 0 2px 4px 0 rgba(0,0,0,0.02); }}
         .reason-tags {{ display: flex; flex-wrap: wrap; gap: 8px; }}
-        .reason-tag {{ background: #fef3c7; color: #b45309; padding: 4px 12px; border-radius: 16px; font-size: 0.85em; font-weight: 500; border: 1px solid #fde68a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
+        .reason-tag {{ background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 600; border: 1px solid #fde68a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
         .reason-tag-empty {{ color: #9ca3af; font-size: 0.9em; font-style: italic; }}
-        .card-summary {{ background: #eff6ff; padding: 16px; border-radius: 8px; font-size: 1em; color: #1e3a8a; border-left: 4px solid var(--primary); line-height: 1.6; }}
+        .card-summary {{ background: #eff6ff; padding: 14px 16px; border-radius: 10px; font-size: 0.95em; color: #1e3a8a; border-left: 4px solid var(--primary); line-height: 1.5; }}
         strong {{ color: var(--text); }}
         .empty {{ text-align: center; padding: 60px 40px; color: var(--text-light); font-size: 1.1em; background: var(--card-bg); border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
     </style>
