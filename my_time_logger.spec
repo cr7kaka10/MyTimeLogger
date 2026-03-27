@@ -8,7 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('study_music', 'study_music'),
-        ('document/icon.ico', 'document')
+        ('document/*', 'document')
     ],
     hiddenimports=[],
     hookspath=[],

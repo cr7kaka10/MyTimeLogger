@@ -11,7 +11,7 @@ from datetime import datetime # <--- NEW: For timestamps
 
 # --- PyQt6 Imports ---
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit, QPushButton
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings, QSize
 from PyQt6.QtGui import QIcon, QAction
 
 # --- 外部依赖: 全局快捷键 ---
@@ -578,6 +578,7 @@ class MyTimeLoggerGUI(QWidget):
         self.settings = QSettings("MyTimeLogger", "App")
         
         self.is_always_on_top = self.settings.value("ui/alwaysOnTop", True, type=bool)
+        self.is_mini_mode = self.settings.value("ui/isMiniMode", False, type=bool)
 
         self.create_tray_icon()
         
@@ -602,28 +603,25 @@ class MyTimeLoggerGUI(QWidget):
         self.background_widget = QWidget(self)
         self.background_widget.setObjectName("background")
 
-        bg_layout = QVBoxLayout(self.background_widget)
-        bg_layout.setContentsMargins(10, 10, 10, 0)
+        # 布局切换按钮 (放置在 background_widget 上面，绝对定位或通过布局)
+        self.mini_toggle_btn = QPushButton(self.background_widget)
+        self.mini_toggle_btn.setFixedSize(20, 20)
+        self.mini_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mini_toggle_btn.clicked.connect(self.toggle_mini_mode)
+        self.mini_toggle_btn.setStyleSheet("QPushButton { background: transparent; color: #88C0D0; border: none; font-size: 14px; } QPushButton:hover { color: #A3BE8C; }")
 
         self.status_label = QLabel()
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setWordWrap(True)
+        self.status_label.setWordWrap(False) # 迷你模式不需要换行
         
         self.total_time_label = QLabel()
         self.total_time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.total_time_label.setObjectName("total_time_label")
         
-        bg_layout.addWidget(self.status_label)
-        bg_layout.addWidget(self.total_time_label)
-        bg_layout.addStretch()
+        self.rebuild_layout()
 
 
-        grip_layout = QHBoxLayout()
-        grip_layout.setContentsMargins(0, 0, 0, 0)
-        grip_layout.addStretch()
-        self.size_grip = QSizeGrip(self.background_widget)
-        grip_layout.addWidget(self.size_grip)
-        bg_layout.addLayout(grip_layout)
+        # 移除旧的 grip_layout 逻辑
         
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -714,6 +712,68 @@ class MyTimeLoggerGUI(QWidget):
         summary = dialog.textValue()
         final_summary = summary.strip() if ok and summary.strip() else "未填写总结"
         self.logic.commit_large_session(final_summary)
+
+    def toggle_mini_mode(self):
+        self.is_mini_mode = not self.is_mini_mode
+        self.settings.setValue("ui/isMiniMode", self.is_mini_mode)
+        self.rebuild_layout()
+        self.update_stylesheet()
+
+    def rebuild_layout(self):
+        # 清现有的 layout
+        if self.background_widget.layout():
+            # 彻底清理旧布局中的内容映射
+            old_layout = self.background_widget.layout()
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn, self.mini_toggle_btn]:
+                    item.widget().deleteLater()
+            from PyQt6 import sip
+            sip.delete(old_layout)
+
+        if self.is_mini_mode:
+            self.setFixedSize(280, 40)
+            self.status_label.setWordWrap(False)
+            new_layout = QHBoxLayout(self.background_widget)
+            new_layout.setContentsMargins(10, 0, 10, 0)
+            new_layout.setSpacing(10)
+            
+            new_layout.addWidget(self.mini_toggle_btn)
+            new_layout.addWidget(self.status_label)
+            new_layout.addWidget(self.total_time_label)
+            
+            self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'expand.svg'))))
+            self.mini_toggle_btn.setIconSize(QSize(16, 16))
+        else:
+            self.setFixedSize(220, 140)
+            self.status_label.setWordWrap(True)
+            new_layout = QVBoxLayout(self.background_widget)
+            new_layout.setContentsMargins(10, 5, 10, 10)
+            new_layout.setSpacing(2)
+            
+            top_row = QHBoxLayout()
+            top_row.addStretch()
+            top_row.addWidget(self.mini_toggle_btn)
+            new_layout.addLayout(top_row)
+            
+            new_layout.addWidget(self.status_label, 0, Qt.AlignmentFlag.AlignCenter)
+            new_layout.addWidget(self.total_time_label, 0, Qt.AlignmentFlag.AlignCenter)
+            new_layout.addStretch()
+            
+            self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'shrink.svg'))))
+            self.mini_toggle_btn.setIconSize(QSize(16, 16))
+        
+        # 重新插入结束休息按钮（如果已创建）
+        if hasattr(self, 'end_break_btn'):
+            new_layout.addWidget(self.end_break_btn, 0, Qt.AlignmentFlag.AlignCenter)
+            if self.is_mini_mode:
+                self.end_break_btn.setFixedSize(75, 20)
+                self.end_break_btn.setStyleSheet(self.end_break_btn.styleSheet().replace("font-size: 12px;", "font-size: 10px;").replace("font-size: 13px;", "font-size: 10px;"))
+            else:
+                self.end_break_btn.setFixedSize(120, 30)
+                curr_style = self.end_break_btn.styleSheet()
+                if "font-size: 10px;" in curr_style:
+                    self.end_break_btn.setStyleSheet(curr_style.replace("font-size: 10px;", "font-size: 12px;"))
 
     # --- NEW: 打开日志文件夹的方法 ---
     def open_log_folder(self):
@@ -913,11 +973,15 @@ class MyTimeLoggerGUI(QWidget):
     def update_stylesheet(self):
         opacity = self.settings.value("ui/opacity", 0.8, type=float)
         border_style = "border: none;" if self.is_locked else "border: 1px solid #88C0D0;"
+        
+        # 根据模式动态调整字体
+        label_font = 13 if self.is_mini_mode else 15
+        total_time_font = 20 if self.is_mini_mode else 26
+        
         self.background_widget.setStyleSheet(f"""
             #background {{ background-color: rgba(46, 52, 64, {opacity}); border-radius: 10px; {border_style} }}
-            QLabel {{ background-color: transparent; color: #D8DEE9; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: 15px; }}
-            #total_time_label {{ font-size: 26px; font-weight: bold; color: #00CED1; padding-top: 5px; letter-spacing: 2px; }}
-            QSizeGrip {{ background-color: transparent; width: 15px; height: 15px; }}
+            QLabel {{ background-color: transparent; color: #D8DEE9; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: {label_font}px; }}
+            #total_time_label {{ font-size: {total_time_font}px; font-weight: bold; color: #00CED1; padding-top: 2px; letter-spacing: 1px; }}
         """)
 
     def _build_end_break_button(self):
@@ -931,8 +995,8 @@ class MyTimeLoggerGUI(QWidget):
                 color: #ECEFF4;
                 border: none;
                 border-radius: 6px;
-                padding: 5px 14px;
-                font-size: 13px;
+                padding: 2px 10px;
+                font-size: 12px;
                 font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
                 font-weight: bold;
             }
@@ -941,10 +1005,9 @@ class MyTimeLoggerGUI(QWidget):
             }
         """)
         self.end_break_btn.clicked.connect(self.logic.end_break_now)
-        # 插入到 total_time_label 下方
-        bg_layout = self.background_widget.layout()
-        bg_layout.insertWidget(2, self.end_break_btn, 0, Qt.AlignmentFlag.AlignCenter)
         self.end_break_btn.hide()
+        # 触发一次布局重绘以包含此按钮
+        self.rebuild_layout()
 
     def _update_end_break_btn_visibility(self, state_name):
         """根据状态显隐结束休息按钮（仅长休息）"""
@@ -1016,7 +1079,6 @@ class MyTimeLoggerGUI(QWidget):
 
     def toggle_mouse_penetration(self):
         self.is_locked = not self.is_locked
-        self.size_grip.setVisible(not self.is_locked)
         self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, self.is_locked)
         self.show()
         if not self.is_locked: self.activateWindow()
@@ -1059,7 +1121,6 @@ class MyTimeLoggerGUI(QWidget):
 
     def mousePressEvent(self, event):
         if not self.is_locked and event.button() == Qt.MouseButton.LeftButton:
-            if self.size_grip.geometry().contains(event.pos()): return
             self.dragPos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, event):
