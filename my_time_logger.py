@@ -569,7 +569,7 @@ class MyTimeLoggerGUI(QWidget):
             self._init_failed = True
             return
         self._init_failed = False
-        self.setWindowTitle("MyTimeLogger v0.96")
+        self.setWindowTitle("MyTimeLogger v0.98")
         self.setWindowIcon(QIcon(resource_path(os.path.join("document", "icon.ico"))))
         
         self.dragPos = None
@@ -987,7 +987,7 @@ class MyTimeLoggerGUI(QWidget):
             self.status_label.setText("⏸️ 已暂停")
 
     def create_tray_icon(self):
-        self.tray_icon = QIcon(resource_path('icon.ico'))
+        self.tray_icon = QIcon(resource_path(os.path.join('document', 'icon.ico')))
         self.tray = QSystemTrayIcon(self.tray_icon, self)
         self.tray.setToolTip("MyTimeLogger - 保持专注")
         self.tray_menu = QMenu(self)
@@ -1291,6 +1291,6 @@ if __name__ == "__main__":
     if window._init_failed:
         sys.exit(1)
 
-    window.setWindowTitle("MyTimeLogger v0.96")
+    window.setWindowTitle("MyTimeLogger v0.98")
     window.show()
     sys.exit(app.exec())

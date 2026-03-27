@@ -28,7 +28,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='MyTimeLogger_v0.96',
+    name='MyTimeLogger',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
