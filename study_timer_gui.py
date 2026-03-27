@@ -6,7 +6,7 @@ import os
 import sys
 import json
 import pygame
-import csv # <--- NEW: For writing log files
+import sqlite3
 from datetime import datetime # <--- NEW: For timestamps
 
 # --- PyQt6 Imports ---
@@ -123,27 +123,66 @@ def save_config(config_data):
 # 新增: 学习日志记录器
 # ==============================================================================
 class StudyLogger:
-    def __init__(self, filename="study_log.csv"):
+    def __init__(self, filename="study_log.db"):
         self.log_path = resource_path(filename)
-        self.header = [
-            'start_time', 'end_time', 'net_duration_minutes', 'date', 'day_of_week', 
-            'pause_count', 'pause_reasons', 'session_summary'
-        ]
-        self._initialize_file()
+        self._initialize_db()
+        self._migrate_from_json()
 
-    def _initialize_file(self):
-        """如果日志文件不存在，则创建并写入表头"""
-        if not os.path.exists(self.log_path):
+    def _initialize_db(self):
+        """如果数据库或表不存在，则创建表"""
+        try:
+            conn = sqlite3.connect(self.log_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS study_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    start_time TEXT,
+                    end_time TEXT,
+                    net_duration_minutes REAL,
+                    date TEXT,
+                    day_of_week TEXT,
+                    pause_count INTEGER,
+                    pause_reasons TEXT,
+                    session_summary TEXT
+                )
+            ''')
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"数据库初始化失败: {e}")
+
+    def _migrate_from_json(self):
+        """如果存在旧的 JSON 日志，则迁移数据到 SQLite"""
+        json_path = resource_path("study_log.json")
+        if os.path.exists(json_path):
             try:
-                with open(self.log_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(self.header)
-                print(f"日志文件已创建: {self.log_path}")
-            except IOError as e:
-                print(f"错误: 无法创建日志文件: {e}")
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    records = json.load(f)
+                
+                if records:
+                    conn = sqlite3.connect(self.log_path)
+                    cursor = conn.cursor()
+                    for r in records:
+                        cursor.execute('''
+                            INSERT INTO study_sessions 
+                            (start_time, end_time, net_duration_minutes, date, day_of_week, pause_count, pause_reasons, session_summary)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            r.get("start_time"), r.get("end_time"), r.get("net_duration_minutes"),
+                            r.get("date"), r.get("day_of_week"), r.get("pause_count"),
+                            r.get("pause_reasons"), r.get("session_summary")
+                        ))
+                    conn.commit()
+                    conn.close()
+                    print(f"完成从 JSON 迁移 {len(records)} 条记录到数据库。")
+                
+                # 迁移成功后重命名旧文件
+                os.rename(json_path, json_path + ".bak")
+            except Exception as e:
+                print(f"数据迁移失败: {e}")
 
     def log_session(self, start_time: datetime, end_time: datetime, net_duration_seconds: int, pause_count: int = 0, pause_reasons: str = "", session_summary: str = ""):
-        """记录一个完整的学习会话"""
+        """记录一个完整的学习会话到数据库"""
         if not all([start_time, end_time, net_duration_seconds > 0]):
             return
 
@@ -151,23 +190,27 @@ class StudyLogger:
         day_of_week = start_time.strftime('%A')
         net_duration_minutes = round(net_duration_seconds / 60, 2)
 
-        row = [
-            start_time.strftime('%Y-%m-%d %H:%M:%S'),
-            end_time.strftime('%Y-%m-%d %H:%M:%S'),
-            net_duration_minutes,
-            date_str,
-            day_of_week,
-            pause_count,
-            pause_reasons,
-            session_summary
-        ]
-
         try:
-            with open(self.log_path, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(row)
-        except IOError as e:
-            print(f"错误: 无法写入日志: {e}")
+            conn = sqlite3.connect(self.log_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO study_sessions 
+                (start_time, end_time, net_duration_minutes, date, day_of_week, pause_count, pause_reasons, session_summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                end_time.strftime('%Y-%m-%d %H:%M:%S'),
+                net_duration_minutes,
+                date_str,
+                day_of_week,
+                pause_count,
+                pause_reasons,
+                session_summary
+            ))
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"记录学习会话失败: {e}")
 
 
 # ==============================================================================
@@ -681,13 +724,20 @@ class StudyTimerGUI(QWidget):
                 
             if ok and pwd == correct_pwd:
                 self.logic.reset_all()
-                csv_path = self.logic.logger.log_path
-                if os.path.exists(csv_path):
+                log_path = self.logic.logger.log_path
+                if os.path.exists(log_path):
                     try:
-                        os.remove(csv_path)
+                        # 彻底清空数据库
+                        conn = sqlite3.connect(log_path)
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM study_sessions")
+                        conn.commit()
+                        conn.close()
+                        # 也可选择删除文件以便重新初始化逻辑能跑通
+                        os.remove(log_path)
                     except Exception as e:
-                        print(f"删除失败: {e}")
-                self.logic.logger._initialize_file()
+                        print(f"清理数据库失败: {e}")
+                self.logic.logger._initialize_db()
                 self.generate_statistics_html()
                 QMessageBox.information(self, "清理成功", "所有记录及统计报表已彻底清空。")
             elif ok:
@@ -1031,18 +1081,27 @@ class StudyTimerGUI(QWidget):
             self.total_time_label.setText(f"{int(mins):02}:{int(secs):02}")
 
     def generate_statistics_html(self, open_browser=False, *args):
-        log_path = resource_path("study_log.csv")
+        log_path = resource_path("study_log.db")
         html_path = resource_path("statistics.html")
         
         rows = []
         if os.path.exists(log_path):
             try:
-                with open(log_path, 'r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    header = next(reader, None)
-                    rows = list(reader)
-            except Exception:
-                pass
+                conn = sqlite3.connect(log_path)
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT start_time, end_time, net_duration_minutes, date, day_of_week, 
+                           pause_count, pause_reasons, session_summary 
+                    FROM study_sessions
+                    ORDER BY start_time ASC
+                ''')
+                rows_data = cursor.fetchall()
+                for r in rows_data:
+                    # 转换为原始列表格式以复用现有的 HTML 生成逻辑
+                    rows.append([str(item) for item in r])
+                conn.close()
+            except sqlite3.Error as e:
+                print(f"读取数据库统计信息失败: {e}")
         
         week_map = {
             'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
