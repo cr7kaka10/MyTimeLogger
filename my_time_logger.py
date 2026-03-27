@@ -569,7 +569,7 @@ class MyTimeLoggerGUI(QWidget):
             self._init_failed = True
             return
         self._init_failed = False
-        self.setWindowTitle("MyTimeLogger v0.98")
+        self.setWindowTitle("MyTimeLogger")
         self.setWindowIcon(QIcon(resource_path(os.path.join("document", "icon.ico"))))
         
         self.dragPos = None
@@ -733,6 +733,7 @@ class MyTimeLoggerGUI(QWidget):
 
         if self.is_mini_mode:
             self.setFixedSize(280, 40)
+            self.background_widget.setFixedSize(280, 40)
             self.status_label.setWordWrap(False)
             new_layout = QHBoxLayout(self.background_widget)
             new_layout.setContentsMargins(10, 0, 10, 0)
@@ -746,6 +747,7 @@ class MyTimeLoggerGUI(QWidget):
             self.mini_toggle_btn.setIconSize(QSize(16, 16))
         else:
             self.setFixedSize(220, 140)
+            self.background_widget.setFixedSize(220, 140)
             self.status_label.setWordWrap(True)
             new_layout = QVBoxLayout(self.background_widget)
             new_layout.setContentsMargins(10, 5, 10, 10)
