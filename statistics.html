@@ -23,7 +23,11 @@
         .reason-tags { display: flex; flex-wrap: wrap; gap: 8px; }
         .reason-tag { background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 600; border: 1px solid #fde68a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .reason-tag-empty { color: #9ca3af; font-size: 0.9em; font-style: italic; }
+        .reason-tag-empty { color: #9ca3af; font-size: 0.9em; font-style: italic; }
         .card-summary { background: #eff6ff; padding: 14px 16px; border-radius: 10px; font-size: 0.95em; color: #1e3a8a; border-left: 4px solid var(--primary); line-height: 1.5; }
+        .markdown-content { margin-top: 8px; }
+        .markdown-content ul, .markdown-content ol { padding-left: 20px; margin: 5px 0; }
+        .markdown-content li { margin-bottom: 4px; }
         strong { color: var(--text); }
         .empty { text-align: center; padding: 60px 40px; color: var(--text-light); font-size: 1.1em; background: var(--card-bg); border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     </style>
@@ -31,7 +35,53 @@
 <body>
     <div class="container">
         <h1>📊 深度专注统计报表</h1>
-        <div class='empty'>暂无大专注学习记录，快去开启第一次沉浸式学习吧！</div>
+        
+            <div class="card">
+                <div class="card-header">
+                    <span class="date-badge">2026-03-27 星期五</span>
+                    <span class="duration-badge">今日专注 3.0 分钟</span>
+                </div>
+                <div class="sessions-container">
+                    
+                <div class="session-item">
+                    <div class="session-header">
+                        <span class="session-time">⏱️ 23:11:35 - 23:13:24</span>
+                        <span class="session-duration">专注 1.0 分钟</span>
+                    </div>
+                    <div class="card-stats">⏸️ 主动暂停: 1 次</div>
+                    <div class="card-reasons">
+                        <strong>暂停明细:</strong><div class='markdown-content' style='margin-top:2px; font-size:0.9em;'><ul><li>1111</li><li>222</li><li>3333 (27秒)</li></ul></div>
+                    </div>
+                    <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content"><ul><li>还行</li></ul></div></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-header">
+                        <span class="session-time">⏱️ 23:04:29 - 23:10:09</span>
+                        <span class="session-duration">专注 1.0 分钟</span>
+                    </div>
+                    <div class="card-stats">⏸️ 主动暂停: 1 次</div>
+                    <div class="card-reasons">
+                        <strong>暂停明细:</strong><div class='markdown-content' style='margin-top:2px; font-size:0.9em;'><ul><li>1</li><li>2</li><li>(1分49秒)</li></ul></div>
+                    </div>
+                    <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content"><ul><li>斯蒂芬得分</li></ul></div></div>
+                </div>
+                
+                <div class="session-item">
+                    <div class="session-header">
+                        <span class="session-time">⏱️ 18:19:32 - 18:21:59</span>
+                        <span class="session-duration">专注 1.0 分钟</span>
+                    </div>
+                    <div class="card-stats">⏸️ 主动暂停: 1 次</div>
+                    <div class="card-reasons">
+                        <strong>暂停明细:</strong><div class='markdown-content' style='margin-top:2px; font-size:0.9em;'><ul><li>1111</li><li>是多少</li><li>阿萨的 (36秒)</li></ul></div>
+                    </div>
+                    <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content"><ul><li>啊实打实的</li><li>搞了一天的antigravity，编写随即提示音软件</li></ul></div></div>
+                </div>
+                
+                </div>
+            </div>
+            
     </div>
 </body>
 </html>

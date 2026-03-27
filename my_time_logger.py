@@ -10,9 +10,10 @@ import sqlite3
 from datetime import datetime # <--- NEW: For timestamps
 
 # --- PyQt6 Imports ---
-from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit, QPushButton
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit, QPushButton, QDialog, QTextEdit, QDialogButtonBox
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings, QSize
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QIcon, QAction, QTextListFormat, QTextCursor
+import re
 
 # --- 外部依赖: 全局快捷键 ---
 # 请先安装: pip install pynput
@@ -237,6 +238,134 @@ class StudyLogger:
         except sqlite3.Error as e:
             print(f"记录学习会话失败: {e}")
 
+
+# ==============================================================================
+# Markdown 输入对话框 (Typora-like Live rendering)
+# ==============================================================================
+class MarkdownTextEdit(QTextEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAcceptRichText(True)
+        self.setPlaceholderText("")
+        self.document().setDocumentMargin(0) # 彻底归零文档边距
+
+    def keyPressEvent(self, event):
+        cursor = self.textCursor()
+        
+        # 处理空格键：触发列表转换
+        if event.key() == Qt.Key.Key_Space:
+            cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+            line_text = cursor.selectedText()
+            cursor.clearSelection()
+
+            # 无序列表 (- , + , * )
+            if line_text in ["-", "+", "*"]:
+                cursor.beginEditBlock()
+                # 删除输入的符号
+                for _ in range(len(line_text)): 
+                    cursor.deletePreviousChar()
+                # 插入真正的列表
+                list_format = QTextListFormat()
+                list_format.setStyle(QTextListFormat.Style.ListDisc)
+                list_format.setIndent(1) # 设置最小缩进
+                cursor.createList(list_format)
+                cursor.endEditBlock()
+                return
+
+            # 有序列表 (1. )
+            elif line_text == "1.":
+                cursor.beginEditBlock()
+                for _ in range(2): cursor.deletePreviousChar()
+                list_format = QTextListFormat()
+                list_format.setStyle(QTextListFormat.Style.ListDecimal)
+                list_format.setIndent(1) # 设置最小缩进
+                cursor.createList(list_format)
+                cursor.endEditBlock()
+                return
+
+        # 处理回车键：列表项自动续行 (QTextEdit 默认支持列表回车续行)
+        # 新增: 处理 Ctrl+Enter 快捷提交
+        if event.key() in [Qt.Key.Key_Return, Qt.Key.Key_Enter]:
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                # 寻找所属对话框并触发 accept
+                parent_dialog = self.window()
+                if isinstance(parent_dialog, QDialog):
+                    parent_dialog.accept()
+                    return
+
+        super().keyPressEvent(event)
+
+class MarkdownInputDialog(QDialog):
+    def __init__(self, title, label, parent=None, initial_text=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(500, 350)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        
+        layout = QVBoxLayout(self)
+        
+        self.label = QLabel(label)
+        self.label.setStyleSheet("font-weight: bold; color: #88C0D0; margin-bottom: 5px;")
+        layout.addWidget(self.label)
+        
+        self.text_edit = MarkdownTextEdit()
+        # 恢复正常的视图边距，防止截断
+        self.text_edit.setViewportMargins(0, 0, 0, 0)
+        self.text_edit.document().setDocumentMargin(5)
+        
+        # 默认起始列表符号为 "+"
+        display_text = initial_text if initial_text else "+ "
+        self.text_edit.setMarkdown(display_text)
+        
+        # 确保光标在文本末尾
+        cursor = self.text_edit.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.text_edit.setTextCursor(cursor)
+        
+        layout.addWidget(self.text_edit)
+        
+        # 手动创建按钮布局以精确控制顺序：Cancel 在左，OK 在右
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFixedWidth(80)
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.setFixedWidth(80)
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setDefault(True)
+        
+        btn_layout.addWidget(self.cancel_btn)
+        btn_layout.addWidget(self.ok_btn)
+        layout.addLayout(btn_layout)
+
+        self.setStyleSheet("""
+            QDialog { background-color: #2E3440; }
+            QLabel { color: #ECEFF4; font-size: 14px; }
+            QTextEdit { 
+                background-color: #3B4252; 
+                color: #ECEFF4; 
+                border: 1px solid #4C566A; 
+                border-radius: 4px;
+                padding: 10px 10px 10px 5px; /* 留 5px 防止由于太靠左而显得被截断 */
+                margin: 0px;
+                font-size: 14px;
+                selection-background-color: #88C0D0;
+            }
+            QPushButton { 
+                background-color: #4C566A; 
+                color: #ECEFF4; 
+                border-radius: 4px; 
+                padding: 6px 15px;
+            }
+            QPushButton:hover { background-color: #5E81AC; }
+        """)
+
+    def textValue(self):
+        # 导出为 Markdown 格式字符串
+        return self.text_edit.toMarkdown()
 
 # ==============================================================================
 # 核心逻辑层 (已修改)
@@ -681,37 +810,25 @@ class MyTimeLoggerGUI(QWidget):
                 pass
 
     def prompt_for_pause_reason(self):
-        dialog = QInputDialog(self)
-        dialog.setWindowTitle("暂停提醒")
-        dialog.setLabelText("请输入本次暂停的原因: (直接回车代表无)")
-        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-
-        def _focus():
-            self._activate_dialog(dialog)
-            le = dialog.findChild(QLineEdit)
-            if le:
-                le.setFocus()
-        QTimer.singleShot(100, _focus)
-
-        ok = dialog.exec()
-        reason = dialog.textValue()
-        self.logic.add_pause_reason(reason.strip() if ok and reason.strip() else "无")
+        dialog = MarkdownInputDialog("暂停提醒", "请输入本次暂停的原因（支持 markdown 语法）：", self)
+        QTimer.singleShot(100, lambda: self._activate_dialog(dialog))
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            reason = dialog.textValue()
+            self.logic.add_pause_reason(reason.strip() if reason.strip() else "无")
+        else:
+            self.logic.add_pause_reason("无")
 
     def prompt_for_session_summary(self):
-        dialog = QInputDialog(self)
-        dialog.setOption(QInputDialog.InputDialogOption.UsePlainTextEditForTextInput, True)
-        dialog.setWindowTitle("大专注完成！")
-        dialog.setLabelText("恭喜完成一段深度专注！请简单总结你做了哪些事：")
-        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-
+        dialog = MarkdownInputDialog("大专注完成！", "恭喜完成一段深度专注！请总结你做了哪些事（支持 markdown 语法）：", self)
         QTimer.singleShot(100, lambda: self._activate_dialog(dialog))
 
-        ok = dialog.exec()
-        summary = dialog.textValue()
-        final_summary = summary.strip() if ok and summary.strip() else "未填写总结"
-        self.logic.commit_large_session(final_summary)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            summary = dialog.textValue()
+            final_summary = summary.strip() if summary.strip() else "未填写总结"
+            self.logic.commit_large_session(final_summary)
+        else:
+            self.logic.commit_large_session("未填写总结")
 
     def toggle_mini_mode(self):
         self.is_mini_mode = not self.is_mini_mode
@@ -1170,6 +1287,42 @@ class MyTimeLoggerGUI(QWidget):
         else:
             self.total_time_label.setText(f"{int(mins):02}:{int(secs):02}")
 
+    def _render_markdown_lists(self, text):
+        if not text or text == "无" or text == "未填写总结": return text
+        
+        lines = text.split('\n')
+        result = []
+        in_ul = False
+        in_ol = False
+        
+        for line in lines:
+            trimmed = line.strip()
+            if not trimmed:
+                if in_ul: result.append("</ul>"); in_ul = False
+                if in_ol: result.append("</ol>"); in_ol = False
+                continue
+            
+            # 识别列表模式 (例如: - item, + item, * item, 1. item)
+            ul_match = re.match(r'^[\-\+\*]\s+(.*)', trimmed)
+            ol_match = re.match(r'^(\d+)\.\s+(.*)', trimmed)
+            
+            if ul_match:
+                if in_ol: result.append("</ol>"); in_ol = False
+                if not in_ul: result.append("<ul>"); in_ul = True
+                result.append(f"<li>{ul_match.group(1)}</li>")
+            elif ol_match:
+                if in_ul: result.append("</ul>"); in_ul = False
+                if not in_ol: result.append("<ol>"); in_ol = True
+                result.append(f"<li>{ol_match.group(2)}</li>")
+            else:
+                if in_ul: result.append("</ul>"); in_ul = False
+                if in_ol: result.append("</ol>"); in_ol = False
+                result.append(trimmed + "<br>")
+                
+        if in_ul: result.append("</ul>")
+        if in_ol: result.append("</ol>")
+        return "".join(result)
+
     def generate_statistics_html(self, open_browser=False, *args):
         log_path = resource_path("study_log.db")
         html_path = resource_path("statistics.html")
@@ -1231,11 +1384,16 @@ class MyTimeLoggerGUI(QWidget):
                 
                 reasons_html = ""
                 if pause_reasons_raw and pause_reasons_raw != "无":
-                    r_list = [r.strip() for r in pause_reasons_raw.split("; ") if r.strip()]
-                    for r in r_list:
-                        reasons_html += f"<span class='reason-tag'>{r}</span>"
+                    # 检测是否包含换行或列表符号，若是则按 Markdown 渲染，否则按传统标签渲染
+                    if "\n" in pause_reasons_raw or any(pause_reasons_raw.startswith(s) for s in ["- ", "+ ", "* ", "1. "]):
+                        # 移除 margin-top 以消除空行
+                        reasons_html = f"<div class='markdown-content' style='margin-top:2px; font-size:0.9em;'>{self._render_markdown_lists(pause_reasons_raw)}</div>"
+                    else:
+                        r_list = [r.strip() for r in pause_reasons_raw.split("; ") if r.strip()]
+                        reasons_tags_html = "".join([f"<span class='reason-tag'>{r}</span>" for r in r_list])
+                        reasons_html = f"<div class='reason-tags' style='margin-top:6px;'>{reasons_tags_html}</div>"
                 else:
-                    reasons_html = "<span class='reason-tag-empty'>无暂停记录</span>"
+                    reasons_html = "<span class='reason-tag-empty' style='margin-left:5px;'>无暂停记录</span>"
                 
                 sessions_html += f"""
                 <div class="session-item">
@@ -1245,10 +1403,9 @@ class MyTimeLoggerGUI(QWidget):
                     </div>
                     <div class="card-stats">⏸️ 主动暂停: {pause_count} 次</div>
                     <div class="card-reasons">
-                        <div style="margin-bottom:6px;"><strong>暂停明细:</strong></div>
-                        <div class="reason-tags">{reasons_html}</div>
+                        <strong>暂停明细:</strong>{reasons_html}
                     </div>
-                    <div class="card-summary"><strong>专注总结:</strong> {summary}</div>
+                    <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content">{self._render_markdown_lists(summary)}</div></div>
                 </div>
                 """
                 
@@ -1291,7 +1448,11 @@ class MyTimeLoggerGUI(QWidget):
         .reason-tags {{ display: flex; flex-wrap: wrap; gap: 8px; }}
         .reason-tag {{ background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 600; border: 1px solid #fde68a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
         .reason-tag-empty {{ color: #9ca3af; font-size: 0.9em; font-style: italic; }}
+        .reason-tag-empty {{ color: #9ca3af; font-size: 0.9em; font-style: italic; }}
         .card-summary {{ background: #eff6ff; padding: 14px 16px; border-radius: 10px; font-size: 0.95em; color: #1e3a8a; border-left: 4px solid var(--primary); line-height: 1.5; }}
+        .markdown-content {{ margin-top: 8px; }}
+        .markdown-content ul, .markdown-content ol {{ padding-left: 20px; margin: 5px 0; }}
+        .markdown-content li {{ margin-bottom: 4px; }}
         strong {{ color: var(--text); }}
         .empty {{ text-align: center; padding: 60px 40px; color: var(--text-light); font-size: 1.1em; background: var(--card-bg); border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }}
     </style>
