@@ -1,4 +1,4 @@
-# --- START OF FILE study_timer_gui.py ---
+# --- START OF FILE my_time_logger.py ---
 
 import time
 import random
@@ -33,10 +33,34 @@ except ImportError:
 
 # --- 资源路径函数 ---
 def resource_path(relative_path):
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
+    """
+    获取资源绝对路径，适配开发环境和 PyInstaller 单文件/文件夹打包模式。
+    内置资源（音频/图标）存储在临时目录中；
+    用户数据（配置/数据库/报表）存储在可执行文件同级目录中。
+    """
+    # 定义哪些文件是用户可写/持久化的数据
+    user_data_files = [
+        'config.json', 'study_log.db', 'study_log.json', 
+        'statistics.html', 'study_log.csv'
+    ]
+    
+    # 获取基础路径
+    if relative_path in user_data_files or relative_path.endswith('.db') or relative_path.endswith('.json'):
+        # 对于用户数据，始终使用可执行文件所在的真实目录
+        try:
+            if getattr(sys, 'frozen', False):
+                base_path = os.path.dirname(sys.executable)
+            else:
+                base_path = os.path.abspath(".")
+        except Exception:
+            base_path = os.path.abspath(".")
+    else:
+        # 对于只读资源（音乐、图标），优先使用 PyInstaller 的临时解压目录
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+            
     return os.path.join(base_path, relative_path)
 
 # --- 默认配置 ---
@@ -51,10 +75,11 @@ DEFAULT_CONFIG = {
         "start_short_break": "start_short_break.mp3",
         "start_long_break": "start_long_break.mp3",
         "end_long_break": "end_long_break.mp3",
-        "victory": "victory.mp3"
+        "victory": "victory.mp3",
+        "start_study": "start_study.mp3"
     },
     "total_study_time": 0,
-    "reset_password": "130130131",
+    "reset_password": "111",
     "hotkeys": {
         "start": "<alt>+z",
         "toggle_pause": "<alt>+c",
@@ -216,7 +241,7 @@ class StudyLogger:
 # ==============================================================================
 # 核心逻辑层 (已修改)
 # ==============================================================================
-class StudyTimerLogic(QObject):
+class MyTimeLoggerLogic(QObject):
     state_changed = pyqtSignal(str, str)
     time_updated = pyqtSignal(int)
     notification_requested = pyqtSignal(str, str)
@@ -531,24 +556,26 @@ class HotkeyManager(QObject):
 # ==============================================================================
 # 图形界面层 (已修改)
 # ==============================================================================
-class StudyTimerGUI(QWidget):
+class MyTimeLoggerGUI(QWidget):
     def __init__(self, config):
         super().__init__()
         
         self.config = config
         
         try:
-            self.logic = StudyTimerLogic(self.config)
+            self.logic = MyTimeLoggerLogic(self.config)
         except FileNotFoundError as e:
             QMessageBox.critical(None, "资源错误", f"{e}\n\n请确保所有资源文件都在正确的位置，然后重启程序。")
             self._init_failed = True
             return
         self._init_failed = False
+        self.setWindowTitle("MyTimeLogger v0.96")
+        self.setWindowIcon(QIcon(resource_path(os.path.join("document", "icon.ico"))))
         
         self.dragPos = None
         self.is_locked = False
         
-        self.settings = QSettings("MyStudyTimer", "App")
+        self.settings = QSettings("MyTimeLogger", "App")
         
         self.is_always_on_top = self.settings.value("ui/alwaysOnTop", True, type=bool)
 
@@ -715,12 +742,12 @@ class StudyTimerGUI(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             pwd, ok = QInputDialog.getText(self, "高危操作鉴权", "请输入授权密码：", QLineEdit.EchoMode.Password)
             
-            correct_pwd = "130130131"
+            correct_pwd = "111"
             try:
                 with open(resource_path('config.json'), 'r', encoding='utf-8') as f:
-                    correct_pwd = json.load(f).get("reset_password", "130130131")
+                    correct_pwd = json.load(f).get("reset_password", "111")
             except Exception:
-                correct_pwd = self.config.get("reset_password", "130130131")
+                correct_pwd = self.config.get("reset_password", "111")
                 
             if ok and pwd == correct_pwd:
                 self.logic.reset_all()
@@ -962,7 +989,7 @@ class StudyTimerGUI(QWidget):
     def create_tray_icon(self):
         self.tray_icon = QIcon(resource_path('icon.ico'))
         self.tray = QSystemTrayIcon(self.tray_icon, self)
-        self.tray.setToolTip("沉浸式学习计时器")
+        self.tray.setToolTip("MyTimeLogger - 保持专注")
         self.tray_menu = QMenu(self)
         self.tray_menu.aboutToShow.connect(self.update_tray_menu)
         self.tray.setContextMenu(self.tray_menu)
@@ -1130,8 +1157,9 @@ class StudyTimerGUI(QWidget):
             
             sessions_html = ""
             for row in group_rows:
-                start_time = row[0]
-                end_time = row[1]
+                # 仅保留时间段的时分秒 (例如 '2026-03-27 10:46:12' -> '10:46:12')
+                start_time = row[0].split(' ')[-1] if ' ' in row[0] else row[0]
+                end_time = row[1].split(' ')[-1] if ' ' in row[1] else row[1]
                 duration = row[2]
                 
                 pause_count = row[5] if len(row) >= 8 else "0"
@@ -1179,7 +1207,7 @@ class StudyTimerGUI(QWidget):
 <html>
 <head>
     <meta charset="utf-8">
-    <title>StudyTimer 统计数据</title>
+    <title>MyTimeLogger 统计报表</title>
     <style>
         :root {{ --bg: #f3f4f6; --card-bg: #ffffff; --text: #1f2937; --text-light: #6b7280; --primary: #3b82f6; --accent: #10b981; --border: #e5e7eb; }}
         body {{ font-family: 'Segoe UI', system-ui, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 40px; line-height: 1.5; }}
@@ -1253,15 +1281,16 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    if not os.path.exists(resource_path('icon.ico')):
-        QMessageBox.critical(None, "资源错误", "关键文件 'icon.ico' 未找到！\n程序无法启动。")
+    if not os.path.exists(resource_path(os.path.join('document', 'icon.ico'))):
+        QMessageBox.critical(None, "资源错误", "关键文件 'document/icon.ico' 未找到！\n程序无法启动。")
         sys.exit(1)
 
     config = load_or_create_config()
-    window = StudyTimerGUI(config)
+    window = MyTimeLoggerGUI(config)
     
     if window._init_failed:
         sys.exit(1)
 
+    window.setWindowTitle("MyTimeLogger v0.96")
     window.show()
     sys.exit(app.exec())
