@@ -7,13 +7,22 @@ import sys
 import json
 import pygame
 import sqlite3
-from datetime import datetime # <--- NEW: For timestamps
+import copy
+import logging
+from logging.handlers import TimedRotatingFileHandler
+from datetime import datetime
 
 # --- PyQt6 Imports ---
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu, QSystemTrayIcon, QMessageBox, QSizeGrip, QInputDialog, QLineEdit, QPushButton, QDialog, QTextEdit, QDialogButtonBox
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings, QSize
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QSettings, QSize, QThread, QLockFile
 from PyQt6.QtGui import QIcon, QAction, QTextListFormat, QTextCursor
 import re
+
+# --- MySQL 支持 (可选) ---
+try:
+    import pymysql
+except ImportError:
+    pymysql = None
 
 # --- 外部依赖: 全局快捷键 ---
 # 请先安装: pip install pynput
@@ -85,20 +94,69 @@ DEFAULT_CONFIG = {
         "start": "<alt>+z",
         "toggle_pause": "<alt>+c",
         "reset_cycle": "<ctrl>+<alt>+r"
+    },
+    "db_type": "sqlite",
+    "mysql_config": {
+        "//host": "127.0.0.1",
+        "//user": "root",
+        "//password": "your_password",
+        "//database": "mytimelogger",
+        "//port": 3306
     }
 }
 
 # --- 配置文件加载/创建函数 ---
+# ==============================================================================
+# 全局日志配置 (按日轮转)
+# ==============================================================================
+def setup_logging():
+    """初始化日志系统，支持控制台和文件同步输出"""
+    # 获取程序运行目录，确保日志留在本地
+    base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    log_dir = os.path.join(base_dir, "log")
+    
+    try:
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        # 定义日志文件名
+        log_file = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d')}.log")
+        
+        # 配置根记录器
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+        
+        # 防止重复添加 Handler
+        if not logger.handlers:
+            # 终端处理器
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            logger.addHandler(console_handler)
+            
+            # 文件处理器 (按天轮转，保留最近 30 天)
+            file_handler = TimedRotatingFileHandler(
+                log_file, when="midnight", interval=1, backupCount=30, encoding='utf-8'
+            )
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+            logger.addHandler(file_handler)
+            
+        logging.info("MyTimeLogger 日志系统初始化完成。")
+    except Exception as e:
+        # 这里还不能使用 logging，因为 logging 可能还没初始化成功
+        print(f"日志初始化失败: {e}")
+
+setup_logging()
+
 def load_or_create_config():
     config_path = resource_path('config.json')
     if not os.path.exists(config_path):
-        print("未找到 config.json, 正在创建默认配置文件...")
+        logging.info("未找到 config.json, 正在创建默认配置文件...")
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(DEFAULT_CONFIG, f, indent=4, ensure_ascii=False)
             return DEFAULT_CONFIG
         except Exception as e:
-            print(f"创建默认配置文件失败: {e}")
+            logging.error(f"创建默认配置文件失败: {e}")
             return DEFAULT_CONFIG
 
     try:
@@ -124,12 +182,16 @@ def load_or_create_config():
                     user_config[key] = value
                     updated = True
                 elif isinstance(value, dict) and isinstance(user_config.get(key), dict):
+                    # 只有当用户配置中完全缺失该子项时才补充，避免覆盖用户的现有字段
                     for sub_k, sub_v in value.items():
-                        if sub_k not in user_config[key]:
+                        # 对于 mysql_config 这种特殊的带注释字段，如果用户已经有了非注释版本，不要再加默认注释版本
+                        clean_sub_k = sub_k.lstrip("/")
+                        user_has_keys = [k.lstrip("/") for k in user_config[key].keys()]
+                        if clean_sub_k not in user_has_keys:
                             user_config[key][sub_k] = sub_v
                             updated = True
             if updated:
-                print("配置文件已更新，添加了新字段。")
+                logging.info("配置文件已更新，添加了新字段。")
                 save_config(user_config)
             return user_config
     except (json.JSONDecodeError, TypeError) as e:
@@ -143,38 +205,147 @@ def save_config(config_data):
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(config_data, f, indent=4, ensure_ascii=False)
     except Exception as e:
-        print(f"错误: 保存配置文件失败: {e}")
+        logging.error(f"保存配置文件失败: {e}")
 
 # ==============================================================================
-# 新增: 学习日志记录器
+# 异步数据库工作者 (Worker Thread)
+# ==============================================================================
+class DatabaseWorker(QObject):
+    """专门处理异步任务的 Worker，包括 MySQL 同步和耗时计算"""
+    logged = pyqtSignal()
+    stats_ready = pyqtSignal(list, bool)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        # 创建一个专门用于远程备份的 Logger 实例 (强制为 mysql 模式)
+        self.mysql_cfg = copy.deepcopy(config)
+        self.mysql_cfg["db_type"] = "mysql"
+        self.backup_logger = StudyLogger(self.mysql_cfg)
+
+    def init_db(self):
+        """后台异步初始化远程数据库备份"""
+        try:
+            m_cfg = self.config.get("mysql_config", {})
+            if any(not k.startswith("//") for k in m_cfg.keys()):
+                logging.info("[MySQL] 正在后台建立远程连接并自检表结构...")
+                self.backup_logger._initialize_db()
+                logging.info("[MySQL] 远程数据库连接成功，镜像同步已就绪。")
+            else:
+                logging.info("[MySQL] 未检测到有效配置，跳过远程同步。")
+        except Exception as e:
+            logging.error(f"[MySQL] 远程初始化失败 (不影响本地): {e}")
+
+    def sync_to_backup(self, data_dict):
+        """将本地记录异步镜像到远程 MySQL"""
+        m_cfg = self.config.get("mysql_config", {})
+        if any(not k.startswith("//") for k in m_cfg.keys()):
+            try:
+                logging.info("[MySQL] 正在将专注记录同步至云端...")
+                self.backup_logger.log_session(**data_dict)
+                logging.info("[MySQL] 镜像同步完成。")
+            except Exception as e:
+                logging.error(f"[MySQL] 镜像同步过程中断: {e}")
+
+    def fetch_stats(self, open_browser=False):
+        """直接从本地读取统计数据 (快)"""
+        try:
+            # 统计读取始终固定为本地 sqlite，确保速度
+            local_cfg = copy.deepcopy(self.config)
+            local_cfg["db_type"] = "sqlite"
+            local_logger = StudyLogger(local_cfg)
+            rows = local_logger.get_all_sessions()
+            self.stats_ready.emit(rows, open_browser)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+# ==============================================================================
+# 学习日志记录器 (底层存储)
 # ==============================================================================
 class StudyLogger:
-    def __init__(self, filename="study_log.db"):
-        self.log_path = resource_path(filename)
-        self._initialize_db()
-        self._migrate_from_json()
+    def __init__(self, config=None):
+        self.config = config if config else DEFAULT_CONFIG
+        self.db_type = self.config.get("db_type", "sqlite")
+        self.log_path = resource_path("study_log.db")
+        self._conn = None 
+        # 本地 SQLite 初始化在构造时完成 (毫秒级)
+        if self.db_type == "sqlite":
+            self._initialize_db()
+            self._migrate_from_json()
+        # MySQL 的初始化由 DatabaseWorker 异步处理，不在构造函数进行
+
+    def _get_connection(self):
+        """根据配置获取数据库连接 (MySQL 模式下支持连接复用)"""
+        if self.db_type == "mysql":
+            if pymysql is None:
+                raise ImportError("未安装 pymysql，请运行 'pip install pymysql'")
+            
+            # 检查现有连接是否依然活跃
+            if self._conn:
+                try:
+                    self._conn.ping(reconnect=True)
+                    return self._conn
+                except Exception:
+                    self._conn = None
+
+            m_cfg = self.config.get("mysql_config", {})
+            actual_cfg = {}
+            for k, v in m_cfg.items():
+                real_key = k.lstrip("/")
+                if real_key not in actual_cfg or not k.startswith("//"):
+                    actual_cfg[real_key] = v
+            
+            self._conn = pymysql.connect(
+                host=actual_cfg.get("host", "127.0.0.1"),
+                user=actual_cfg.get("user", "root"),
+                password=actual_cfg.get("password", ""),
+                database=actual_cfg.get("database", "mytimelogger"),
+                port=int(actual_cfg.get("port", 3306)),
+                charset='utf8mb4'
+            )
+            return self._conn
+        else:
+            return sqlite3.connect(self.log_path)
 
     def _initialize_db(self):
-        """如果数据库或表不存在，则创建表"""
+        """初始化数据库表结构 (采用 IF NOT EXISTS 确保数据非破坏性)"""
+        if self.db_type == "sqlite":
+            self._migrate_from_json()
         try:
-            conn = sqlite3.connect(self.log_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS study_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    start_time TEXT,
-                    end_time TEXT,
-                    net_duration_minutes REAL,
-                    date TEXT,
-                    day_of_week TEXT,
-                    pause_count INTEGER,
-                    pause_reasons TEXT,
-                    session_summary TEXT
-                )
-            ''')
+            if self.db_type == "mysql":
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS study_sessions (
+                        id INT AUTO_INCREMENT PRIMARY KEY COMMENT '唯一标识',
+                        start_time DATETIME NOT NULL COMMENT '开始时间',
+                        end_time DATETIME NOT NULL COMMENT '结束时间',
+                        net_duration_minutes DECIMAL(10,2) NOT NULL COMMENT '专注时长(分)',
+                        date DATE NOT NULL COMMENT '日期',
+                        day_of_week VARCHAR(20) COMMENT '星期',
+                        pause_count INT DEFAULT 0 COMMENT '暂停次数',
+                        pause_reasons TEXT COMMENT '暂停原因明细',
+                        session_summary TEXT COMMENT '专注总结内容'
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专注学习记录表';
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS study_sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        start_time TIMESTAMP NOT NULL,
+                        end_time TIMESTAMP NOT NULL,
+                        net_duration_minutes REAL NOT NULL,
+                        date TEXT NOT NULL,
+                        day_of_week TEXT,
+                        pause_count INTEGER DEFAULT 0,
+                        pause_reasons TEXT,
+                        session_summary TEXT
+                    )
+                ''')
             conn.commit()
             conn.close()
-        except sqlite3.Error as e:
+        except Exception as e:
             print(f"数据库初始化失败: {e}")
 
     def _migrate_from_json(self):
@@ -200,12 +371,12 @@ class StudyLogger:
                         ))
                     conn.commit()
                     conn.close()
-                    print(f"完成从 JSON 迁移 {len(records)} 条记录到数据库。")
+                    logging.info(f"完成从 JSON 迁移 {len(records)} 条记录到数据库。")
                 
                 # 迁移成功后重命名旧文件
                 os.rename(json_path, json_path + ".bak")
             except Exception as e:
-                print(f"数据迁移失败: {e}")
+                logging.error(f"数据迁移失败: {e}")
 
     def log_session(self, start_time: datetime, end_time: datetime, net_duration_seconds: int, pause_count: int = 0, pause_reasons: str = "", session_summary: str = ""):
         """记录一个完整的学习会话到数据库"""
@@ -217,26 +388,51 @@ class StudyLogger:
         net_duration_minutes = round(net_duration_seconds / 60, 2)
 
         try:
-            conn = sqlite3.connect(self.log_path)
+            conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
+            
+            # 处理时间格式适配
+            start_fmt = start_time.strftime('%Y-%m-%d %H:%M:%S')
+            end_fmt = end_time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # SQL 参数化在 sqlite3 和 pymysql 中略有不同 (Python DB-API 通常支持 %s 或 ?)
+            # sqlite3 使用 ?, pymysql 使用 %s
+            placeholder = "%s" if self.db_type == "mysql" else "?"
+            
+            sql = f'''
                 INSERT INTO study_sessions 
                 (start_time, end_time, net_duration_minutes, date, day_of_week, pause_count, pause_reasons, session_summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                start_time.strftime('%Y-%m-%d %H:%M:%S'),
-                end_time.strftime('%Y-%m-%d %H:%M:%S'),
-                net_duration_minutes,
-                date_str,
-                day_of_week,
-                pause_count,
-                pause_reasons,
-                session_summary
+                VALUES ({", ".join([placeholder]*8)})
+            '''
+            
+            cursor.execute(sql, (
+                start_fmt, end_fmt, net_duration_minutes,
+                date_str, day_of_week, pause_count,
+                pause_reasons, session_summary
             ))
             conn.commit()
             conn.close()
-        except sqlite3.Error as e:
-            print(f"记录学习会话失败: {e}")
+        except Exception as e:
+            logging.error(f"记录学习会话失败: {e}")
+
+    def get_all_sessions(self):
+        """从数据库读取所有会话记录"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT start_time, end_time, net_duration_minutes, date, day_of_week, 
+                       pause_count, pause_reasons, session_summary 
+                FROM study_sessions
+                ORDER BY start_time ASC
+            ''')
+            rows = cursor.fetchall()
+            conn.close()
+            # 统一转为列表格式，处理 MySQL 结果通常是元组的问题
+            return [list(map(str, row)) for row in rows]
+        except Exception as e:
+            logging.error(f"读取数据库失败: {e}")
+            return []
 
 
 # ==============================================================================
@@ -377,20 +573,42 @@ class MyTimeLoggerLogic(QObject):
     input_reason_requested = pyqtSignal()
     input_summary_requested = pyqtSignal()
     session_logged = pyqtSignal()
+    
+    # 定义信号 (必须在类级别定义)
+    _async_log_trigger = pyqtSignal(dict)
+    _sync_trigger = pyqtSignal(dict) # 新增：远程同步专用
 
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.logger = StudyLogger()
+        
+        # 核心逻辑：UI 始终直连本地 SQLite，确保存取在毫秒级完成
+        local_cfg = copy.deepcopy(config)
+        local_cfg["db_type"] = "sqlite"
+        self.local_logger = StudyLogger(local_cfg)
+        
+        # 初始化异步 Worker (负责处理 MySQL 同步/备份)
+        self.db_thread = QThread()
+        self.db_worker = DatabaseWorker(self.config)
+        self.db_worker.moveToThread(self.db_thread)
+        
+        # 连接同步逻辑：由 Logic 触发镜像备份
+        self._sync_trigger.connect(self.db_worker.sync_to_backup)
+        
+        self.db_thread.start()
+        # 100ms 后后台开始镜像初始化
+        QTimer.singleShot(100, self.db_worker.init_db)
 
+        # 2. 内存状态初始化
         self.is_paused = False
         self.time_remaining_on_pause = 0
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.on_timer_timeout)
 
-        pygame.mixer.init()
-        self.sound_paths = self._validate_and_get_sound_paths()
+        # 3. 极速启动核心：音频加载延后到 2s，彻底避开启动主进程峰值
+        self._audio_initialized = False
+        QTimer.singleShot(2000, self._async_init_audio)
         
         self.total_study_time = self.config.get("total_study_time", 0)
 
@@ -482,21 +700,33 @@ class MyTimeLoggerLogic(QObject):
         if self.large_session_start_time and self.large_session_net_duration > 0:
             end_time = datetime.now()
             pause_reasons_str = "; ".join(self.large_session_pause_reasons) if self.large_session_pause_reasons else "无"
-            self.logger.log_session(
-                start_time=self.large_session_start_time,
-                end_time=end_time,
-                net_duration_seconds=self.large_session_net_duration,
-                pause_count=self.large_session_pause_count,
-                pause_reasons=pause_reasons_str,
-                session_summary=summary if summary else "无总结"
-            )
+            
+            # 使用包装好的字典同步数据
+            log_data = {
+                "start_time": self.large_session_start_time,
+                "end_time": end_time,
+                "net_duration_seconds": self.large_session_net_duration,
+                "pause_count": self.large_session_pause_count,
+                "pause_reasons": pause_reasons_str,
+                "session_summary": summary if summary else "无总结"
+            }
+            
+            # 第一步：极其迅速地存入本地 SQLite (主线程操作，毫秒级，保证数据不丢)
+            self.local_logger.log_session(**log_data)
+            
+            # 第二步：发送信号让后台镜像同步到远程 MySQL
+            self._sync_trigger.emit(log_data)
+            
+            logging.info(f"大专注会话已提交! 纯时长: {self.large_session_net_duration}s, 暂停: {self.large_session_pause_count}次, 摘要: {summary[:50]}...")
             self.session_logged.emit()
+            
         self._clear_large_session()
         self._run_long_break_cycle()
         
     def add_pause_reason(self, reason):
         if reason:
             self.pending_pause_reason = reason
+            logging.info(f"记录暂停原因: {reason}")
         else:
             self.pending_pause_reason = "无"
 
@@ -515,6 +745,7 @@ class MyTimeLoggerLogic(QObject):
         self.current_session_duration = study_duration
 
         self.state_changed.emit(f"📚 学习中...\n(第 {self.cycle_count} 轮)", self.current_state)
+        logging.info(f"开始第 {self.cycle_count} 轮学习。预设时长: {study_duration}s")
         # 仅在非第一次开始时（如短休息结束）播放声音
         if self.current_cycle_study_time > 0:
             self._play_sound("start_study")
@@ -536,13 +767,24 @@ class MyTimeLoggerLogic(QObject):
             paths[key] = path
         return paths
 
+    def _async_init_audio(self):
+        """异步初始化音频，防止阻塞启动"""
+        try:
+            pygame.mixer.init()
+            self.sound_paths = self._validate_and_get_sound_paths()
+            self._audio_initialized = True
+        except Exception as e:
+            logging.error(f"音频初始化失败: {e}")
+
     def _play_sound(self, sound_key):
+        if not self._audio_initialized: return
         sound_path = self.sound_paths.get(sound_key)
         if not sound_path: return
         try:
             pygame.mixer.music.load(sound_path)
             pygame.mixer.music.play()
-        except pygame.error as e: print(f"播放音频时出错: {e}")
+        except pygame.error as e:
+            logging.error(f"播放音频时出错: {e}")
 
     def start_only(self):
         if self.current_state in ["stopped", "long_break_finished"]:
@@ -591,6 +833,7 @@ class MyTimeLoggerLogic(QObject):
             self.timer.stop()
             self.is_paused = True
             self.current_pause_start_time = datetime.now()
+            logging.info(f"计时器已暂停。状态: {self.current_state}")
             self.state_changed.emit("⏸️ 已暂停", self.current_state)
 
     @staticmethod
@@ -620,6 +863,7 @@ class MyTimeLoggerLogic(QObject):
                 duration_str = self._format_pause_duration(pause_sec)
                 reason_str = f"{self.pending_pause_reason} ({duration_str})"
                 self.large_session_pause_reasons.append(reason_str)
+                logging.info(f"计时器已恢复。暂停时长: {duration_str}, 原因: {self.pending_pause_reason}")
                 self.current_pause_start_time = None
                 self.pending_pause_reason = "无"
                 
@@ -645,7 +889,7 @@ class HotkeyManager(QObject):
     def __init__(self, hotkey_config, parent=None):
         super().__init__(parent)
         if not keyboard:
-            print("警告: pynput 未安装，快捷键功能已禁用。")
+            logging.warning("HotkeyManager: pynput 未安装，全局快捷键功能已禁用。")
             self.listener = None
             return
 
@@ -715,7 +959,8 @@ class MyTimeLoggerGUI(QWidget):
         self.hotkey_manager.start_triggered.connect(self.logic.start_only)
         self.hotkey_manager.toggle_pause_triggered.connect(self.logic.toggle_pause)
         self.hotkey_manager.reset_cycle_triggered.connect(self.logic.reset_cycle)
-        self.hotkey_manager.start()
+        # 延迟启动热键监听，优先级调低
+        QTimer.singleShot(1000, self.hotkey_manager.start)
 
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
@@ -758,6 +1003,10 @@ class MyTimeLoggerGUI(QWidget):
 
         self.load_settings()
         self.update_stylesheet()
+
+        # 绑定异步数据库回调
+        self.logic.db_worker.stats_ready.connect(self._on_stats_ready)
+        self.logic.db_worker.error_occurred.connect(self._on_db_error)
 
         self.logic.state_changed.connect(self.update_status)
         self.logic.time_updated.connect(self.update_total_time)
@@ -1046,9 +1295,24 @@ class MyTimeLoggerGUI(QWidget):
             action.triggered.connect(lambda checked, m=mins: self.set_duration_config(m))
             duration_menu.addAction(action)
             
+        db_menu = QMenu("数据库设置", self)
+        sqlite_action = QAction("SQLite (当前本地)", self)
+        sqlite_action.setCheckable(True)
+        if self.config.get("db_type", "sqlite") == "sqlite": sqlite_action.setChecked(True)
+        sqlite_action.triggered.connect(lambda: self.switch_database("sqlite"))
+        
+        mysql_action = QAction("MySQL (远程同步)", self)
+        mysql_action.setCheckable(True)
+        if self.config.get("db_type") == "mysql": mysql_action.setChecked(True)
+        mysql_action.triggered.connect(lambda: self.switch_database("mysql"))
+        
+        db_menu.addAction(sqlite_action)
+        db_menu.addAction(mysql_action)
+
         config_menu.addMenu(interval_menu)
         config_menu.addMenu(duration_menu)
         config_menu.addMenu(hotkey_menu)
+        config_menu.addMenu(db_menu)
 
         opacity_menu = QMenu("💧 透明度", self)
         for val in [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4,0.3,0.2,0.1,0.01]:
@@ -1235,6 +1499,42 @@ class MyTimeLoggerGUI(QWidget):
             self.hotkey_manager.start()
             QMessageBox.information(self, "配置成功", f"{label_name}已动态更新为: {new_key.strip()}")
 
+    def _on_db_error(self, error_msg):
+        """数据库异步操作失败回调"""
+        print(f"数据库操作失败: {error_msg}")
+        if "Can't connect to MySQL" in error_msg:
+             QMessageBox.critical(self, "数据库连接失败", f"无法连接到 MySQL 远程服务器，请检查网络或配置。\n\n具体错误: {error_msg}")
+
+    def switch_database(self, db_type):
+        """切换数据库并根据需要引导配置"""
+        curr_db = self.config.get("db_type", "sqlite")
+        if db_type == curr_db:
+            return
+            
+        self.config["db_type"] = db_type
+        
+        if db_type == "mysql":
+            # 自动取消 MySQL 配置项的注释符号 (//)
+            m_cfg = self.config.get("mysql_config", {})
+            new_m_cfg = {}
+            for k, v in m_cfg.items():
+                new_key = k.lstrip("//")
+                new_m_cfg[new_key] = v
+            self.config["mysql_config"] = new_m_cfg
+            
+            save_config(self.config)
+            
+            msg = "数据库已切换为 MySQL。\n\n程序将自动打开 config.json，请填写 host/user/password 等配置。\n填完后请【重启软件】以确认连接。"
+            if pymysql is None:
+                msg += "\n\n检测到未安装依赖，请在终端运行:\npip install pymysql"
+            
+            QMessageBox.information(self, "数据库设置已变更", msg)
+            # 自动打开配置文件
+            os.startfile(resource_path('config.json'))
+        else:
+            save_config(self.config)
+            QMessageBox.information(self, "数据库设置", "已切回本地 SQLite。请重启软件生效。")
+
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton: self.toggle_mouse_penetration()
 
@@ -1324,27 +1624,23 @@ class MyTimeLoggerGUI(QWidget):
         return "".join(result)
 
     def generate_statistics_html(self, open_browser=False, *args):
-        log_path = resource_path("study_log.db")
-        html_path = resource_path("statistics.html")
+        """发起异步报表生成请求"""
+        # 如果是手动查看，先弹系统小通知或改变状态
+        if open_browser:
+            self.status_label.setText("正在加载报表...")
+            
+        # 触发后台 Worker 异步拉取数据
+        QTimer.singleShot(0, lambda: self.logic.db_worker.fetch_stats(open_browser))
+
+    def _on_stats_ready(self, rows, open_browser):
+        """后台数据准备就绪后的渲染回调"""
+        # 恢复状态显示（如果是正常状态）
+        if self.logic.current_state == "stopped":
+            self.status_label.setText("沉浸式学习\n右键单击开始")
+        elif self.logic.is_paused:
+            self.status_label.setText("⏸️ 已暂停")
         
-        rows = []
-        if os.path.exists(log_path):
-            try:
-                conn = sqlite3.connect(log_path)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT start_time, end_time, net_duration_minutes, date, day_of_week, 
-                           pause_count, pause_reasons, session_summary 
-                    FROM study_sessions
-                    ORDER BY start_time ASC
-                ''')
-                rows_data = cursor.fetchall()
-                for r in rows_data:
-                    # 转换为原始列表格式以复用现有的 HTML 生成逻辑
-                    rows.append([str(item) for item in r])
-                conn.close()
-            except sqlite3.Error as e:
-                print(f"读取数据库统计信息失败: {e}")
+        html_path = resource_path("statistics.html")
         
         week_map = {
             'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
@@ -1498,11 +1794,18 @@ class MyTimeLoggerGUI(QWidget):
 # 程序主入口
 # ==============================================================================
 if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    
+    # --- 单实例锁定检测 ---
+    lock_path = resource_path("my_time_logger.lock")
+    lock_file = QLockFile(lock_path)
+    if not lock_file.tryLock(100): # 尝试锁定 100ms
+        QMessageBox.warning(None, "程序已在运行", "MyTimeLogger 已经在后台运行中了，请检查系统托盘或任务栏。")
+        sys.exit(0)
+    
     if keyboard is None:
-        error_app = QApplication(sys.argv)
         show_pynput_error()
     
-    app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
     if not os.path.exists(resource_path(os.path.join('document', 'icon.ico'))):
