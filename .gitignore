@@ -3,3 +3,6 @@ dist
 .vscode
 config.json
 study_log.csv
+study_log.db
+statistics.html
+/log
