@@ -60,7 +60,7 @@ MyTimeLogger/
 ├── my_time_logger.py        # 主程序逻辑 (PyQt6 + Pygame) v0.98
 ├── my_time_logger.spec      # PyInstaller 打包配置文件
 ├── study_music/             # 音频资源目录 (包含各种提醒音效)
-├── document/                # 文档与资源 (包含图标 icon.ico)
+├── document/                # 文档与资源
 ├── statistics.html          # 动态生成的卡片式统计报表
 ├── study_log.db             # SQLite 数据库文件 (存储所有专注记录)
 ├── requirements.txt         # 项目依赖清单
