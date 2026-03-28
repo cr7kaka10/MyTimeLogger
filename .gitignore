@@ -1,8 +1,18 @@
-﻿./build
-./dist
-.vscode
-./config.json
-./study_log.csv
-./study_log.db
-./statistics.html
+﻿# 编译/打包输出
+build/
+dist/
 
+# 编辑器配置
+.vscode/
+
+# 本地配置
+config.json
+
+# 数据文件
+study_log.csv
+study_log.db
+statistics.html
+
+# 只保留空 log 文件夹，忽略内部所有内容
+log/**
+!log/.gitkeep
