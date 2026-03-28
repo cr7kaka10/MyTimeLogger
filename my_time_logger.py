@@ -182,16 +182,19 @@ def load_or_create_config():
                     user_config[key] = value
                     updated = True
                 elif isinstance(value, dict) and isinstance(user_config.get(key), dict):
-                    # 只有当用户配置中完全缺失该子项时才补充，避免覆盖用户的现有字段
+                    # 对于 mysql_config 这种特殊的带注释模板，采取更保守的补充策略
+                    is_mysql = (key == "mysql_config")
                     for sub_k, sub_v in value.items():
-                        # 对于 mysql_config 这种特殊的带注释字段，如果用户已经有了非注释版本，不要再加默认注释版本
                         clean_sub_k = sub_k.lstrip("/")
                         user_has_keys = [k.lstrip("/") for k in user_config[key].keys()]
                         if clean_sub_k not in user_has_keys:
+                            # 如果是 mysql_config 且用户已有配置项，不再补充默认的带 // 的模板项
+                            if is_mysql and len(user_has_keys) > 0:
+                                continue
                             user_config[key][sub_k] = sub_v
                             updated = True
             if updated:
-                logging.info("配置文件已更新，添加了新字段。")
+                logging.info("配置文件已更新关键字段。")
                 save_config(user_config)
             return user_config
     except (json.JSONDecodeError, TypeError) as e:
@@ -1443,7 +1446,19 @@ class MyTimeLoggerGUI(QWidget):
         self.tray.activated.connect(self._on_tray_activated)
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+        # 只要开启了“总在最前”，任何托盘交互（单击、双击、右键上下文菜单）都必须确保界面可见且置顶
+        if self.is_always_on_top:
+            if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick, QSystemTrayIcon.ActivationReason.Context]:
+                # 智能检测标志位，只有在缺失时才设置，防止重复设置导致 Windows 窗口重绘闪烁
+                if not (self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
+                    self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+                self.show()
+                self.activateWindow()
+                self.raise_()
+                return
+
+        # 仅在非置顶模式下处理原始的切换逻辑
+        if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick]:
             if self.isVisible():
                 self.hide()
             else:
@@ -1559,12 +1574,21 @@ class MyTimeLoggerGUI(QWidget):
             except Exception:
                 final_config = self.config
                 
-            final_config['total_study_time'] = self.logic.total_study_time
-            final_config['hotkeys'] = self.config.get('hotkeys', {})
-            final_config['study_time_min'] = self.config.get('study_time_min')
-            final_config['study_time_max'] = self.config.get('study_time_max')
-            final_config['long_break_threshold'] = self.config.get('long_break_threshold')
-            save_config(final_config)
+            # 仅在关键配置确实发生变化时才同步回磁盘，防止覆盖用户手动修改非核心配置（如 mysql）
+            changed = False
+            for k, v in [
+                ('total_study_time', self.logic.total_study_time),
+                ('hotkeys', self.config.get('hotkeys', {})),
+                ('study_time_min', self.config.get('study_time_min')),
+                ('study_time_max', self.config.get('study_time_max')),
+                ('long_break_threshold', self.config.get('long_break_threshold'))
+            ]:
+                if final_config.get(k) != v:
+                    final_config[k] = v
+                    changed = True
+            
+            if changed:
+                save_config(final_config)
             
             self.logic.stop()
             self.hotkey_manager.stop()
