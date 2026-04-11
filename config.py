@@ -36,7 +36,8 @@ DEFAULT_CONFIG = {
     "hotkeys": {                       # 全局快捷键
         "start": "<alt>+z",
         "toggle_pause": "<alt>+c",
-        "reset_cycle": "<ctrl>+<alt>+r"
+        "reset_cycle": "<ctrl>+<alt>+r",
+        "toggle_checklist": "<ctrl>+x"
     },
     "db_type": "sqlite",               # 数据库类型: sqlite / mysql
     "mysql_config": {                  # MySQL 远程配置（// 前缀为注释状态，不启用）
@@ -45,6 +46,16 @@ DEFAULT_CONFIG = {
         "//password": "your_password",
         "//database": "mytimelogger",
         "//port": 3306
+    },
+    "ticktick_config": {               # TickTick 日清单同步配置
+        "enabled": False,
+        "host": "ticktick.com",
+        "client_id": "",
+        "client_secret": "",
+        "access_token": "",
+        "username": "",
+        "password": "",
+        "sync_interval": 300
     }
 }
 

@@ -57,7 +57,10 @@ class MyTimeLoggerGUI(QWidget):
         self.hotkey_manager.start_triggered.connect(self.logic.start_only)
         self.hotkey_manager.toggle_pause_triggered.connect(self.logic.toggle_pause)
         self.hotkey_manager.reset_cycle_triggered.connect(self.logic.reset_cycle)
+        self.hotkey_manager.toggle_checklist_triggered.connect(self.toggle_daily_checklist)
         QTimer.singleShot(1000, self.hotkey_manager.start)
+
+        self._checklist_window = None  # 懒加载日清单窗口
 
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
@@ -413,6 +416,8 @@ class MyTimeLoggerGUI(QWidget):
 
         open_log_action = QAction("📂 打开日志文件夹", self)
         open_log_action.triggered.connect(self.open_log_folder)
+        checklist_action = QAction("📋 日清单  (Ctrl+X)", self)
+        checklist_action.triggered.connect(self.toggle_daily_checklist)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
         quit_action = QAction("❌ 退 出", self)
@@ -427,6 +432,7 @@ class MyTimeLoggerGUI(QWidget):
         menu.addMenu(opacity_menu)
         menu.addMenu(reset_menu)
         menu.addAction(open_log_action)
+        menu.addAction(checklist_action)
         menu.addAction(stat_action)
         menu.addSeparator()
         menu.addAction(quit_action)
@@ -642,6 +648,9 @@ class MyTimeLoggerGUI(QWidget):
         """程序关闭时保存状态"""
         self.logic._clear_current_session()
         self.save_settings()
+        if self._checklist_window:
+            self._checklist_window.cleanup()
+            self._checklist_window.close()
         if not self._init_failed:
             try:
                 with open(resource_path('config.json'), 'r', encoding='utf-8') as f:
@@ -666,6 +675,21 @@ class MyTimeLoggerGUI(QWidget):
             self.tray.hide()
         event.accept()
         QApplication.quit()
+
+    # ======================== 日清单 ========================
+
+    def toggle_daily_checklist(self):
+        """切换日清单窗口显隐"""
+        if self._checklist_window is None:
+            from daily_checklist import DailyChecklistWindow
+            self._checklist_window = DailyChecklistWindow(
+                config=self.config,
+                logic=self.logic
+            )
+        if self._checklist_window.isVisible():
+            self._checklist_window.hide()
+        else:
+            self._checklist_window.show()
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
         """更新累计时间显示"""

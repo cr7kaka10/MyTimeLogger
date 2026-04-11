@@ -65,6 +65,7 @@ class MyTimeLoggerLogic(QObject):
         self.pending_pause_reason = "无"
         self.current_session_start_time = None
         self.current_session_duration = 0
+        self.current_focus_task = ""  # 当前专注关联的任务名
         self.reset_cycle()
 
     def _clear_large_session(self):
@@ -187,6 +188,17 @@ class MyTimeLoggerLogic(QObject):
             else:
                 self._run_study_cycle()
 
+    def start_with_context(self, task_name):
+        """启动专注并关联任务名。
+
+        如果已在专注中（studying），仅更新关联任务名，不重置周期。
+        如果未在专注中，等同于 start_only() + 设置任务名。
+        """
+        self.current_focus_task = task_name or ""
+        if self.current_state in ["stopped", "long_break_finished"]:
+            self.start_only()
+        logging.info(f"专注关联任务: {task_name}")
+
     def toggle_pause(self):
         """切换暂停/恢复状态"""
         if self.is_paused:
@@ -289,13 +301,17 @@ class MyTimeLoggerLogic(QObject):
         if self.large_session_start_time and self.large_session_net_duration > 0:
             end_time = datetime.now()
             pause_reasons_str = "; ".join(self.large_session_pause_reasons) if self.large_session_pause_reasons else "无"
+            # 如果有关联的专注任务，拼接为总结前缀
+            final_summary = summary if summary else "无总结"
+            if self.current_focus_task:
+                final_summary = f"【{self.current_focus_task}】{final_summary}"
             log_data = {
                 "start_time": self.large_session_start_time,
                 "end_time": end_time,
                 "net_duration_seconds": self.large_session_net_duration,
                 "pause_count": self.large_session_pause_count,
                 "pause_reasons": pause_reasons_str,
-                "session_summary": summary if summary else "无总结"
+                "session_summary": final_summary
             }
             self.local_logger.log_session(**log_data)
             self._sync_trigger.emit(log_data)

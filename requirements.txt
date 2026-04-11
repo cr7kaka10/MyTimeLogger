@@ -8,3 +8,6 @@ pygame-ce>=2.4.0
 
 # 用于实现全局快捷键
 pynput>=1.7.0
+
+# TickTick 日清单同步（可选）
+ticktick-sdk>=0.3.0
