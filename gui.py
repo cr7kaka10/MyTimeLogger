@@ -60,7 +60,13 @@ class MyTimeLoggerGUI(QWidget):
         self.hotkey_manager.toggle_checklist_triggered.connect(self.toggle_daily_checklist)
         QTimer.singleShot(1000, self.hotkey_manager.start)
 
-        self._checklist_window = None  # 懒加载日清单窗口
+        self._checklist_window = None  # 日清单窗口（首次访问时创建）
+
+        # 软件启动后延迟 3 秒，自动在后台同步今日清单（不打开窗口）
+        tt_cfg = self.config.get("ticktick_config", {})
+        if tt_cfg.get("enabled") and tt_cfg.get("access_token"):
+            QTimer.singleShot(3000, self._init_checklist_background_sync)
+
 
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
@@ -676,20 +682,28 @@ class MyTimeLoggerGUI(QWidget):
         event.accept()
         QApplication.quit()
 
-    # ======================== 日清单 ========================
-
-    def toggle_daily_checklist(self):
-        """切换日清单窗口显隐"""
+    def _ensure_checklist_window(self):
+        """确保日清单窗口已创建并返回"""
         if self._checklist_window is None:
             from daily_checklist import DailyChecklistWindow
             self._checklist_window = DailyChecklistWindow(
                 config=self.config,
                 logic=self.logic
             )
-        if self._checklist_window.isVisible():
-            self._checklist_window.hide()
+        return self._checklist_window
+
+    def _init_checklist_background_sync(self):
+        """启动时后台静默同步（不打开窗口）"""
+        win = self._ensure_checklist_window()
+        win.start_background_sync()
+
+    def toggle_daily_checklist(self):
+        """切换日清单窗口显隐"""
+        win = self._ensure_checklist_window()
+        if win.isVisible():
+            win.hide()
         else:
-            self._checklist_window.show()
+            win.show()
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
         """更新累计时间显示"""
