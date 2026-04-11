@@ -283,8 +283,8 @@ class DailyChecklistWindow(QWidget):
         self._build_ui()
         self._load_position()
 
-        # 自动刷新定时器
-        interval = self.config.get("ticktick_config", {}).get("sync_interval", 300)
+        # 自动刷新定时器（默认 30 秒轮询实现准实时同步）
+        interval = self.config.get("ticktick_config", {}).get("sync_interval", 30)
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.setInterval(interval * 1000)
         self.auto_refresh_timer.timeout.connect(self._do_refresh)
@@ -608,5 +608,6 @@ class DailyChecklistWindow(QWidget):
 
     def cleanup(self):
         self.auto_refresh_timer.stop()
+        self.sync_worker.cleanup()  # 释放持久连接 & event loop
         self.sync_thread.quit()
         self.sync_thread.wait(3000)
