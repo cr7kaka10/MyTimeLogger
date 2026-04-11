@@ -9,7 +9,9 @@ TickTick 同步模块 (ticktick_sync.py)
 import os
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
+
+CST = timezone(timedelta(hours=8))  # 中国标准时间
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
@@ -76,24 +78,52 @@ class TickTickSyncWorker(QObject):
             self.sync_error.emit(f"同步失败: {e}")
 
     async def _fetch_today_tasks(self):
-        """异步获取今日任务"""
+        """异步获取今日任务。
+
+        与 TickTick「今天」视图一致的规则：
+        - 未完成任务中：due_date（CST）<= 今天
+        - 已完成任务中：今天完成的
+        TickTick 存储时区为 UTC，is_all_day=True 时实际代表北京时间当天 00:00，
+        存为前一天 16:00 UTC，所以必须先转 CST 再比日期。
+        """
         async with TickTickClient.from_settings() as client:
             # 获取项目映射
             projects = await client.get_all_projects()
             self._project_map = {p.id: p.name for p in projects}
 
-            # 获取今日任务（未完成）
-            today_tasks = await client.get_today_tasks()
+            # 获取全部未完成任务
+            all_tasks = await client.get_all_tasks()
+            today_cst = datetime.now(CST).date()
+
+            # 过滤：未完成 + due_date（CST）<= 今天
+            uncompleted_today = []
+            for t in all_tasks:
+                if getattr(t, 'status', 0) in (2, 3):  # 2=completed, 3=abandoned
+                    continue
+                due = getattr(t, 'due_date', None)
+                if due is None:
+                    continue
+                # 转为 CST 日期
+                if hasattr(due, 'tzinfo') and due.tzinfo:
+                    due_cst_date = due.astimezone(CST).date()
+                else:
+                    due_cst_date = due.date()
+                if due_cst_date <= today_cst:
+                    uncompleted_today.append(t)
 
             # 获取今日已完成的任务
             completed_tasks = []
             try:
-                recent_completed = await client.get_completed_tasks(days=1, limit=100)
-                today_str = date.today().isoformat()
+                recent_completed = await client.get_completed_tasks(days=1, limit=200)
                 for t in recent_completed:
-                    # 筛选今天到期或今天完成的
                     due = getattr(t, 'due_date', None)
-                    if due and hasattr(due, 'date') and due.date().isoformat() == today_str:
+                    if not due:
+                        continue
+                    if hasattr(due, 'tzinfo') and due.tzinfo:
+                        due_cst_date = due.astimezone(CST).date()
+                    else:
+                        due_cst_date = due.date()
+                    if due_cst_date <= today_cst:
                         completed_tasks.append(t)
             except Exception as e:
                 logger.warning(f"获取已完成任务失败: {e}")
@@ -101,7 +131,7 @@ class TickTickSyncWorker(QObject):
             result = []
             seen_ids = set()
 
-            for task in today_tasks:
+            for task in uncompleted_today:
                 if task.id in seen_ids:
                     continue
                 seen_ids.add(task.id)
@@ -119,11 +149,17 @@ class TickTickSyncWorker(QObject):
         """将 Task 对象转为标准字典"""
         due_str = ""
         due_date = getattr(task, 'due_date', None)
-        if due_date:
-            if isinstance(due_date, datetime):
-                due_str = due_date.strftime("%H:%M") if due_date.hour or due_date.minute else "全天"
-            elif isinstance(due_date, str):
-                due_str = due_date
+        is_all_day = getattr(task, 'is_all_day', True)
+        if due_date and isinstance(due_date, datetime):
+            # 转为 CST 再判断是否是全天任务
+            due_cst = due_date.astimezone(CST) if due_date.tzinfo else due_date
+            if is_all_day:
+                due_str = "全天"
+            else:
+                # 非全天才显示时间
+                due_str = due_cst.strftime("%H:%M")
+        elif isinstance(due_date, str):
+            due_str = due_date
 
         return {
             "id": task.id,
