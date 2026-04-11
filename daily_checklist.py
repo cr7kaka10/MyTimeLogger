@@ -35,6 +35,9 @@ FOCUS_COLOR = "#81A1C1"
 FOCUS_BG = "rgba(129,161,193,0.15)"
 FOCUS_BORDER = "rgba(129,161,193,0.5)"
 
+SAPPHIRE_BLUE = "#0F52BA"
+SAPPHIRE_HOVER = "#1A68D5"
+
 
 class TaskItemWidget(QFrame):
     """单个任务项 Widget（只处理未完成状态）"""
@@ -62,7 +65,7 @@ class TaskItemWidget(QFrame):
 
         self.checkbox = QCheckBox()
         self.checkbox.setChecked(False)
-        self.checkbox.setFixedSize(18, 18)
+        self.checkbox.setFixedSize(24, 24)
         self.checkbox.setStyleSheet(self._checkbox_style())
         self.checkbox.stateChanged.connect(self._on_check_changed)
 
@@ -135,17 +138,23 @@ class TaskItemWidget(QFrame):
         """
 
     def _checkbox_style(self):
-        return """
-            QCheckBox::indicator {
-                width: 16px; height: 16px;
+        return f"""
+            QCheckBox {{
+                spacing: 0px;
+            }}
+            QCheckBox::indicator {{
+                width: 18px; height: 18px;
                 border-radius: 4px;
                 border: 2px solid #88C0D0;
                 background: transparent;
-            }
-            QCheckBox::indicator:checked {
-                background: #88C0D0;
-                border-color: #88C0D0;
-            }
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {SAPPHIRE_BLUE};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {SAPPHIRE_BLUE};
+                border-color: {SAPPHIRE_BLUE};
+            }}
         """
 
     def _update_focus_btn(self):
@@ -153,18 +162,18 @@ class TaskItemWidget(QFrame):
             self.focus_btn.setEnabled(False)
             self.focus_btn.setText("🎯 专注中")
             self.focus_btn.setStyleSheet(
-                f"QPushButton {{ padding: 3px 10px; border-radius: 6px; "
-                f"border: 1px solid {FOCUS_COLOR}; background: {FOCUS_COLOR}; "
-                f"color: #2E3440; font-size: 11px; font-weight: bold; }}"
+                f"QPushButton {{ padding: 3px 12px; border-radius: 6px; "
+                f"border: 1px solid #D08770; background: rgba(208,135,112,0.8); "
+                f"color: #ECEFF4; font-size: 11px; font-weight: bold; }}"
             )
         else:
             self.focus_btn.setEnabled(True)
             self.focus_btn.setText("▶ 专注")
             self.focus_btn.setStyleSheet(
-                f"QPushButton {{ padding: 3px 10px; border-radius: 6px; "
-                f"border: 1px solid {FOCUS_COLOR}; background: {FOCUS_BG}; "
-                f"color: {FOCUS_COLOR}; font-size: 11px; }}"
-                f"QPushButton:hover {{ background: rgba(129,161,193,0.35); }}"
+                f"QPushButton {{ padding: 3px 12px; border-radius: 6px; "
+                f"border: none; background: {SAPPHIRE_BLUE}; "
+                f"color: white; font-size: 11px; font-weight: bold; }}"
+                f"QPushButton:hover {{ background: {SAPPHIRE_HOVER}; }}"
             )
 
     def set_focusing(self, focusing: bool):
