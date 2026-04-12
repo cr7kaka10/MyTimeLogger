@@ -91,7 +91,7 @@ class MyTimeLoggerLogic(QObject):
         self._clear_current_session()
         self._clear_large_session()
         self.current_cycle_study_time = 0
-        self.state_changed.emit("沉浸式学习\n右键单击开始", self.current_state)
+        self.state_changed.emit("沉浸式学习", self.current_state)
         self.time_updated.emit(self.total_study_time)
 
     def reset_all(self):

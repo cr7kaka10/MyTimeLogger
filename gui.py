@@ -96,6 +96,7 @@ class MyTimeLoggerGUI(QWidget):
         self.total_time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.total_time_label.setObjectName("total_time_label")
 
+        self._build_start_button()
         self.rebuild_layout()
 
         main_layout = QVBoxLayout(self)
@@ -194,7 +195,7 @@ class MyTimeLoggerGUI(QWidget):
             old_layout = self.background_widget.layout()
             while old_layout.count():
                 item = old_layout.takeAt(0)
-                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.mini_toggle_btn]:
+                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.start_btn if hasattr(self, 'start_btn') else None, self.mini_toggle_btn]:
                     item.widget().deleteLater()
             from PyQt6 import sip
             sip.delete(old_layout)
@@ -205,9 +206,11 @@ class MyTimeLoggerGUI(QWidget):
             self.status_label.setWordWrap(False)
             new_layout = QHBoxLayout(self.background_widget)
             new_layout.setContentsMargins(10, 0, 10, 0)
-            new_layout.setSpacing(10)
+            new_layout.setSpacing(8)
             new_layout.addWidget(self.mini_toggle_btn)
             new_layout.addWidget(self.status_label)
+            if hasattr(self, 'start_btn'):
+                new_layout.addWidget(self.start_btn)
             new_layout.addWidget(self.total_time_label)
             self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'expand.svg'))))
             self.mini_toggle_btn.setIconSize(QSize(16, 16))
@@ -223,6 +226,8 @@ class MyTimeLoggerGUI(QWidget):
             top_row.addWidget(self.mini_toggle_btn)
             new_layout.addLayout(top_row)
             new_layout.addWidget(self.status_label, 0, Qt.AlignmentFlag.AlignCenter)
+            if hasattr(self, 'start_btn'):
+                new_layout.addWidget(self.start_btn, 0, Qt.AlignmentFlag.AlignCenter)
             new_layout.addWidget(self.total_time_label, 0, Qt.AlignmentFlag.AlignCenter)
             new_layout.addStretch()
             self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'shrink.svg'))))
@@ -454,6 +459,15 @@ class MyTimeLoggerGUI(QWidget):
             #total_time_label {{ font-size: {total_time_font}px; font-weight: bold; color: #00CED1; padding-top: 2px; letter-spacing: 1px; }}
         """)
 
+    def _build_start_button(self):
+        """创建播放/暂停切换按钮"""
+        self.start_btn = QPushButton(self.background_widget)
+        self.start_btn.setObjectName("start_btn")
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.setFixedSize(24, 24)
+        self.start_btn.clicked.connect(self._on_play_pause_clicked)
+        self._set_play_btn_state("play")
+
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
         self.end_break_btn = QPushButton("⏹ 结束休息", self.background_widget)
@@ -471,17 +485,72 @@ class MyTimeLoggerGUI(QWidget):
         self.end_break_btn.hide()
         self.rebuild_layout()
 
-    def _update_end_break_btn_visibility(self, state_name):
-        """根据状态显隐结束休息按钮"""
-        if state_name == "long_breaking":
-            self.end_break_btn.show()
+    def _set_play_btn_state(self, mode):
+        """设置播放/暂停按钮的外观。mode: 'play' | 'pause'"""
+        self._play_btn_mode = mode
+        if mode == "play":
+            self.start_btn.setText("▶")
+            self.start_btn.setStyleSheet("""
+                QPushButton#start_btn {
+                    background-color: transparent; 
+                    color: #88C0D0;
+                    border: none; 
+                    font-size: 18px;
+                }
+                QPushButton#start_btn:hover { color: #8FBCBB; }
+            """)
         else:
+            self.start_btn.setText("⏸")
+            self.start_btn.setStyleSheet("""
+                QPushButton#start_btn {
+                    background-color: transparent; 
+                    color: #EBCB8B;
+                    border: none; 
+                    font-size: 16px;
+                }
+                QPushButton#start_btn:hover { color: #D08770; }
+            """)
+
+    def _on_play_pause_clicked(self):
+        """播放/暂停按钮点击：根据当前状态路由"""
+        state = self.logic.current_state
+        if state in ["stopped", "long_break_finished"]:
+            self.logic.start_only()
+        elif self.logic.is_paused:
+            self.logic.toggle_pause()
+        elif state in ["studying", "short_breaking", "long_breaking"]:
+            self.logic.toggle_pause()
+
+    def _update_btn_visibility(self, state_name):
+        """根据状态控制播放/暂停 + 结束休息按钮"""
+        if state_name in ["stopped", "long_break_finished"]:
+            self._set_play_btn_state("play")
+            self.start_btn.show()
             self.end_break_btn.hide()
+        elif state_name == "long_breaking":
+            self._set_play_btn_state("pause")
+            self.start_btn.show()
+            self.end_break_btn.show()
+        elif state_name == "studying":
+            self._set_play_btn_state("pause")
+            self.start_btn.show()
+            self.end_break_btn.hide()
+        elif state_name == "short_breaking":
+            self._set_play_btn_state("pause")
+            self.start_btn.show()
+            self.end_break_btn.hide()
+        else:
+            self.start_btn.hide()
+            self.end_break_btn.hide()
+        # 暂停态特殊处理
+        if self.logic.is_paused:
+            self._set_play_btn_state("play")
+            self.start_btn.show()
 
     def update_status(self, status_text, state_name):
         """更新状态显示文本"""
         self.current_state_text = status_text
-        self._update_end_break_btn_visibility(state_name)
+        self._update_btn_visibility(state_name)
         if state_name not in ["stopped", "long_break_finished"]:
             self.countdown_timer.start()
             self.update_countdown_display()
@@ -777,7 +846,7 @@ class MyTimeLoggerGUI(QWidget):
     def _on_stats_ready(self, rows, open_browser):
         """后台数据准备就绪后的渲染回调"""
         if self.logic.current_state == "stopped":
-            self.status_label.setText("沉浸式学习\n右键单击开始")
+            self.status_label.setText("沉浸式学习")
         elif self.logic.is_paused:
             self.status_label.setText("⏸️ 已暂停")
 
