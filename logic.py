@@ -66,6 +66,7 @@ class MyTimeLoggerLogic(QObject):
         self.current_session_start_time = None
         self.current_session_duration = 0
         self.current_focus_task = ""  # 当前专注关联的任务名
+        self.current_category_id = None  # 柳比歇夫分类 ID
         self.reset_cycle()
 
     def _clear_large_session(self):
@@ -76,6 +77,7 @@ class MyTimeLoggerLogic(QObject):
         self.large_session_net_duration = 0
         self.current_pause_start_time = None
         self.pending_pause_reason = "无"
+        self.current_category_id = None
 
     def _clear_current_session(self):
         """清空当前微轮次的临时记录"""
@@ -188,16 +190,17 @@ class MyTimeLoggerLogic(QObject):
             else:
                 self._run_study_cycle()
 
-    def start_with_context(self, task_name):
-        """启动专注并关联任务名。
+    def start_with_context(self, task_name, category_id=None):
+        """启动专注并关联任务名和分类。
 
-        如果已在专注中（studying），仅更新关联任务名，不重置周期。
-        如果未在专注中，等同于 start_only() + 设置任务名。
+        如果已在专注中（studying），仅更新关联任务名和分类，不重置周期。
+        如果未在专注中，等同于 start_only() + 设置任务名和分类。
         """
         self.current_focus_task = task_name or ""
+        self.current_category_id = category_id
         if self.current_state in ["stopped", "long_break_finished"]:
             self.start_only()
-        logging.info(f"专注关联任务: {task_name}")
+        logging.info(f"专注关联任务: {task_name}, 分类: {category_id}")
 
     def toggle_pause(self):
         """切换暂停/恢复状态"""
@@ -311,7 +314,8 @@ class MyTimeLoggerLogic(QObject):
                 "net_duration_seconds": self.large_session_net_duration,
                 "pause_count": self.large_session_pause_count,
                 "pause_reasons": pause_reasons_str,
-                "session_summary": final_summary
+                "session_summary": final_summary,
+                "category_id": self.current_category_id
             }
             self.local_logger.log_session(**log_data)
             self._sync_trigger.emit(log_data)

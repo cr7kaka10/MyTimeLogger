@@ -108,7 +108,8 @@ class StudyLogger:
                         day_of_week VARCHAR(20) COMMENT '星期',
                         pause_count INT DEFAULT 0 COMMENT '暂停次数',
                         pause_reasons TEXT COMMENT '暂停原因明细',
-                        session_summary TEXT COMMENT '专注总结内容'
+                        session_summary TEXT COMMENT '专注总结内容',
+                        category_id VARCHAR(36) DEFAULT NULL COMMENT '所属分类'
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='专注学习记录表';
                 ''')
             else:
@@ -122,13 +123,34 @@ class StudyLogger:
                         day_of_week TEXT,
                         pause_count INTEGER DEFAULT 0,
                         pause_reasons TEXT,
-                        session_summary TEXT
+                        session_summary TEXT,
+                        category_id TEXT DEFAULT NULL
                     )
                 ''')
             conn.commit()
             conn.close()
+            self._migrate_add_category_id()
         except Exception as e:
             print(f"数据库初始化失败: {e}")
+
+    def _migrate_add_category_id(self):
+        """如果表已存在且缺失，补充 category_id 字段"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            if self.db_type == "mysql":
+                cursor.execute("SHOW COLUMNS FROM study_sessions LIKE 'category_id'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE study_sessions ADD COLUMN category_id VARCHAR(36) DEFAULT NULL COMMENT '所属分类'")
+            else:
+                cursor.execute("PRAGMA table_info(study_sessions)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if "category_id" not in columns:
+                    cursor.execute("ALTER TABLE study_sessions ADD COLUMN category_id TEXT DEFAULT NULL")
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logging.error(f"字段迁移 category_id 失败: {e}")
 
     def _migrate_from_json(self):
         """如果存在旧的 JSON 日志文件，则迁移数据到 SQLite"""
@@ -162,7 +184,8 @@ class StudyLogger:
 
     def log_session(self, start_time: datetime, end_time: datetime,
                     net_duration_seconds: int, pause_count: int = 0,
-                    pause_reasons: str = "", session_summary: str = ""):
+                    pause_reasons: str = "", session_summary: str = "",
+                    category_id: str = None):
         """
         记录一个完整的学习会话到数据库。
 
@@ -173,6 +196,7 @@ class StudyLogger:
             pause_count: 暂停次数
             pause_reasons: 暂停原因明细（分号分隔）
             session_summary: 专注总结内容
+            category_id: 柳比歇夫分类 ID
         """
         if not all([start_time, end_time, net_duration_seconds > 0]):
             return
@@ -193,14 +217,14 @@ class StudyLogger:
 
             sql = f'''
                 INSERT INTO study_sessions 
-                (start_time, end_time, net_duration_minutes, date, day_of_week, pause_count, pause_reasons, session_summary)
-                VALUES ({", ".join([placeholder]*8)})
+                (start_time, end_time, net_duration_minutes, date, day_of_week, pause_count, pause_reasons, session_summary, category_id)
+                VALUES ({", ".join([placeholder]*9)})
             '''
 
             cursor.execute(sql, (
                 start_fmt, end_fmt, net_duration_minutes,
                 date_str, day_of_week, pause_count,
-                pause_reasons, session_summary
+                pause_reasons, session_summary, category_id
             ))
             conn.commit()
             conn.close()
@@ -219,7 +243,7 @@ class StudyLogger:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT start_time, end_time, net_duration_minutes, date, day_of_week, 
-                       pause_count, pause_reasons, session_summary 
+                       pause_count, pause_reasons, session_summary, category_id 
                 FROM study_sessions
                 ORDER BY start_time ASC
             ''')

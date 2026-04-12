@@ -35,7 +35,8 @@ DEFAULT_CONFIG = {
     "reset_password": "111",           # 清空记录鉴权密码
     "hotkeys": {                       # 全局快捷键
         "toggle_pause": "<alt>+c",
-        "toggle_checklist": "<alt>+x"
+        "toggle_checklist": "<alt>+x",
+        "toggle_activity_panel": "<alt>+z"
     },
     "db_type": "sqlite",               # 数据库类型: sqlite / mysql
     "mysql_config": {                  # MySQL 远程配置（// 前缀为注释状态，不启用）

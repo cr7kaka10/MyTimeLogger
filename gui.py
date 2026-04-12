@@ -26,6 +26,8 @@ from config import save_config
 from logic import MyTimeLoggerLogic
 from hotkeys import HotkeyManager
 from dialogs import MarkdownInputDialog
+from category_manager import CategoryManager
+from activity_panel import ActivityPanel
 
 
 class MyTimeLoggerGUI(QWidget):
@@ -58,9 +60,12 @@ class MyTimeLoggerGUI(QWidget):
         self.hotkey_manager.toggle_pause_triggered.connect(self.logic.toggle_pause)
         self.hotkey_manager.reset_cycle_triggered.connect(self.logic.reset_cycle)
         self.hotkey_manager.toggle_checklist_triggered.connect(self.toggle_daily_checklist)
+        self.hotkey_manager.toggle_activity_panel_triggered.connect(self.toggle_activity_panel)
         QTimer.singleShot(1000, self.hotkey_manager.start)
 
         self._checklist_window = None  # 日清单窗口（首次访问时创建）
+        self._activity_panel_window = None  # 活动面板窗口
+        self.category_manager = CategoryManager()
 
         # 软件启动后延迟 3 秒，自动在后台同步今日清单（不打开窗口）
         tt_cfg = self.config.get("ticktick_config", {})
@@ -426,6 +431,8 @@ class MyTimeLoggerGUI(QWidget):
         open_log_action.triggered.connect(self.open_log_folder)
         checklist_action = QAction("📋 日清单  (Alt+X)", self)
         checklist_action.triggered.connect(self.toggle_daily_checklist)
+        activity_panel_action = QAction("📊 活动面板  (Alt+Z)", self)
+        activity_panel_action.triggered.connect(self.toggle_activity_panel)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
         quit_action = QAction("❌ 退 出", self)
@@ -440,6 +447,7 @@ class MyTimeLoggerGUI(QWidget):
         menu.addMenu(opacity_menu)
         menu.addMenu(reset_menu)
         menu.addAction(open_log_action)
+        menu.addAction(activity_panel_action)
         menu.addAction(checklist_action)
         menu.addAction(stat_action)
         menu.addSeparator()
@@ -766,6 +774,23 @@ class MyTimeLoggerGUI(QWidget):
     def toggle_daily_checklist(self):
         """切换日清单窗口显隐"""
         win = self._ensure_checklist_window()
+        if win.isVisible():
+            win.hide()
+        else:
+            win.show()
+
+    def _ensure_activity_panel_window(self):
+        """确保活动面板窗口已创建并返回"""
+        if self._activity_panel_window is None:
+            self._activity_panel_window = ActivityPanel(
+                logic=self.logic,
+                category_manager=self.category_manager
+            )
+        return self._activity_panel_window
+
+    def toggle_activity_panel(self):
+        """切换活动面板窗口显隐"""
+        win = self._ensure_activity_panel_window()
         if win.isVisible():
             win.hide()
         else:

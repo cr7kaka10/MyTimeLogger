@@ -35,6 +35,7 @@ class HotkeyManager(QObject):
     toggle_pause_triggered = pyqtSignal()
     reset_cycle_triggered = pyqtSignal()
     toggle_checklist_triggered = pyqtSignal()
+    toggle_activity_panel_triggered = pyqtSignal()
 
     def __init__(self, hotkey_config, parent=None):
         super().__init__(parent)
@@ -50,6 +51,7 @@ class HotkeyManager(QObject):
             'toggle_pause': self.toggle_pause_triggered.emit,
             'reset_cycle': self.reset_cycle_triggered.emit,
             'toggle_checklist': self.toggle_checklist_triggered.emit,
+            'toggle_activity_panel': self.toggle_activity_panel_triggered.emit,
         }
 
     def start(self):
