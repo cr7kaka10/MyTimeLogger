@@ -358,11 +358,8 @@ class MyTimeLoggerGUI(QWidget):
         config_menu = QMenu("⚙️ 设置", self)
 
         hotkey_menu = QMenu("快捷键设置", self)
-        set_start_action = QAction(f"设置开始键 (当前: {self.config.get('hotkeys', {}).get('start', '<alt>+z')})", self)
-        set_start_action.triggered.connect(lambda: self.configure_hotkey('start', '开始键'))
         set_pause_action = QAction(f"设置暂停/恢复键 (当前: {self.config.get('hotkeys', {}).get('toggle_pause', '<alt>+c')})", self)
         set_pause_action.triggered.connect(lambda: self.configure_hotkey('toggle_pause', '暂停/恢复键'))
-        hotkey_menu.addAction(set_start_action)
         hotkey_menu.addAction(set_pause_action)
 
         interval_menu = QMenu("随机休息间隔", self)
@@ -422,7 +419,7 @@ class MyTimeLoggerGUI(QWidget):
 
         open_log_action = QAction("📂 打开日志文件夹", self)
         open_log_action.triggered.connect(self.open_log_folder)
-        checklist_action = QAction("📋 日清单  (Ctrl+X)", self)
+        checklist_action = QAction("📋 日清单  (Alt+X)", self)
         checklist_action.triggered.connect(self.toggle_daily_checklist)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))

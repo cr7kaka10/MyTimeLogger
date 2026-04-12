@@ -325,7 +325,7 @@ class DailyChecklistWindow(QWidget):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 10, 12, 6)
 
-        title = QLabel("📋 <b>今日清单</b> <span style='color:#4C566A;font-size:11px;'>(Ctrl+X)</span>")
+        title = QLabel("📋 <b>今日清单</b> <span style='color:#4C566A;font-size:11px;'>(Alt+X)</span>")
         title.setStyleSheet("QLabel { color: #ECEFF4; font-size: 16px; }")
 
         self.refresh_btn = QPushButton("🔄")

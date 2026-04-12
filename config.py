@@ -34,10 +34,9 @@ DEFAULT_CONFIG = {
     "total_study_time": 0,             # 持久化的累计学习时长（秒）
     "reset_password": "111",           # 清空记录鉴权密码
     "hotkeys": {                       # 全局快捷键
-        "start": "<alt>+z",
         "toggle_pause": "<alt>+c",
         "reset_cycle": "<ctrl>+<alt>+r",
-        "toggle_checklist": "<ctrl>+x"
+        "toggle_checklist": "<alt>+x"
     },
     "db_type": "sqlite",               # 数据库类型: sqlite / mysql
     "mysql_config": {                  # MySQL 远程配置（// 前缀为注释状态，不启用）
