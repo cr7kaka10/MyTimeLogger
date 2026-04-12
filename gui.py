@@ -431,7 +431,7 @@ class MyTimeLoggerGUI(QWidget):
         open_log_action.triggered.connect(self.open_log_folder)
         checklist_action = QAction("📋 日清单  (Alt+X)", self)
         checklist_action.triggered.connect(self.toggle_daily_checklist)
-        activity_panel_action = QAction("📊 活动面板  (Alt+Z)", self)
+        activity_panel_action = QAction("📊 柳比歇夫时间管理  (Alt+Z)", self)
         activity_panel_action.triggered.connect(self.toggle_activity_panel)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
@@ -489,9 +489,16 @@ class MyTimeLoggerGUI(QWidget):
             }
             QPushButton#end_break_btn:hover { background-color: #D08770; }
         """)
-        self.end_break_btn.clicked.connect(self.logic.end_break_now)
+        self.end_break_btn.clicked.connect(self._on_end_break_clicked)
         self.end_break_btn.hide()
         self.rebuild_layout()
+
+    def _on_end_break_clicked(self):
+        """点击结束按钮（根据状态区分为结束休息或结束正计时）"""
+        if self.logic.current_state == "countup_studying":
+            self.logic.end_countup_now()
+        else:
+            self.logic.end_break_now()
 
     def _set_play_btn_state(self, mode):
         """设置播放/暂停按钮的外观。mode: 'play' | 'pause'"""
@@ -526,7 +533,7 @@ class MyTimeLoggerGUI(QWidget):
             self.logic.start_only()
         elif self.logic.is_paused:
             self.logic.toggle_pause()
-        elif state in ["studying", "short_breaking", "long_breaking"]:
+        elif state in ["studying", "countup_studying", "short_breaking", "long_breaking"]:
             self.logic.toggle_pause()
 
     def _update_btn_visibility(self, state_name):
@@ -535,9 +542,15 @@ class MyTimeLoggerGUI(QWidget):
             self._set_play_btn_state("play")
             self.start_btn.show()
             self.end_break_btn.hide()
+        elif state_name == "countup_studying":
+            self._set_play_btn_state("pause")
+            self.start_btn.show()
+            self.end_break_btn.setText("■ 结束")
+            self.end_break_btn.show()
         elif state_name == "long_breaking":
             self._set_play_btn_state("pause")
             self.start_btn.show()
+            self.end_break_btn.setText("⏭ 结束休息")
             self.end_break_btn.show()
         elif state_name == "studying":
             self._set_play_btn_state("pause")
@@ -569,24 +582,30 @@ class MyTimeLoggerGUI(QWidget):
 
     def update_countdown_display(self):
         """更新倒计时显示"""
-        if self.logic.timer.isActive():
-            remaining_ms = self.logic.timer.remainingTime()
+        if self.logic.is_paused:
+            self.status_label.setText("⏸️ 已暂停")
+            return
+
+        if self.logic.timer.isActive() or self.logic.current_state == "countup_studying":
+            remaining_ms = self.logic.timer.remainingTime() if self.logic.timer.isActive() else 0
             mins, secs = divmod(remaining_ms // 1000, 60)
             state = self.logic.current_state
-            if state == "studying":
+            
+            if state == "countup_studying":
+                elapsed = (datetime.now() - self.logic.current_session_start_time).total_seconds()
+                m, s = divmod(int(elapsed), 60)
+                self.status_label.setText(f"⏳ 正计时...\n{int(m):02}:{int(s):02}")
+            elif state == "studying":
                 session_elapsed = self.logic.current_session_duration - (remaining_ms // 1000)
                 active_cycle_time = self.logic.current_cycle_study_time + session_elapsed
                 self.update_total_time(active_cycle_time, realtime=True)
-            if state == "long_breaking":
+                self.status_label.setText(f"📚 学习中...\n(第 {self.logic.cycle_count} 轮)")
+            elif state == "long_breaking":
                 self.status_label.setText(f"🧘 长休息\n{int(mins):02}:{int(secs):02}")
             elif state == "short_breaking":
                 self.status_label.setText(f"☕ 短暂休息中...\n{int(mins):02}:{int(secs):02}")
-            elif state == "studying":
-                self.status_label.setText(f"📚 学习中...\n(第 {self.logic.cycle_count} 轮)")
             else:
                 self.status_label.setText(f"{int(mins):02}:{int(secs):02}")
-        elif self.logic.is_paused:
-            self.status_label.setText("⏸️ 已暂停")
 
     # ======================== 系统托盘 ========================
 

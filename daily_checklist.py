@@ -551,12 +551,22 @@ class DailyChecklistWindow(QWidget):
         task_id = task_data["id"]
         task_name = task_data["title"]
 
+        if self.logic and self.parent() and hasattr(self.parent(), "category_manager"):
+            from category_dialog import CategorySelectDialog
+            from PyQt6.QtWidgets import QDialog
+            dialog = CategorySelectDialog(self.parent().category_manager, task_name, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                cat_id = dialog.selected_category_id
+                cat_group = dialog.selected_group_name
+                self.logic.start_with_context(task_name, cat_id, cat_group)
+            else:
+                return  # 取消选择，不计时
+        elif self.logic:
+            self.logic.start_with_context(task_name)
+
         self.current_focus_task_id = task_id
         for wid, w in self.task_widgets.items():
             w.set_focusing(wid == task_id)
-
-        if self.logic:
-            self.logic.start_with_context(task_name)
 
         short = task_name[:18] + "..." if len(task_name) > 18 else task_name
         self.status_bar.setText(f"🎯 专注: {short}")

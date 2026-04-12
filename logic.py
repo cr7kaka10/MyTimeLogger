@@ -190,17 +190,63 @@ class MyTimeLoggerLogic(QObject):
             else:
                 self._run_study_cycle()
 
-    def start_with_context(self, task_name, category_id=None):
+    def start_with_context(self, task_name, category_id=None, group_name=None):
         """启动专注并关联任务名和分类。
 
-        如果已在专注中（studying），仅更新关联任务名和分类，不重置周期。
-        如果未在专注中，等同于 start_only() + 设置任务名和分类。
+        如果已在专注中，仅更新关联任务名和分类。
+        如果未在专注中，则启动对应模式的计时。
         """
         self.current_focus_task = task_name or ""
         self.current_category_id = category_id
+        
+        is_countup = False
+        if group_name and group_name not in ["输入", "输出"]:
+            is_countup = True
+
         if self.current_state in ["stopped", "long_break_finished"]:
-            self.start_only()
-        logging.info(f"专注关联任务: {task_name}, 分类: {category_id}")
+            self.is_paused = False
+            if self.current_state == "long_break_finished":
+                self.reset_cycle()
+            if is_countup:
+                self._run_countup_cycle()
+            else:
+                if self.current_cycle_study_time >= self.config["long_break_threshold"]:
+                    self._run_long_break_cycle()
+                else:
+                    self._run_study_cycle()
+        logging.info(f"专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}")
+
+    def _run_countup_cycle(self):
+        """启动正计时轮次（适用于生活等其他分类）"""
+        self.current_state = "countup_studying"
+        
+        if self.large_session_start_time is None:
+            self.large_session_start_time = datetime.now()
+            self.large_session_pause_count = 0
+            self.large_session_pause_reasons = []
+            self.large_session_net_duration = 0
+            
+        self.current_session_start_time = datetime.now()
+        self.current_session_duration = 0
+        
+        self.state_changed.emit("⏳ 正计时中...", self.current_state)
+        logging.info("开始正计时。")
+        if self.current_cycle_study_time > 0 or self.large_session_net_duration > 0:
+            self._play_sound("start_study")
+        
+        # 启动极长的定时器避免它自动停止
+        self.timer.setProperty("duration", 24 * 3600)
+        self.timer.start(24 * 3600 * 1000)
+
+    def end_countup_now(self):
+        """手动结束正计时，并触发总结落库"""
+        if self.current_state == "countup_studying":
+            self.timer.stop()
+            session_elapsed = (datetime.now() - self.current_session_start_time).total_seconds()
+            self.large_session_net_duration += int(session_elapsed)
+            self._play_sound("victory")
+            # 通过已有的总结弹窗流程去完成最终落库
+            self.input_summary_requested.emit()
 
     def toggle_pause(self):
         """切换暂停/恢复状态"""
@@ -209,6 +255,8 @@ class MyTimeLoggerLogic(QObject):
         elif self.timer.isActive():
             self.pause()
             if self.current_state == "studying":
+                self.input_reason_requested.emit()
+            elif self.current_state == "countup_studying":
                 self.input_reason_requested.emit()
 
     def start_or_resume(self):
@@ -265,8 +313,21 @@ class MyTimeLoggerLogic(QObject):
     def _resume(self):
         """恢复暂停的计时"""
         if self.is_paused:
-            self.timer.start(self.time_remaining_on_pause)
             self.is_paused = False
+            if self.current_state == "countup_studying":
+                self.current_session_start_time = datetime.now()
+                self.timer.start(24 * 3600 * 1000)
+                original_state_text = "⏳ 正计时中..."
+            elif self.time_remaining_on_pause > 0:
+                self.timer.start(self.time_remaining_on_pause)
+                original_state_text = {
+                    "studying": f"📚 学习中...\n(第 {self.cycle_count} 轮)",
+                    "short_breaking": "☕ 短暂休息中...",
+                    "long_breaking": "🧘 长时间休息..."
+                }.get(self.current_state, "未知状态")
+            else:
+                original_state_text = "未知状态"
+
             if self.current_pause_start_time:
                 pause_sec = int((datetime.now() - self.current_pause_start_time).total_seconds())
                 self.large_session_pause_count += 1
@@ -276,11 +337,7 @@ class MyTimeLoggerLogic(QObject):
                 logging.info(f"计时器已恢复。暂停时长: {duration_str}, 原因: {self.pending_pause_reason}")
                 self.current_pause_start_time = None
                 self.pending_pause_reason = "无"
-            original_state_text = {
-                "studying": f"📚 学习中...\n(第 {self.cycle_count} 轮)",
-                "short_breaking": "☕ 短暂休息中...",
-                "long_breaking": "🧘 长时间休息..."
-            }.get(self.current_state, "未知状态")
+            
             self.state_changed.emit(original_state_text, self.current_state)
 
     def _finish_long_break(self):

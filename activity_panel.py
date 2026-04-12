@@ -13,6 +13,9 @@ from PyQt6.QtGui import QIcon, QFont, QColor
 from datetime import datetime
 import sqlite3
 
+# 将在需要时导入避免循环甚至提前导入
+from category_dialog import CategoryManagerDialog
+
 class CategoryButton(QPushButton):
     """单项分类按钮"""
     category_clicked = pyqtSignal(dict)
@@ -119,9 +122,17 @@ class ActivityPanel(QWidget):
 
         # 标题栏
         title_layout = QHBoxLayout()
-        title_label = QLabel("📊 活动面板")
+        title_label = QLabel("📊 柳比歇夫时间管理面板")
         title_label.setStyleSheet("color: #ECEFF4; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
         
+        manage_btn = QPushButton("⚙️ 管理")
+        manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        manage_btn.setStyleSheet("""
+            QPushButton { color: #88C0D0; background: transparent; font-size: 12px; border: none; }
+            QPushButton:hover { color: #EBCB8B; }
+        """)
+        manage_btn.clicked.connect(self._open_category_manager)
+
         close_btn = QPushButton("×")
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -133,6 +144,7 @@ class ActivityPanel(QWidget):
         
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(manage_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
 
@@ -151,6 +163,13 @@ class ActivityPanel(QWidget):
         self.summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.summary_label.setStyleSheet("color: #88C0D0; font-size: 11px; background: transparent; border: none;")
         bg_layout.addWidget(self.summary_label)
+
+    def _open_category_manager(self):
+        """打开分类管理弹窗"""
+        dialog = CategoryManagerDialog(self.category_manager, self)
+        if dialog.exec():
+            # 用户修改了分类，刷新网格
+            self.refresh_categories()
 
     def refresh_categories(self):
         """重新渲染分类网格"""
@@ -192,7 +211,8 @@ class ActivityPanel(QWidget):
     def _on_category_clicked(self, cat_data):
         cat_id = cat_data.get("id")
         cat_name = cat_data.get("name")
-        self.logic.start_with_context(cat_name, cat_id)
+        group_name = cat_data.get("group_name")
+        self.logic.start_with_context(cat_name, cat_id, group_name)
         self._update_button_states()
 
     def _on_logic_state_changed(self, text, state):
@@ -201,7 +221,7 @@ class ActivityPanel(QWidget):
     def _update_button_states(self):
         curr_id = self.logic.current_category_id
         for btn in self.buttons:
-            is_active = (curr_id == btn.category_data.get("id")) and self.logic.current_state in ["studying"]
+            is_active = (curr_id == btn.category_data.get("id")) and self.logic.current_state in ["studying", "countup_studying"]
             btn.set_active(is_active)
 
     def _on_timer_tick(self):
@@ -211,7 +231,7 @@ class ActivityPanel(QWidget):
             
         # 更新当前计时
         curr_id = self.logic.current_category_id
-        if self.logic.timer.isActive() and self.logic.current_state == "studying":
+        if self.logic.current_state in ["studying", "countup_studying"] and not self.logic.is_paused:
             cat_name = "未分类"
             if curr_id:
                 for btn in self.buttons:
@@ -220,10 +240,21 @@ class ActivityPanel(QWidget):
                         break
             
             # 计算已进行时间
-            remaining_ms = self.logic.timer.remainingTime()
-            elapsed_sec = self.logic.current_session_duration - (remaining_ms // 1000)
+            if self.logic.current_state == "studying":
+                remaining_ms = self.logic.timer.remainingTime()
+                elapsed_sec = self.logic.current_session_duration - (remaining_ms // 1000)
+                icon = "🔥"
+            else:
+                if self.logic.current_session_start_time:
+                    elapsed_sec = int((datetime.now() - self.logic.current_session_start_time).total_seconds())
+                else:
+                    elapsed_sec = 0
+                icon = "⏳"
+                
             mins, secs = divmod(elapsed_sec, 60)
-            self.status_label.setText(f"🔥 {cat_name} ⏱ {mins:02d}:{secs:02d}")
+            self.status_label.setText(f"{icon} {cat_name} ⏱ {mins:02d}:{secs:02d}")
+        elif self.logic.is_paused:
+            self.status_label.setText("⏸️ 已暂停")
         else:
             self.status_label.setText("当前: 闲置 ⏱ 00:00")
             
