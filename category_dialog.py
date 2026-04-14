@@ -10,7 +10,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, 
                              QPushButton, QLabel, QListWidget, QListWidgetItem,
                              QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle)
-from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect, QTimer
 from PyQt6.QtGui import QColor, QPalette, QCursor
 
 class GroupItemDelegate(QStyledItemDelegate):
@@ -223,8 +223,29 @@ class CategoryManagerDialog(QDialog):
                 if cat['group_name'] == group_name:
                     self.category_manager.update_category(cat['id'], cat['name'], cat.get('icon', ''), cat.get('color', ''), "未分组")
             self._load_categories()
-            self.group_combo.removeItem(self.group_combo.findText(group_name))
+            # 从下拉框中移除
+            idx = self.group_combo.findText(group_name)
+            if idx >= 0:
+                self.group_combo.removeItem(idx)
             self.group_combo.setCurrentText("未分组")
+
+    def eventFilter(self, obj, event):
+        # 拦截下拉框弹窗的列表点击事件以支持 X 号删除
+        if hasattr(self, 'group_combo') and obj == self.group_combo.view().viewport():
+            if event.type() == QEvent.Type.MouseButtonRelease:
+                pos = event.pos()
+                index = self.group_combo.view().indexAt(pos)
+                if index.isValid():
+                    rect = self.group_combo.view().visualRect(index)
+                    # 匹配委托里的热区：右侧 35px
+                    btn_rect = QRect(rect.right() - 35, rect.top(), 35, rect.height())
+                    if btn_rect.contains(pos):
+                        group_name = index.data()
+                        if group_name:
+                            # 异步调用删除，避免闪退或重入
+                            QTimer.singleShot(0, lambda: self._on_delete_group(group_name))
+                        return True
+        return super().eventFilter(obj, event)
 
 
 class CategorySelectDialog(QDialog):
