@@ -118,6 +118,7 @@ class IconSelectorDialog(QDialog):
             QToolTip { font-family: 'Microsoft YaHei'; }
         """)
         self.selected_icon = None
+        self._full_lib_loaded = False  # 懒加载标记
         
         main_layout = QVBoxLayout(self)
         
@@ -136,43 +137,60 @@ class IconSelectorDialog(QDialog):
                     QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
                     QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
                 """)
-                # 使用 *args 忽略 PyQt6 clicked 传递的参数数量问题，避免抛出 TypeError 导致进程崩溃
                 btn.clicked.connect(lambda *args, c=char: self._on_select(c))
                 grid_layout.addWidget(btn, i // 9, i % 9)
                 
             self.tabs.addTab(tab_widget, cat_name)
             
-        # ====== 扩增：完整字库滚动屏 ======
+        # ====== 扩增：完整字库滚动屏（懒加载） ======
         scroll_tab = QWidget()
         scroll_layout = QVBoxLayout(scroll_tab)
         scroll_layout.setContentsMargins(0, 0, 0, 0)
         
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        self._full_lib_scroll_area = QScrollArea()
+        self._full_lib_scroll_area.setWidgetResizable(True)
+        self._full_lib_scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         
-        content_widget = QWidget()
-        full_grid = QGridLayout(content_widget)
-        full_grid.setSpacing(6)
-        full_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        placeholder = QLabel("切换到此页面后将自动加载...")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet("color: #D8DEE9; font-size: 14px;")
+        self._full_lib_scroll_area.setWidget(placeholder)
         
-        # 批量加载数百个自带的矢量图标
-        for i, char_code in enumerate(range(0xf000, 0xf2b0)):
-            char = chr(char_code)
-            btn = QPushButton(char)
-            btn.setFixedSize(45, 45)
-            btn.setStyleSheet("""
-                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
-                QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
-            """)
-            btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-            full_grid.addWidget(btn, i // 9, i % 9)
-            
-        scroll_area.setWidget(content_widget)
-        scroll_layout.addWidget(scroll_area)
-        self.tabs.addTab(scroll_tab, "🗃️ 完整字库(688个)")
+        scroll_layout.addWidget(self._full_lib_scroll_area)
+        self._full_lib_tab_index = self.tabs.addTab(scroll_tab, "🗃️ 完整字库(688个)")
+        
+        # 切换 tab 时懒加载完整字库
+        self.tabs.currentChanged.connect(self._on_tab_changed)
             
         main_layout.addWidget(self.tabs)
+
+    def _on_select(self, char):
+        """选中图标后关闭弹窗"""
+        self.selected_icon = char
+        self.accept()
+
+    def _on_tab_changed(self, index):
+        """切换到完整字库 tab 时懒加载按钮"""
+        if index == self._full_lib_tab_index and not self._full_lib_loaded:
+            self._full_lib_loaded = True
+            content_widget = QWidget()
+            full_grid = QGridLayout(content_widget)
+            full_grid.setSpacing(6)
+            full_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            
+            for i, char_code in enumerate(range(0xf000, 0xf2b0)):
+                char = chr(char_code)
+                btn = QPushButton(char)
+                btn.setFixedSize(45, 45)
+                btn.setStyleSheet("""
+                    QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
+                    QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
+                """)
+                btn.clicked.connect(lambda *args, c=char: self._on_select(c))
+                full_grid.addWidget(btn, i // 9, i % 9)
+            
+            self._full_lib_scroll_area.setWidget(content_widget)
+
 
 class CategoryManagerDialog(QDialog):
     """分类管理 CRUD 弹窗"""
