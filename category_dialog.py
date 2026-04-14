@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle,
                              QTabWidget, QWidget, QScrollArea)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect, QTimer
-from PyQt6.QtGui import QColor, QPalette, QCursor
+from PyQt6.QtGui import QColor, QPalette, QCursor, QFont, QFontMetrics
 
 class GroupItemDelegate(QStyledItemDelegate):
     delete_clicked = pyqtSignal(str)
@@ -110,35 +110,46 @@ class IconSelectorDialog(QDialog):
         self.setWindowTitle("选择主题矢量图标 (aTimeLogger 风格)")
         self.setFixedSize(540, 480)
         self.setStyleSheet("""
-            QDialog { background-color: #2E3440; color: #D8DEE9; font-family: 'Microsoft YaHei'; }
-            QTabWidget::pane { border: 1px solid #4C566A; border-radius: 4px; margin-top: -1px; }
+            QDialog { background-color: #FFFFFF; color: #2E3440; font-family: 'Microsoft YaHei'; }
+            QTabWidget::pane { border: 1px solid #D8DEE9; border-radius: 4px; margin-top: -1px; background: #FFFFFF; }
             QTabBar { font-family: 'Microsoft YaHei'; }
-            QTabBar::tab { background: #3B4252; color: #D8DEE9; padding: 8px 12px; border: 1px solid #4C566A; border-top-left-radius: 4px; border-top-right-radius: 4px; }
-            QTabBar::tab:selected { background: #4C566A; color: #E5E9F0; font-weight: bold; border-bottom-color: #4C566A; }
-            QToolTip { font-family: 'Microsoft YaHei'; }
+            QTabBar::tab { background: #F0F2F5; color: #4C566A; padding: 8px 12px; border: 1px solid #D8DEE9; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+            QTabBar::tab:selected { background: #FFFFFF; color: #2E3440; font-weight: bold; border-bottom-color: #FFFFFF; }
+            QToolTip { font-family: 'Microsoft YaHei'; background: #FFFFFF; color: #2E3440; border: 1px solid #D8DEE9; }
         """)
         self.selected_icon = None
         self._full_lib_loaded = False  # 懒加载标记
+
+        # 构建 FA 字体检测器，用于过滤无效图标
+        self._fa_font = QFont('Font Awesome 6 Free')
+        self._fa_font.setWeight(QFont.Weight.Black)
+        self._fa_font.setPixelSize(20)
+        self._fa_fm = QFontMetrics(self._fa_font)
         
         main_layout = QVBoxLayout(self)
         
         self.tabs = QTabWidget()
+        icon_btn_style = """
+            QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px;} 
+            QPushButton:hover { background: #E0E8F0; border: 1px solid #5E81AC; }
+        """
         for cat_name, icon_list in FA_CATEGORIES.items():
             tab_widget = QWidget()
             grid_layout = QGridLayout(tab_widget)
             grid_layout.setSpacing(6)
             grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             
-            for i, (char, name) in enumerate(icon_list):
+            col_idx = 0
+            for char, name in icon_list:
+                if not self._fa_fm.inFont(char):
+                    continue
                 btn = QPushButton(char)
                 btn.setFixedSize(45, 45)
                 btn.setToolTip(name)
-                btn.setStyleSheet("""
-                    QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
-                    QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
-                """)
+                btn.setStyleSheet(icon_btn_style)
                 btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-                grid_layout.addWidget(btn, i // 9, i % 9)
+                grid_layout.addWidget(btn, col_idx // 9, col_idx % 9)
+                col_idx += 1
                 
             self.tabs.addTab(tab_widget, cat_name)
             
@@ -153,7 +164,7 @@ class IconSelectorDialog(QDialog):
         
         placeholder = QLabel("切换到此页面后将自动加载...")
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet("color: #D8DEE9; font-size: 14px;")
+        placeholder.setStyleSheet("color: #4C566A; font-size: 14px;")
         self._full_lib_scroll_area.setWidget(placeholder)
         
         scroll_layout.addWidget(self._full_lib_scroll_area)
@@ -170,7 +181,7 @@ class IconSelectorDialog(QDialog):
         self.accept()
 
     def _on_tab_changed(self, index):
-        """切换到完整字库 tab 时懒加载按钮"""
+        """切换到完整字库 tab 时懒加载按钮，并过滤无效图标"""
         if index == self._full_lib_tab_index and not self._full_lib_loaded:
             self._full_lib_loaded = True
             content_widget = QWidget()
@@ -178,18 +189,25 @@ class IconSelectorDialog(QDialog):
             full_grid.setSpacing(6)
             full_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             
-            for i, char_code in enumerate(range(0xf000, 0xf2b0)):
+            icon_btn_style = """
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px;} 
+                QPushButton:hover { background: #E0E8F0; border: 1px solid #5E81AC; }
+            """
+            col_idx = 0
+            for char_code in range(0xf000, 0xf900):
                 char = chr(char_code)
+                if not self._fa_fm.inFont(char):
+                    continue
                 btn = QPushButton(char)
                 btn.setFixedSize(45, 45)
-                btn.setStyleSheet("""
-                    QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
-                    QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
-                """)
+                btn.setStyleSheet(icon_btn_style)
                 btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-                full_grid.addWidget(btn, i // 9, i % 9)
+                full_grid.addWidget(btn, col_idx // 9, col_idx % 9)
+                col_idx += 1
             
             self._full_lib_scroll_area.setWidget(content_widget)
+            # 更新 tab 标题显示实际数量
+            self.tabs.setTabText(self._full_lib_tab_index, f"🗃️ 完整字库({col_idx}个)")
 
 
 class CategoryManagerDialog(QDialog):
@@ -201,12 +219,13 @@ class CategoryManagerDialog(QDialog):
         self.setWindowTitle("⚙️ 分类管理")
         self.setMinimumSize(500, 350)
         self.setStyleSheet("""
-            QDialog { background-color: #2E3440; color: #D8DEE9; font-family: 'Microsoft YaHei'; }
-            QLabel { color: #D8DEE9; font-family: 'Microsoft YaHei'; }
-            QListWidget { background-color: #3B4252; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
-            QLineEdit, QComboBox { background-color: #4C566A; color: #ECEFF4; border: 1px solid #434C5E; border-radius: 4px; padding: 4px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
-            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; }
-            QPushButton:hover { background-color: #5E81AC; }
+            QDialog { background-color: #FFFFFF; color: #2E3440; font-family: 'Microsoft YaHei'; }
+            QLabel { color: #2E3440; font-family: 'Microsoft YaHei'; }
+            QListWidget { background-color: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 5px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
+            QListWidget::item:selected { background-color: #E5E9F0; color: #5E81AC; border-left: 3px solid #5E81AC; }
+            QLineEdit, QComboBox { background-color: #FFFFFF; color: #2E3440; border: 1px solid #D8DEE9; border-radius: 4px; padding: 4px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
+            QPushButton { background-color: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 4px; padding: 6px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; }
+            QPushButton:hover { background-color: #E0E8F0; }
         """)
         self.current_category = None
         self._build_ui()
@@ -218,8 +237,11 @@ class CategoryManagerDialog(QDialog):
         # 左侧列表
         left_layout = QVBoxLayout()
         self.list_widget = QListWidget()
+        # 开启拖拽支持
+        self.list_widget.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.list_widget.model().rowsMoved.connect(self._on_list_reordered)
         self.list_widget.currentRowChanged.connect(self._on_list_selected)
-        left_layout.addWidget(QLabel("已启用分类:"))
+        left_layout.addWidget(QLabel("已启用分类 (支持拖拽排序):"))
         left_layout.addWidget(self.list_widget)
 
         # 右侧表单
@@ -231,7 +253,10 @@ class CategoryManagerDialog(QDialog):
         self.icon_input.setPlaceholderText("可输Emoji，或点右侧挑选=>")
         
         self.icon_btn = QPushButton("库")
-        self.icon_btn.setStyleSheet("QPushButton { background-color: #5E81AC; } QPushButton:hover { background-color: #81A1C1; }")
+        self.icon_btn.setStyleSheet("""
+            QPushButton { background-color: #5E81AC; color: white; border: none; } 
+            QPushButton:hover { background-color: #81A1C1; }
+        """)
         self.icon_btn.clicked.connect(self._open_icon_picker)
         
         icon_layout = QHBoxLayout()
@@ -265,7 +290,10 @@ class CategoryManagerDialog(QDialog):
         self.btn_save.clicked.connect(self._on_save)
         self.btn_delete.clicked.connect(self._on_delete)
 
-        self.btn_delete.setStyleSheet("QPushButton { background-color: #BF616A; } QPushButton:hover { background-color: #D08770; }")
+        self.btn_delete.setStyleSheet("""
+            QPushButton { background-color: #BF616A; color: white; border: none; } 
+            QPushButton:hover { background-color: #D08770; }
+        """)
 
         btn_layout.addWidget(self.btn_add)
         btn_layout.addWidget(self.btn_save)
@@ -365,6 +393,22 @@ class CategoryManagerDialog(QDialog):
             self._load_categories()
         else:
             QMessageBox.critical(self, "错误", "修改失败")
+
+    def _on_list_reordered(self, parent, start, end, destination, row):
+        """处理拖拽排序回写"""
+        order_list = []
+        for index in range(self.list_widget.count()):
+            item = self.list_widget.item(index)
+            cat_data = item.data(Qt.ItemDataRole.UserRole)
+            if cat_data:
+                order_list.append((cat_data['id'], index + 1))
+        
+        if order_list:
+            if self.category_manager.reorder_categories(order_list):
+                # 重新加载同步所有本地列表数据
+                self._load_categories()
+            else:
+                QMessageBox.warning(self, "错误", "排序保存失败！")
 
     def _on_delete(self):
         if not self.current_category:

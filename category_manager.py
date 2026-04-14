@@ -174,3 +174,17 @@ class CategoryManager:
         except Exception as e:
             logging.error(f"删除分类失败: {e}")
             return False
+
+    def reorder_categories(self, id_order_list):
+        """批量更新排序。id_order_list: [(cat_id, new_sort_order), ...]"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            for cat_id, order in id_order_list:
+                cursor.execute("UPDATE categories SET sort_order = ? WHERE id = ?", (order, cat_id))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"批量排序更新失败: {e}")
+            return False
