@@ -54,10 +54,13 @@ class CategoryButton(QPushButton):
 
     def update_style(self):
         color = self.category_data.get("color", "#5E81AC")
+        # 让文本颜色跟随设定的颜色来区分分组属性
+        self.name_label.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color}; background: transparent;")
+        
         if self.is_active_category:
             self.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: rgba(59, 66, 82, 0.9);
+                    background-color: rgba(0, 0, 0, 0.08);
                     border: 2px solid {color};
                     border-radius: 12px;
                 }}
@@ -65,12 +68,12 @@ class CategoryButton(QPushButton):
         else:
             self.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: rgba(59, 66, 82, 0.6);
-                    border: 1px solid rgba(76, 86, 106, 0.5);
+                    background-color: transparent;
+                    border: 1px solid {color};
                     border-radius: 12px;
                 }}
                 QPushButton:hover {{
-                    background-color: rgba(67, 76, 94, 0.8);
+                    background-color: rgba(0, 0, 0, 0.04);
                     border: 1px solid {color};
                 }}
             """)
@@ -110,8 +113,8 @@ class ActivityPanel(QWidget):
         self.bg_frame = QFrame(self)
         self.bg_frame.setStyleSheet("""
             QFrame {
-                background-color: rgba(46, 52, 64, 0.95);
-                border: 1px solid #4C566A;
+                background-color: rgba(255, 255, 255, 0.95);
+                border: 1px solid #D8DEE9;
                 border-radius: 10px;
             }
         """)
@@ -123,21 +126,21 @@ class ActivityPanel(QWidget):
         # 标题栏
         title_layout = QHBoxLayout()
         title_label = QLabel("📊 柳比歇夫时间管理面板")
-        title_label.setStyleSheet("color: #ECEFF4; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
+        title_label.setStyleSheet("color: #3B4252; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
         
         manage_btn = QPushButton("⚙️ 管理")
         manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         manage_btn.setStyleSheet("""
-            QPushButton { color: #88C0D0; background: transparent; font-size: 12px; border: none; }
-            QPushButton:hover { color: #EBCB8B; }
+            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; }
+            QPushButton:hover { color: #81A1C1; }
         """)
         manage_btn.clicked.connect(self._open_category_manager)
 
         refresh_btn = QPushButton("🔄 刷新")
         refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_btn.setStyleSheet("""
-            QPushButton { color: #88C0D0; background: transparent; font-size: 12px; border: none; }
-            QPushButton:hover { color: #A3BE8C; }
+            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; }
+            QPushButton:hover { color: #81A1C1; }
         """)
         refresh_btn.clicked.connect(self.refresh_categories)
 
@@ -145,7 +148,7 @@ class ActivityPanel(QWidget):
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet("""
-            QPushButton { color: #D8DEE9; background: transparent; font-size: 16px; border: none; font-weight: bold; }
+            QPushButton { color: #4C566A; background: transparent; font-size: 16px; border: none; font-weight: bold; }
             QPushButton:hover { color: #BF616A; }
         """)
         close_btn.clicked.connect(self.hide)
@@ -165,7 +168,7 @@ class ActivityPanel(QWidget):
         # 底部状态栏
         self.status_label = QLabel("当前: 无 ⏱ 00:00")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #A3BE8C; font-size: 13px; font-weight: bold; background: transparent; border: none; margin-top: 5px;")
+        self.status_label.setStyleSheet("color: #5E81AC; font-size: 13px; font-weight: bold; background: transparent; border: none; margin-top: 5px;")
         bg_layout.addWidget(self.status_label)
 
     def _open_category_manager(self):
@@ -195,34 +198,25 @@ class ActivityPanel(QWidget):
         self._clear_layout(self.grid_layout)
         
         self.buttons.clear()
-        grouped_cats = self.category_manager.get_grouped()
+        all_cats = self.category_manager.get_all_active()
+        if not all_cats:
+            return
+            
+        grid = QGridLayout()
+        grid.setSpacing(8)
         
-        for group_name, cats in grouped_cats.items():
-            if not cats:
-                continue
-                
-            # 分组标题
-            grp_label = QLabel(f"── {group_name} ──")
-            grp_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            grp_label.setStyleSheet("color: #4C566A; font-size: 11px; background: transparent; border: none;")
-            self.grid_layout.addWidget(grp_label)
+        # 强制设置5列拉伸策略
+        for j in range(5):
+            grid.setColumnStretch(j, 1)
+            grid.setColumnMinimumWidth(j, 68)
             
-            # 分组网格 (每行5个)
-            grid = QGridLayout()
-            grid.setSpacing(8)
+        for i, cat in enumerate(all_cats):
+            btn = CategoryButton(cat)
+            btn.category_clicked.connect(self._on_category_clicked)
+            grid.addWidget(btn, i // 5, i % 5)
+            self.buttons.append(btn)
             
-            # 由于子项可能不够5个，导致列不平均，强制设置5列拉伸策略
-            for j in range(5):
-                grid.setColumnStretch(j, 1)
-                grid.setColumnMinimumWidth(j, 68)
-                
-            for i, cat in enumerate(cats):
-                btn = CategoryButton(cat)
-                btn.category_clicked.connect(self._on_category_clicked)
-                grid.addWidget(btn, i // 5, i % 5)
-                self.buttons.append(btn)
-                
-            self.grid_layout.addLayout(grid)
+        self.grid_layout.addLayout(grid)
             
         self._update_button_states()
 
