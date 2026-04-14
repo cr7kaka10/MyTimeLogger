@@ -54,6 +54,11 @@ class CategoryButton(QPushButton):
 
     def update_style(self):
         color = self.category_data.get("color", "#5E81AC")
+        if color and not color.startswith('#') and len(color) in [3, 4, 6, 8]:
+            color = '#' + color
+        elif not color:
+            color = "#5E81AC"
+            
         # 让文本颜色跟随设定的颜色来区分分组属性
         self.name_label.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color}; background: transparent;")
         
