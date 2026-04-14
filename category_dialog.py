@@ -9,9 +9,33 @@
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, 
                              QPushButton, QLabel, QListWidget, QListWidgetItem,
-                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPalette
+                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate)
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect
+from PyQt6.QtGui import QColor, QPalette, QCursor
+
+class GroupItemDelegate(QStyledItemDelegate):
+    delete_clicked = pyqtSignal(str)
+    
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        rect = option.rect
+        btn_rect = QRect(rect.right() - 20, rect.top() + (rect.height() - 16) // 2, 16, 16)
+        painter.save()
+        painter.setPen(QColor("#BF616A"))
+        font = painter.font()
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "×")
+        painter.restore()
+        
+    def editorEvent(self, event, model, option, index):
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            rect = option.rect
+            btn_rect = QRect(rect.right() - 20, rect.top() + (rect.height() - 16) // 2, 16, 16)
+            if btn_rect.contains(event.pos()):
+                self.delete_clicked.emit(index.data())
+                return True
+        return super().editorEvent(event, model, option, index)
 
 class CategoryManagerDialog(QDialog):
     """分类管理 CRUD 弹窗"""
@@ -52,7 +76,11 @@ class CategoryManagerDialog(QDialog):
         self.icon_input.setPlaceholderText("如: 📖")
         
         self.group_combo = QComboBox()
-        self.group_combo.addItems(["输入", "输出", "生活"])
+        self.group_combo.setEditable(True)
+        self.group_delegate = GroupItemDelegate(self)
+        self.group_combo.setItemDelegate(self.group_delegate)
+        self.group_delegate.delete_clicked.connect(self._on_delete_group)
+        self.group_combo.view().viewport().installEventFilter(self)
         
         self.color_input = QLineEdit()
         self.color_input.setPlaceholderText("如: #5E81AC")
@@ -97,10 +125,25 @@ class CategoryManagerDialog(QDialog):
     def _load_categories(self):
         self.list_widget.clear()
         self.categories = self.category_manager.get_all_active()
+        
+        # 收集所有的 unique groups
+        group_set = set()
         for cat in self.categories:
             item = QListWidgetItem(f"{cat['icon']} {cat['name']} ({cat['group_name']})")
             item.setData(Qt.ItemDataRole.UserRole, cat)
             self.list_widget.addItem(item)
+            group_set.add(cat['group_name'])
+            
+        # 补充默认分组如果不存在
+        for default_grp in ["输入", "输出", "生活"]:
+            group_set.add(default_grp)
+            
+        current_text = self.group_combo.currentText()
+        self.group_combo.blockSignals(True)
+        self.group_combo.clear()
+        self.group_combo.addItems(sorted(list(group_set)))
+        self.group_combo.setCurrentText(current_text if current_text else "输入")
+        self.group_combo.blockSignals(False)
             
         self._clear_form()
 
@@ -166,6 +209,19 @@ class CategoryManagerDialog(QDialog):
                 self._load_categories()
             else:
                 QMessageBox.critical(self, "错误", "删除失败")
+
+    def _on_delete_group(self, group_name):
+        # 隐藏下拉框
+        self.group_combo.hidePopup()
+        reply = QMessageBox.question(self, "确认删除分组", f"删除分组 '{group_name}' 会把该组下所有相关分类移动至 '未分组'，确定吗？", 
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            for cat in self.categories:
+                if cat['group_name'] == group_name:
+                    self.category_manager.update_category(cat['id'], cat['name'], cat.get('icon', ''), cat.get('color', ''), "未分组")
+            self._load_categories()
+            self.group_combo.removeItem(self.group_combo.findText(group_name))
+            self.group_combo.setCurrentText("未分组")
 
 
 class CategorySelectDialog(QDialog):

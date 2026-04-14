@@ -159,11 +159,6 @@ class ActivityPanel(QWidget):
         self.status_label.setStyleSheet("color: #A3BE8C; font-size: 13px; font-weight: bold; background: transparent; border: none; margin-top: 5px;")
         bg_layout.addWidget(self.status_label)
 
-        self.summary_label = QLabel("今日: 输入 0h 输出 0h 生活 0h")
-        self.summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.summary_label.setStyleSheet("color: #88C0D0; font-size: 11px; background: transparent; border: none;")
-        bg_layout.addWidget(self.summary_label)
-
     def _open_category_manager(self):
         """打开分类管理弹窗"""
         dialog = CategoryManagerDialog(self.category_manager, self)
@@ -195,13 +190,13 @@ class ActivityPanel(QWidget):
             grp_label.setStyleSheet("color: #4C566A; font-size: 11px; background: transparent; border: none;")
             self.grid_layout.addWidget(grp_label)
             
-            # 分组网格 (每行4个)
+            # 分组网格 (每行5个)
             grid = QGridLayout()
             grid.setSpacing(8)
             for i, cat in enumerate(cats):
                 btn = CategoryButton(cat)
                 btn.category_clicked.connect(self._on_category_clicked)
-                grid.addWidget(btn, i // 4, i % 4)
+                grid.addWidget(btn, i // 5, i % 5)
                 self.buttons.append(btn)
                 
             self.grid_layout.addLayout(grid)
@@ -257,10 +252,6 @@ class ActivityPanel(QWidget):
             self.status_label.setText("⏸️ 已暂停")
         else:
             self.status_label.setText("当前: 闲置 ⏱ 00:00")
-            
-        # 这里为了演示简单，每次显示时如果没计算过就计算一次，
-        # 在生产环境中应该每隔较长时间或在 session 结束时触发。
-        self._update_summary()
 
     def _update_summary(self):
         """计算今日各分组的时间汇总"""
@@ -289,17 +280,10 @@ class ActivityPanel(QWidget):
                 else:
                     summary["未分类"] += mins
             
-            # 格式化
-            parts = []
-            for k in ["输入", "输出", "生活"]:
-                m = summary.get(k, 0)
-                h, m = divmod(m, 60)
-                time_str = f"{h}h{m}m" if h > 0 else f"{m}m"
-                parts.append(f"{k} {time_str}")
-                
-            self.summary_label.setText(f"今日: {'  '.join(parts)}")
+            # 原有的汇总逻辑已禁用，保留方法体但不更新界面
+            pass
         except Exception as e:
-            self.summary_label.setText(f"今日汇总获取失败")
+            pass
 
     # 拖拽支持
     def mousePressEvent(self, event):
