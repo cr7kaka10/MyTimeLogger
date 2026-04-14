@@ -43,25 +43,34 @@ class GroupItemDelegate(QStyledItemDelegate):
 
 FA_CATEGORIES = {
     "工作 & 效率": [
-        ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf109", "台式电脑"),
-        ("\uf3c5", "地图/定位"), ("\uf51c", "黑板/教学"), ("\uf07b", "文件夹"),
-        ("\uf115", "打开的文件夹"), ("\uf15c", "文档/笔记"), ("\uf0c6", "附件/回形针"),
-        ("\uf0b1", "公文包/办公"), ("\uf02e", "书签/标记"), ("\uf1ea", "报纸/阅读"),
-        ("\uf201", "趋势/数据"), ("\uf080", "条形图"), ("\uf200", "饼图"),
-        ("\uf0ca", "列表/清单"), ("\uf0ae", "任务/进度"), ("\uf073", "日历/计划"),
-        ("\uf133", "打卡/签到"), ("\uf274", "添加计划"), ("\uf017", "时钟/时间"),
-        ("\uf085", "设置/齿轮"), ("\uf0eb", "灯泡/创意"), ("\uf135", "火箭/起飞"),
-        ("\uf0e8", "架构/网络"), ("\uf114", "空文件夹"), ("\uf0ce", "桌子/会议")
+        ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf109", "台式机/办公"),
+        ("\uf07b", "文件夹"), ("\uf115", "打开的文件夹"), ("\uf15c", "文档/笔记"),
+        ("\uf0c6", "附件/回形针"), ("\uf0b1", "公文包/办公"), ("\uf02e", "书签/标记"),
+        ("\uf1ea", "报纸/阅读"), ("\uf201", "趋势/数据"), ("\uf080", "条形图"),
+        ("\uf200", "饼图"), ("\uf0ca", "列表/清单"), ("\uf0ae", "任务/进度"),
+        ("\uf073", "日历/计划"), ("\uf133", "打卡/签到"), ("\uf274", "添加计划"),
+        ("\uf017", "时钟/时间"), ("\uf0eb", "灯泡/创意"), ("\uf135", "火箭/起飞"),
+        ("\uf0e8", "架构/网络"), ("\uf114", "空文件夹"), ("\uf0ce", "桌子/会议"),
+        ("\uf03a", "列表/排序"), ("\uf0c5", "复制/文档"), ("\uf0ee", "上传/云端"),
+        ("\uf019", "下载/保存"), ("\uf012", "信号/网络"), ("\uf2b5", "握手/合作"),
+        ("\uf0a1", "喇叭/广播"), ("\uf55b", "钱包/财务"), ("\uf0d6", "钞票/资金"),
+        ("\uf153", "人民币/日元"), ("\uf155", "美元/生意"), ("\uf24e", "天平/法律"),
+        ("\uf21b", "身份/工牌")
     ],
     "生活 & 居家": [
-        ("\uf015", "主页/家庭"), ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗澡"),
+        ("\uf015", "主页/家庭"), ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗头"),
         ("\uf2e7", "餐饮/吃饭"), ("\uf0f4", "咖啡/休息"), ("\uf0fc", "啤酒/饮酒"),
         ("\uf578", "鱼/海鲜"), ("\uf805", "汉堡/快餐"), ("\uf78c", "胡萝卜/蔬菜"),
         ("\uf07a", "购物车/购物"), ("\uf290", "袋子/买菜"), ("\uf54f", "商店/小卖部"),
         ("\uf68f", "店铺/商业"), ("\uf21e", "心跳/健康"), ("\uf0f9", "急救/看病"),
-        ("\uf481", "药丸/吃药"), ("\uf466", "包裹/快递"), ("\uf54e", "沙发/休息"),
-        ("\uf118", "微笑/情绪"), ("\uf5a4", "戒指/首饰"), ("\uf1ae", "儿童/小孩"),
-        ("\uf0c0", "群组/社交"), ("\uf002", "搜索/查找")
+        ("\uf481", "药丸/吃药"), ("\uf118", "微笑/情绪"), ("\uf5a4", "戒指/首饰"),
+        ("\uf1ae", "儿童/小孩"), ("\uf0c0", "群组/社交"), ("\uf002", "搜索/查找"),
+        ("\uf234", "加好友/社交"), ("\uf1fd", "生日/蛋糕"), ("\uf06b", "火热/做饭"),
+        ("\uf185", "太阳/白天"), ("\uf186", "月亮/夜晚"), ("\uf0e9", "雨伞/下雨"),
+        ("\uf2dc", "雪花/冬天"), ("\uf021", "循环/刷新"), ("\uf1b2", "方块/积木"),
+        ("\uf12e", "拼图/逻辑"), ("\uf06c", "叶子/环保"), ("\uf552", "洗手池/卫生间"),
+        ("\uf2a0", "温度计/气温"), ("\uf1ad", "建筑/城市"), ("\uf2b9", "联系人/卡片"),
+        ("\uf0f2", "行李/旅行")
     ],
     "娱乐 & 休闲": [
         ("\uf11b", "手柄/游戏"), ("\uf001", "音乐/听歌"), ("\uf025", "耳机/听课"),
@@ -69,22 +78,29 @@ FA_CATEGORIES = {
         ("\uf043", "水滴/画画"), ("\uf53f", "调色板/绘画"), ("\uf70c", "跑步/运动"),
         ("\uf44b", "哑铃/健身"), ("\uf434", "足球/球类"), ("\uf45f", "乒乓球/运动"),
         ("\uf6cf", "骰子/桌游"), ("\uf521", "VR/虚拟现实"), ("\uf5dc", "大脑/思考"),
-        ("\uf188", "昆虫/自然"), ("\uf51f", "金币/财富")
+        ("\uf188", "昆虫/自然"), ("\uf51f", "金币/财富"), ("\uf091", "奖杯/荣誉"),
+        ("\uf005", "星星/收藏"), ("\uf145", "入场券/活动"), ("\uf5eb", "龙/虚幻"),
+        ("\uf57a", "小人/舞蹈"), ("\uf5a0", "地图/冒险"), ("\uf500", "朋友/聚会"),
+        ("\uf5b2", "魔术/魔法"), ("\uf0fb", "飞机/冲浪"), ("\uf29b", "购物中心/逛街")
     ],
-    "交通 & 地点": [
+    "交通 & 行程": [
         ("\uf1b9", "汽车/车"), ("\uf207", "公交/通勤"), ("\uf238", "火车/地铁"),
         ("\uf559", "出租车/打车"), ("\uf206", "自行车/骑行"), ("\uf2fc", "摩托/机车"),
-        ("\uf0e7", "闪电/快速"), ("\uf072", "飞机/出差"), ("\uf5b0", "航班/旅行"),
-        ("\uf21d", "轮船/航海"), ("\uf275", "工厂/生产"), ("\uf0f8", "医院/医疗"),
-        ("\uf19c", "大学/教育"), ("\uf549", "学校/校园")
+        ("\uf072", "飞机/出差"), ("\uf5b0", "航班/出发"), ("\uf21d", "轮船/航海"),
+        ("\uf275", "工厂/生产"), ("\uf0f8", "医院/医疗"), ("\uf19c", "大学/教育"),
+        ("\uf549", "学校/校园"), ("\uf041", "坐标/打卡"), ("\uf5ea", "方向/路名"),
+        ("\uf124", "图钉/地点"), ("\uf024", "旗帜/目的地"), ("\uf502", "指南针/导航")
     ],
     "物品 & 工具": [
         ("\uf5ad", "钢笔/写作"), ("\uf304", "原珠笔/记号"), ("\uf040", "铅笔/编辑"),
         ("\uf246", "鼠标/外设"), ("\uf11c", "键盘/输入"), ("\uf10a", "平板/电子"),
         ("\uf3ce", "手机/通讯"), ("\uf028", "喇叭/音量"), ("\uf0f3", "闹钟/提醒"),
         ("\uf023", "锁/隐私"), ("\uf13e", "解锁/公开"), ("\uf084", "钥匙/密码"),
-        ("\uf013", "齿轮/设置"), ("\uf0ad", "扳手/修理"), ("\uf0e0", "邮件/信封"),
-        ("\uf2b6", "打开的邮件"), ("\uf02c", "标签/分类")
+        ("\uf013", "齿轮/机器"), ("\uf0ad", "扳手/修理"), ("\uf0e0", "信封/邮件"),
+        ("\uf2b6", "打开的邮件"), ("\uf02c", "标签/分类"), ("\uf067", "加号/新建"),
+        ("\uf00c", "打勾/完成"), ("\uf00d", "叉号/取消"), ("\uf071", "警告/注意"),
+        ("\uf05a", "提示/信息"), ("\uf059", "问号/帮助"), ("\uf11e", "旗帜/里程碑"),
+        ("\uf466", "快递箱/包裹"), ("\uf410", "手机应用/碎片"), ("\uf0c4", "剪刀/裁剪")
     ]
 }
 
@@ -92,12 +108,14 @@ class IconSelectorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("选择主题矢量图标 (aTimeLogger 风格)")
-        self.setFixedSize(520, 480)
+        self.setFixedSize(540, 480)
         self.setStyleSheet("""
-            QDialog { background-color: #2E3440; color: #D8DEE9; }
+            QDialog { background-color: #2E3440; color: #D8DEE9; font-family: 'Microsoft YaHei'; }
             QTabWidget::pane { border: 1px solid #4C566A; border-radius: 4px; margin-top: -1px; }
+            QTabBar { font-family: 'Microsoft YaHei'; }
             QTabBar::tab { background: #3B4252; color: #D8DEE9; padding: 8px 12px; border: 1px solid #4C566A; border-top-left-radius: 4px; border-top-right-radius: 4px; }
             QTabBar::tab:selected { background: #4C566A; color: #E5E9F0; font-weight: bold; border-bottom-color: #4C566A; }
+            QToolTip { font-family: 'Microsoft YaHei'; }
         """)
         self.selected_icon = None
         
@@ -134,11 +152,11 @@ class CategoryManagerDialog(QDialog):
         self.setWindowTitle("⚙️ 分类管理")
         self.setMinimumSize(500, 350)
         self.setStyleSheet("""
-            QDialog { background-color: #2E3440; color: #D8DEE9; }
-            QLabel { color: #D8DEE9; }
-            QListWidget { background-color: #3B4252; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; }
-            QLineEdit, QComboBox { background-color: #4C566A; color: #ECEFF4; border: 1px solid #434C5E; border-radius: 4px; padding: 4px; }
-            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; }
+            QDialog { background-color: #2E3440; color: #D8DEE9; font-family: 'Microsoft YaHei'; }
+            QLabel { color: #D8DEE9; font-family: 'Microsoft YaHei'; }
+            QListWidget { background-color: #3B4252; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; font-family: 'Microsoft YaHei'; }
+            QLineEdit, QComboBox { background-color: #4C566A; color: #ECEFF4; border: 1px solid #434C5E; border-radius: 4px; padding: 4px; font-family: 'Microsoft YaHei'; }
+            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; font-family: 'Microsoft YaHei'; }
             QPushButton:hover { background-color: #5E81AC; }
         """)
         self.current_category = None
