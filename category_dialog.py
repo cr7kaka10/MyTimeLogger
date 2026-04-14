@@ -488,6 +488,8 @@ class CategorySelectDialog(QDialog):
         
         row_offset = 0
         for group_name, cats in grouped_cats.items():
+            if group_name not in ["输入", "输出"]:
+                continue
             if not cats: continue
             
             # 分组标题
