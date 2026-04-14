@@ -36,7 +36,7 @@ class CategoryButton(QPushButton):
 
         self.icon_label = QLabel(self.category_data.get("icon", "📌"))
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setStyleSheet("font-family: 'Microsoft YaHei'; font-size: 28px; background: transparent; border: none;")
+        self.icon_label.setStyleSheet("font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: 900; font-size: 28px; background: transparent; border: none;")
 
         self.name_label = QLabel(self.category_data.get("name", "未命名"))
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -61,7 +61,7 @@ class CategoryButton(QPushButton):
             
         # 文本和图标颜色都跟随设定的颜色
         self.name_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; color: {color}; background: transparent; border: none;")
-        self.icon_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 28px; color: {color}; background: transparent; border: none;")
+        self.icon_label.setStyleSheet(f"font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: 900; font-size: 28px; color: {color}; background: transparent; border: none;")
         
         if self.is_active_category:
             self.setStyleSheet(f"""

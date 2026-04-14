@@ -40,6 +40,51 @@ class GroupItemDelegate(QStyledItemDelegate):
                 return True
         return super().editorEvent(event, model, option, index)
 
+FA_ICONS = [
+    ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf025", "耳机/听课"), 
+    ("\uf5ad", "笔/写作"), ("\uf51c", "黑板/教学"), ("\uf15c", "文档/笔记"), 
+    ("\uf70c", "跑步/运动"), ("\uf2e7", "餐饮/吃饭"), ("\uf086", "聊天/社交"), 
+    ("\uf1b9", "汽车/车"), ("\uf07a", "购物车/购物"), ("\uf0f4", "咖啡/休息"), 
+    ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗漱"), ("\uf11b", "手柄/游戏"), 
+    ("\uf201", "趋势/营销"), ("\uf275", "工厂/生产"), ("\uf058", "完成/对勾"), 
+    ("\uf017", "时钟/时间"), ("\uf466", "包裹/其他"), ("\uf0eb", "灯泡/创意"), 
+    ("\uf135", "火箭/起飞"), ("\uf001", "音乐/曲调"), ("\uf008", "电影/影视"), 
+    ("\uf02c", "标签/分类"), ("\uf207", "公交/通勤"), ("\uf0f9", "急救/看病"), 
+    ("\uf21e", "心跳/健康"), ("\uf290", "袋子/买菜"), ("\uf1ea", "报纸/阅读"), 
+    ("\uf0b1", "公文包/办公"), ("\uf118", "微笑/情绪"), ("\uf559", "打车/交通"),
+    ("\uf002", "搜索/查找"), ("\uf015", "主页/家庭")
+]
+
+class IconSelectorDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("选择主题矢量图标 (aTimeLogger 风格)")
+        self.setFixedSize(450, 400)
+        self.setStyleSheet("QDialog { background-color: #2E3440; color: #D8DEE9; }")
+        self.selected_icon = None
+        
+        main_layout = QVBoxLayout(self)
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(6)
+        
+        for i, (char, name) in enumerate(FA_ICONS):
+            btn = QPushButton(char)
+            btn.setFixedSize(48, 48)
+            btn.setToolTip(name)
+            btn.setStyleSheet("""
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 24px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 8px;} 
+                QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
+            """)
+            btn.clicked.connect(lambda checked, c=char: self._on_select(c))
+            grid_layout.addWidget(btn, i // 8, i % 8)
+            
+        main_layout.addLayout(grid_layout)
+        main_layout.addStretch()
+        
+    def _on_select(self, char):
+        self.selected_icon = char
+        self.accept()
+
 class CategoryManagerDialog(QDialog):
     """分类管理 CRUD 弹窗"""
     
@@ -76,7 +121,15 @@ class CategoryManagerDialog(QDialog):
         
         self.name_input = QLineEdit()
         self.icon_input = QLineEdit()
-        self.icon_input.setPlaceholderText("如: 📖")
+        self.icon_input.setPlaceholderText("可输Emoji，或点右侧挑选=>")
+        
+        self.icon_btn = QPushButton("库")
+        self.icon_btn.setStyleSheet("QPushButton { background-color: #5E81AC; } QPushButton:hover { background-color: #81A1C1; }")
+        self.icon_btn.clicked.connect(self._open_icon_picker)
+        
+        icon_layout = QHBoxLayout()
+        icon_layout.addWidget(self.icon_input)
+        icon_layout.addWidget(self.icon_btn)
         
         self.group_combo = QComboBox()
         self.group_combo.setEditable(True)
@@ -89,9 +142,9 @@ class CategoryManagerDialog(QDialog):
         self.color_input.setPlaceholderText("如: #5E81AC")
         
         form_layout.addRow("名称:", self.name_input)
-        form_layout.addRow("图标(Emoji):", self.icon_input)
+        form_layout.addRow("图标:", icon_layout)
         form_layout.addRow("分组:", self.group_combo)
-        form_layout.addRow("颜色(Hex):", self.color_input)
+        form_layout.addRow("颜色:", self.color_input)
         
         right_layout.addLayout(form_layout)
 
@@ -149,6 +202,11 @@ class CategoryManagerDialog(QDialog):
         self.group_combo.blockSignals(False)
             
         self._clear_form()
+
+    def _open_icon_picker(self):
+        diag = IconSelectorDialog(self)
+        if diag.exec() == QDialog.DialogCode.Accepted and diag.selected_icon:
+            self.icon_input.setText(diag.selected_icon)
 
     def _clear_form(self):
         self.current_category = None

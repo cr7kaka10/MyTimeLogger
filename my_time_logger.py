@@ -23,6 +23,7 @@ import sys
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import QLockFile
+from PyQt6.QtGui import QFontDatabase
 
 from utils import resource_path, setup_logging
 from config import load_or_create_config
@@ -60,6 +61,11 @@ if __name__ == "__main__":
         show_pynput_error()
 
     app.setQuitOnLastWindowClosed(False)
+
+    # 注册内置矢量图标
+    fa_path = resource_path(os.path.join("fonts", "fa-solid-900.ttf"))
+    if os.path.exists(fa_path):
+        QFontDatabase.addApplicationFont(fa_path)
 
     if not os.path.exists(resource_path(os.path.join('document', 'icon.ico'))):
         QMessageBox.critical(None, "资源错误", "关键文件 'document/icon.ico' 未找到！\n程序无法启动。")
