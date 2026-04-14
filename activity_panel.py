@@ -59,8 +59,8 @@ class CategoryButton(QPushButton):
         elif not color:
             color = "#5E81AC"
             
-        # 文本和图标颜色都跟随设定的颜色
-        self.name_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; color: {color}; background: transparent; border: none;")
+        # 文本统一黑色雅黑，图标跟随设定的颜色
+        self.name_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; color: #2E3440; background: transparent; border: none;")
         self.icon_label.setStyleSheet(f"font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: 900; font-size: 28px; color: {color}; background: transparent; border: none;")
         
         if self.is_active_category:

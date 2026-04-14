@@ -136,7 +136,8 @@ class IconSelectorDialog(QDialog):
                     QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
                     QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
                 """)
-                btn.clicked.connect(lambda checked, c=char: self._on_select(c))
+                # 使用 *args 忽略 PyQt6 clicked 传递的参数数量问题，避免抛出 TypeError 导致进程崩溃
+                btn.clicked.connect(lambda *args, c=char: self._on_select(c))
                 grid_layout.addWidget(btn, i // 9, i % 9)
                 
             self.tabs.addTab(tab_widget, cat_name)
