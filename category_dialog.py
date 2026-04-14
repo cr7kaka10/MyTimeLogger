@@ -10,7 +10,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, 
                              QPushButton, QLabel, QListWidget, QListWidgetItem,
                              QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle,
-                             QTabWidget, QWidget)
+                             QTabWidget, QWidget, QScrollArea)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect, QTimer
 from PyQt6.QtGui import QColor, QPalette, QCursor
 
@@ -142,6 +142,36 @@ class IconSelectorDialog(QDialog):
                 
             self.tabs.addTab(tab_widget, cat_name)
             
+        # ====== 扩增：完整字库滚动屏 ======
+        scroll_tab = QWidget()
+        scroll_layout = QVBoxLayout(scroll_tab)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        
+        content_widget = QWidget()
+        full_grid = QGridLayout(content_widget)
+        full_grid.setSpacing(6)
+        full_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
+        # 批量加载数百个自带的矢量图标
+        for i, char_code in enumerate(range(0xf000, 0xf2b0)):
+            char = chr(char_code)
+            btn = QPushButton(char)
+            btn.setFixedSize(45, 45)
+            btn.setStyleSheet("""
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
+                QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
+            """)
+            btn.clicked.connect(lambda *args, c=char: self._on_select(c))
+            full_grid.addWidget(btn, i // 9, i % 9)
+            
+        scroll_area.setWidget(content_widget)
+        scroll_layout.addWidget(scroll_area)
+        self.tabs.addTab(scroll_tab, "🗃️ 完整字库(688个)")
+            
         main_layout.addWidget(self.tabs)
 
 class CategoryManagerDialog(QDialog):
@@ -155,9 +185,9 @@ class CategoryManagerDialog(QDialog):
         self.setStyleSheet("""
             QDialog { background-color: #2E3440; color: #D8DEE9; font-family: 'Microsoft YaHei'; }
             QLabel { color: #D8DEE9; font-family: 'Microsoft YaHei'; }
-            QListWidget { background-color: #3B4252; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; font-family: 'Microsoft YaHei'; }
-            QLineEdit, QComboBox { background-color: #4C566A; color: #ECEFF4; border: 1px solid #434C5E; border-radius: 4px; padding: 4px; font-family: 'Microsoft YaHei'; }
-            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; font-family: 'Microsoft YaHei'; }
+            QListWidget { background-color: #3B4252; color: #D8DEE9; border: 1px solid #4C566A; border-radius: 5px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
+            QLineEdit, QComboBox { background-color: #4C566A; color: #ECEFF4; border: 1px solid #434C5E; border-radius: 4px; padding: 4px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
+            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; }
             QPushButton:hover { background-color: #5E81AC; }
         """)
         self.current_category = None
