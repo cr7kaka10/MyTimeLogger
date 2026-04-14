@@ -9,7 +9,7 @@
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, 
                              QPushButton, QLabel, QListWidget, QListWidgetItem,
-                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate)
+                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect
 from PyQt6.QtGui import QColor, QPalette, QCursor
 
@@ -19,11 +19,13 @@ class GroupItemDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
         rect = option.rect
-        btn_rect = QRect(rect.right() - 20, rect.top() + (rect.height() - 16) // 2, 16, 16)
+        btn_rect = QRect(rect.right() - 25, rect.top() + (rect.height() - 20) // 2, 20, 20)
         painter.save()
         painter.setPen(QColor("#BF616A"))
         font = painter.font()
         font.setBold(True)
+        # 增大字号让其更加明显
+        font.setPointSize(16)
         painter.setFont(font)
         painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "×")
         painter.restore()
@@ -31,7 +33,8 @@ class GroupItemDelegate(QStyledItemDelegate):
     def editorEvent(self, event, model, option, index):
         if event.type() == QEvent.Type.MouseButtonRelease:
             rect = option.rect
-            btn_rect = QRect(rect.right() - 20, rect.top() + (rect.height() - 16) // 2, 16, 16)
+            # 扩大点按热区：从右侧算起宽度达35px，高度覆盖整个条目
+            btn_rect = QRect(rect.right() - 35, rect.top(), 35, rect.height())
             if btn_rect.contains(event.pos()):
                 self.delete_clicked.emit(index.data())
                 return True

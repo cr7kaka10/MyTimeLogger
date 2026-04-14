@@ -193,6 +193,12 @@ class ActivityPanel(QWidget):
             # 分组网格 (每行5个)
             grid = QGridLayout()
             grid.setSpacing(8)
+            
+            # 由于子项可能不够5个，导致列不平均，强制设置5列拉伸策略
+            for j in range(5):
+                grid.setColumnStretch(j, 1)
+                grid.setColumnMinimumWidth(j, 68)
+                
             for i, cat in enumerate(cats):
                 btn = CategoryButton(cat)
                 btn.category_clicked.connect(self._on_category_clicked)
