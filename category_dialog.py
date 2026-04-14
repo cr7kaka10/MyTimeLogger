@@ -9,7 +9,8 @@
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, 
                              QPushButton, QLabel, QListWidget, QListWidgetItem,
-                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle)
+                             QLineEdit, QComboBox, QMessageBox, QFrame, QFormLayout, QStyledItemDelegate, QStyle,
+                             QTabWidget, QWidget)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QRect, QTimer
 from PyQt6.QtGui import QColor, QPalette, QCursor
 
@@ -40,50 +41,89 @@ class GroupItemDelegate(QStyledItemDelegate):
                 return True
         return super().editorEvent(event, model, option, index)
 
-FA_ICONS = [
-    ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf025", "耳机/听课"), 
-    ("\uf5ad", "笔/写作"), ("\uf51c", "黑板/教学"), ("\uf15c", "文档/笔记"), 
-    ("\uf70c", "跑步/运动"), ("\uf2e7", "餐饮/吃饭"), ("\uf086", "聊天/社交"), 
-    ("\uf1b9", "汽车/车"), ("\uf07a", "购物车/购物"), ("\uf0f4", "咖啡/休息"), 
-    ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗漱"), ("\uf11b", "手柄/游戏"), 
-    ("\uf201", "趋势/营销"), ("\uf275", "工厂/生产"), ("\uf058", "完成/对勾"), 
-    ("\uf017", "时钟/时间"), ("\uf466", "包裹/其他"), ("\uf0eb", "灯泡/创意"), 
-    ("\uf135", "火箭/起飞"), ("\uf001", "音乐/曲调"), ("\uf008", "电影/影视"), 
-    ("\uf02c", "标签/分类"), ("\uf207", "公交/通勤"), ("\uf0f9", "急救/看病"), 
-    ("\uf21e", "心跳/健康"), ("\uf290", "袋子/买菜"), ("\uf1ea", "报纸/阅读"), 
-    ("\uf0b1", "公文包/办公"), ("\uf118", "微笑/情绪"), ("\uf559", "打车/交通"),
-    ("\uf002", "搜索/查找"), ("\uf015", "主页/家庭")
-]
+FA_CATEGORIES = {
+    "工作 & 效率": [
+        ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf109", "台式电脑"),
+        ("\uf3c5", "地图/定位"), ("\uf51c", "黑板/教学"), ("\uf07b", "文件夹"),
+        ("\uf115", "打开的文件夹"), ("\uf15c", "文档/笔记"), ("\uf0c6", "附件/回形针"),
+        ("\uf0b1", "公文包/办公"), ("\uf02e", "书签/标记"), ("\uf1ea", "报纸/阅读"),
+        ("\uf201", "趋势/数据"), ("\uf080", "条形图"), ("\uf200", "饼图"),
+        ("\uf0ca", "列表/清单"), ("\uf0ae", "任务/进度"), ("\uf073", "日历/计划"),
+        ("\uf133", "打卡/签到"), ("\uf274", "添加计划"), ("\uf017", "时钟/时间"),
+        ("\uf085", "设置/齿轮"), ("\uf0eb", "灯泡/创意"), ("\uf135", "火箭/起飞"),
+        ("\uf0e8", "架构/网络"), ("\uf114", "空文件夹"), ("\uf0ce", "桌子/会议")
+    ],
+    "生活 & 居家": [
+        ("\uf015", "主页/家庭"), ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗澡"),
+        ("\uf2e7", "餐饮/吃饭"), ("\uf0f4", "咖啡/休息"), ("\uf0fc", "啤酒/饮酒"),
+        ("\uf578", "鱼/海鲜"), ("\uf805", "汉堡/快餐"), ("\uf78c", "胡萝卜/蔬菜"),
+        ("\uf07a", "购物车/购物"), ("\uf290", "袋子/买菜"), ("\uf54f", "商店/小卖部"),
+        ("\uf68f", "店铺/商业"), ("\uf21e", "心跳/健康"), ("\uf0f9", "急救/看病"),
+        ("\uf481", "药丸/吃药"), ("\uf466", "包裹/快递"), ("\uf54e", "沙发/休息"),
+        ("\uf118", "微笑/情绪"), ("\uf5a4", "戒指/首饰"), ("\uf1ae", "儿童/小孩"),
+        ("\uf0c0", "群组/社交"), ("\uf002", "搜索/查找")
+    ],
+    "娱乐 & 休闲": [
+        ("\uf11b", "手柄/游戏"), ("\uf001", "音乐/听歌"), ("\uf025", "耳机/听课"),
+        ("\uf008", "电影/影视"), ("\uf03e", "照片/图像"), ("\uf030", "相机/拍照"),
+        ("\uf043", "水滴/画画"), ("\uf53f", "调色板/绘画"), ("\uf70c", "跑步/运动"),
+        ("\uf44b", "哑铃/健身"), ("\uf434", "足球/球类"), ("\uf45f", "乒乓球/运动"),
+        ("\uf6cf", "骰子/桌游"), ("\uf521", "VR/虚拟现实"), ("\uf5dc", "大脑/思考"),
+        ("\uf188", "昆虫/自然"), ("\uf51f", "金币/财富")
+    ],
+    "交通 & 地点": [
+        ("\uf1b9", "汽车/车"), ("\uf207", "公交/通勤"), ("\uf238", "火车/地铁"),
+        ("\uf559", "出租车/打车"), ("\uf206", "自行车/骑行"), ("\uf2fc", "摩托/机车"),
+        ("\uf0e7", "闪电/快速"), ("\uf072", "飞机/出差"), ("\uf5b0", "航班/旅行"),
+        ("\uf21d", "轮船/航海"), ("\uf275", "工厂/生产"), ("\uf0f8", "医院/医疗"),
+        ("\uf19c", "大学/教育"), ("\uf549", "学校/校园")
+    ],
+    "物品 & 工具": [
+        ("\uf5ad", "钢笔/写作"), ("\uf304", "原珠笔/记号"), ("\uf040", "铅笔/编辑"),
+        ("\uf246", "鼠标/外设"), ("\uf11c", "键盘/输入"), ("\uf10a", "平板/电子"),
+        ("\uf3ce", "手机/通讯"), ("\uf028", "喇叭/音量"), ("\uf0f3", "闹钟/提醒"),
+        ("\uf023", "锁/隐私"), ("\uf13e", "解锁/公开"), ("\uf084", "钥匙/密码"),
+        ("\uf013", "齿轮/设置"), ("\uf0ad", "扳手/修理"), ("\uf0e0", "邮件/信封"),
+        ("\uf2b6", "打开的邮件"), ("\uf02c", "标签/分类")
+    ]
+}
 
 class IconSelectorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("选择主题矢量图标 (aTimeLogger 风格)")
-        self.setFixedSize(450, 400)
-        self.setStyleSheet("QDialog { background-color: #2E3440; color: #D8DEE9; }")
+        self.setFixedSize(520, 480)
+        self.setStyleSheet("""
+            QDialog { background-color: #2E3440; color: #D8DEE9; }
+            QTabWidget::pane { border: 1px solid #4C566A; border-radius: 4px; margin-top: -1px; }
+            QTabBar::tab { background: #3B4252; color: #D8DEE9; padding: 8px 12px; border: 1px solid #4C566A; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+            QTabBar::tab:selected { background: #4C566A; color: #E5E9F0; font-weight: bold; border-bottom-color: #4C566A; }
+        """)
         self.selected_icon = None
         
         main_layout = QVBoxLayout(self)
-        grid_layout = QGridLayout()
-        grid_layout.setSpacing(6)
         
-        for i, (char, name) in enumerate(FA_ICONS):
-            btn = QPushButton(char)
-            btn.setFixedSize(48, 48)
-            btn.setToolTip(name)
-            btn.setStyleSheet("""
-                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 24px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 8px;} 
-                QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
-            """)
-            btn.clicked.connect(lambda checked, c=char: self._on_select(c))
-            grid_layout.addWidget(btn, i // 8, i % 8)
+        self.tabs = QTabWidget()
+        for cat_name, icon_list in FA_CATEGORIES.items():
+            tab_widget = QWidget()
+            grid_layout = QGridLayout(tab_widget)
+            grid_layout.setSpacing(6)
+            grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             
-        main_layout.addLayout(grid_layout)
-        main_layout.addStretch()
-        
-    def _on_select(self, char):
-        self.selected_icon = char
-        self.accept()
+            for i, (char, name) in enumerate(icon_list):
+                btn = QPushButton(char)
+                btn.setFixedSize(45, 45)
+                btn.setToolTip(name)
+                btn.setStyleSheet("""
+                    QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #3B4252; color: #ECEFF4; border: 1px solid #4C566A; border-radius: 6px;} 
+                    QPushButton:hover { background: #5E81AC; border: 1px solid #88C0D0; }
+                """)
+                btn.clicked.connect(lambda checked, c=char: self._on_select(c))
+                grid_layout.addWidget(btn, i // 9, i % 9)
+                
+            self.tabs.addTab(tab_widget, cat_name)
+            
+        main_layout.addWidget(self.tabs)
 
 class CategoryManagerDialog(QDialog):
     """分类管理 CRUD 弹窗"""
