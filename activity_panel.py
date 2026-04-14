@@ -133,6 +133,14 @@ class ActivityPanel(QWidget):
         """)
         manage_btn.clicked.connect(self._open_category_manager)
 
+        refresh_btn = QPushButton("🔄 刷新")
+        refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_btn.setStyleSheet("""
+            QPushButton { color: #88C0D0; background: transparent; font-size: 12px; border: none; }
+            QPushButton:hover { color: #A3BE8C; }
+        """)
+        refresh_btn.clicked.connect(self.refresh_categories)
+
         close_btn = QPushButton("×")
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -144,6 +152,7 @@ class ActivityPanel(QWidget):
         
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(refresh_btn)
         title_layout.addWidget(manage_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
@@ -166,16 +175,24 @@ class ActivityPanel(QWidget):
             # 用户修改了分类，刷新网格
             self.refresh_categories()
 
+    def _clear_layout(self, layout):
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.setParent(None)
+                    widget.deleteLater()
+                else:
+                    sub_layout = item.layout()
+                    if sub_layout is not None:
+                        self._clear_layout(sub_layout)
+                        sub_layout.deleteLater()
+
     def refresh_categories(self):
         """重新渲染分类网格"""
-        # 清空旧布局
-        while self.grid_layout.count():
-            item = self.grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():
-                # 嵌套的布局也需要清空，不过简单处理直接重新构建即可
-                pass
+        # 清空旧布局，必须递归删除子控件防止重叠
+        self._clear_layout(self.grid_layout)
         
         self.buttons.clear()
         grouped_cats = self.category_manager.get_grouped()
