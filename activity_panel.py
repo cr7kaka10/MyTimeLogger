@@ -36,11 +36,11 @@ class CategoryButton(QPushButton):
 
         self.icon_label = QLabel(self.category_data.get("icon", "📌"))
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setStyleSheet("font-size: 20px; background: transparent;")
+        self.icon_label.setStyleSheet("font-family: 'Microsoft YaHei'; font-size: 28px; background: transparent; border: none;")
 
         self.name_label = QLabel(self.category_data.get("name", "未命名"))
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.name_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #D8DEE9; background: transparent;")
+        self.name_label.setStyleSheet("font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; background: transparent; border: none;")
 
         layout.addWidget(self.icon_label)
         layout.addWidget(self.name_label)
@@ -59,14 +59,15 @@ class CategoryButton(QPushButton):
         elif not color:
             color = "#5E81AC"
             
-        # 让文本颜色跟随设定的颜色来区分分组属性
-        self.name_label.setStyleSheet(f"font-size: 11px; font-weight: bold; color: {color}; background: transparent;")
+        # 文本和图标颜色都跟随设定的颜色
+        self.name_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; color: {color}; background: transparent; border: none;")
+        self.icon_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 28px; color: {color}; background: transparent; border: none;")
         
         if self.is_active_category:
             self.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: rgba(0, 0, 0, 0.08);
-                    border: 2px solid {color};
+                    background-color: rgba(0, 0, 0, 0.05);
+                    border: none;
                     border-radius: 12px;
                 }}
             """)
@@ -74,12 +75,12 @@ class CategoryButton(QPushButton):
             self.setStyleSheet(f"""
                 QPushButton {{
                     background-color: transparent;
-                    border: 1px solid {color};
+                    border: none;
                     border-radius: 12px;
                 }}
                 QPushButton:hover {{
                     background-color: rgba(0, 0, 0, 0.04);
-                    border: 1px solid {color};
+                    border: none;
                 }}
             """)
 
