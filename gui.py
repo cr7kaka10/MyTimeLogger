@@ -12,6 +12,7 @@ import re
 import sys
 import json
 import sqlite3
+from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMenu,
@@ -571,6 +572,17 @@ class MyTimeLoggerGUI(QWidget):
     def update_status(self, status_text, state_name):
         """更新状态显示文本"""
         self.current_state_text = status_text
+        
+        # 缓存当前选中分类的图标名称
+        self._cached_cat_icon = "⏳"
+        self._cached_cat_name = "正计时"
+        if self.logic.current_category_id:
+            for cat in self.category_manager.get_all_active():
+                if cat['id'] == self.logic.current_category_id:
+                    self._cached_cat_icon = cat.get('icon', '⏳')
+                    self._cached_cat_name = cat.get('name', '正计时')
+                    break
+                    
         self._update_btn_visibility(state_name)
         if state_name not in ["stopped", "long_break_finished"]:
             self.countdown_timer.start()
@@ -594,7 +606,9 @@ class MyTimeLoggerGUI(QWidget):
             if state == "countup_studying":
                 elapsed = (datetime.now() - self.logic.current_session_start_time).total_seconds()
                 m, s = divmod(int(elapsed), 60)
-                self.status_label.setText(f"⏳ 正计时...\n{int(m):02}:{int(s):02}")
+                icon = getattr(self, '_cached_cat_icon', '⏳')
+                name = getattr(self, '_cached_cat_name', '正计时')
+                self.status_label.setText(f"{icon} {name}...\n{int(m):02}:{int(s):02}")
             elif state == "studying":
                 session_elapsed = self.logic.current_session_duration - (remaining_ms // 1000)
                 active_cycle_time = self.logic.current_cycle_study_time + session_elapsed
