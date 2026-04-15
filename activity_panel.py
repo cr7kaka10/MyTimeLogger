@@ -345,11 +345,13 @@ class ActivityPanel(QWidget):
         curr_id = self.logic.current_category_id
         cat_name = "未分类"
         cat_icon = "⏳"
+        cat_color = "#5E81AC"
         if curr_id:
             for btn in self.buttons:
                 if btn.category_data.get("id") == curr_id:
                     cat_name = btn.category_data.get("name")
                     cat_icon = btn.category_data.get("icon", "⏳")
+                    cat_color = btn.category_data.get("color", "#5E81AC")
                     break
         
         # 计算周期剩余时间（距长休息）
@@ -365,7 +367,7 @@ class ActivityPanel(QWidget):
         if self.logic.current_state in ["studying", "countup_studying"] and not self.logic.is_paused:
             if self.logic.current_state == "studying":
                 up_m, up_s = divmod(int(active_cycle_time), 60)
-                status_text = f"{cat_icon} {cat_name}"
+                status_text = f'<span style="color: {cat_color};">{cat_icon}</span> {cat_name}'
                 timer_text = f"⏱ {up_m:02d}:{up_s:02d}"
             else:
                 if self.logic.current_session_start_time:
@@ -373,7 +375,7 @@ class ActivityPanel(QWidget):
                 else:
                     elapsed_sec = 0
                 m, s = divmod(elapsed_sec, 60)
-                status_text = f"{cat_icon} {cat_name}"
+                status_text = f'<span style="color: {cat_color};">{cat_icon}</span> {cat_name}'
                 timer_text = f"⏱ {m:02d}:{s:02d}"
             
             cycle_text = f"🎯 {cycle_mins:02d}:{cycle_secs:02d}"

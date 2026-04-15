@@ -548,14 +548,16 @@ class MyTimeLoggerGUI(QWidget):
         """更新状态显示文本"""
         self.current_state_text = status_text
         
-        # 缓存当前选中分类的图标名称
+        # 缓存当前选中分类的图标名称和颜色
         self._cached_cat_icon = "⏳"
         self._cached_cat_name = "正计时"
+        self._cached_cat_color = "#5E81AC"
         if self.logic.current_category_id:
             for cat in self.category_manager.get_all_active():
                 if cat['id'] == self.logic.current_category_id:
                     self._cached_cat_icon = cat.get('icon', '⏳')
                     self._cached_cat_name = cat.get('name', '正计时')
+                    self._cached_cat_color = cat.get('color', '#5E81AC')
                     break
                     
         self._update_btn_visibility(state_name)
@@ -583,7 +585,8 @@ class MyTimeLoggerGUI(QWidget):
                 m, s = divmod(int(elapsed), 60)
                 icon = getattr(self, '_cached_cat_icon', '⏳')
                 name = getattr(self, '_cached_cat_name', '正计时')
-                self.status_label.setText(f"{icon} {name}\n⏱ {int(m):02}:{int(s):02}")
+                color = getattr(self, '_cached_cat_color', '#5E81AC')
+                self.status_label.setText(f'<span style="color: {color};">{icon}</span> {name}<br/>⏱ {int(m):02}:{int(s):02}')
                 self.total_time_label.setText("")
             elif state == "studying":
                 session_elapsed = self.logic.current_session_duration - (remaining_ms // 1000)
@@ -591,9 +594,10 @@ class MyTimeLoggerGUI(QWidget):
                 
                 icon = getattr(self, '_cached_cat_icon', '📚')
                 name = getattr(self, '_cached_cat_name', '专注中')
+                color = getattr(self, '_cached_cat_color', '#5E81AC')
                 up_m, up_s = divmod(int(active_cycle_time), 60)
                 # 正计时放到 status_label
-                self.status_label.setText(f"{icon} {name}\n⏱ {int(up_m):02}:{int(up_s):02}")
+                self.status_label.setText(f'<span style="color: {color};">{icon}</span> {name}<br/>⏱ {int(up_m):02}:{int(up_s):02}')
                 
                 # 总的倒计时放到 total_time_label
                 threshold = self.config.get("long_break_threshold", 90 * 60)
