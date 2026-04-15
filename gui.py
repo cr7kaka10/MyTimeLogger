@@ -947,13 +947,14 @@ class MyTimeLoggerGUI(QWidget):
                 summary = row[7] if len(row) >= 8 else "无记录"
                 cat_id = row[8] if len(row) >= 9 else None
                 
-                # 判断是否为专注类（Pomodoro 模式）
+                # 判断是否为专注类（Pomodoro 模式）: 按组名或名称判断均有效
                 cat_info = cat_map.get(cat_id, {})
+                cat_name = cat_info.get("name", "")
                 group_name = cat_info.get("group_name", "")
-                is_pomodoro = group_name in ["输入", "输出"]
+                is_pomodoro = group_name in ["输入", "输出"] or cat_name in ["输入", "输出"]
                 
                 if is_pomodoro:
-                    # 专注类设计：保留所有明细
+                    # 专注类设计：保持原有明细布局（不使用 simplified 逻辑）
                     reasons_html = ""
                     if pause_reasons_raw and pause_reasons_raw != "无":
                         if "\n" in pause_reasons_raw or any(pause_reasons_raw.startswith(s) for s in ["- ", "+ ", "* ", "1. "]):
