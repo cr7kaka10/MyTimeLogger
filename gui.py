@@ -65,6 +65,7 @@ class MyTimeLoggerGUI(QWidget):
         QTimer.singleShot(1000, self.hotkey_manager.start)
 
         self._checklist_window = None  # 日清单窗口（首次访问时创建）
+        self._activity_panel_window = None  # 活动面板窗口
         self.category_manager = CategoryManager()
 
         # 默认显示时间管理大面板
