@@ -629,22 +629,15 @@ class MyTimeLoggerGUI(QWidget):
 
     def _on_tray_activated(self, reason):
         """托盘图标点击事件处理"""
-        # 如果是点击或双击
         if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick]:
-            # 先处理大面板冲突：如果大面板是开着的，点击图标应该先关掉它
-            if self._activity_panel_window and self._activity_panel_window.isVisible():
-                self._activity_panel_window.hide()
-                # 这种情况通常不需要再隐藏 Mini 栏，除非你想彻底关掉
-                return
-
-            if self.isVisible():
-                self.hide()
-            else:
-                self.show()
-                self.activateWindow()
-                self.raise_()
+            # 分类管理面板与托盘图标的显隐绑定
+            self.toggle_activity_panel()
+            # 同时确保 Mini 栏本身处于隐藏状态，避免干扰（如果大面板开启）
+            win = self._ensure_activity_panel_window()
+            if win.isVisible():
+                self.hide() 
         
-        # 始终置顶逻辑
+        # 始终置顶逻辑（右键托盘菜单触发 Context 信号）
         elif self.is_always_on_top and reason == QSystemTrayIcon.ActivationReason.Context:
             if not (self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
                 self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
