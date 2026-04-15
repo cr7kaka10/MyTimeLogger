@@ -247,20 +247,22 @@ class MyTimeLoggerLogic(QObject):
                 prev_cat_id = old_cat_id
                 
                 # 自动记录专注失败原因（使用原有的分类信息提交）
-                if self.current_cycle_study_time > 0 or self.large_session_net_duration > 0:
-                    remaining = self.timer.remainingTime() // 1000 if self.timer.isActive() else 0
+                if self.large_session_start_time:
+                    # 获取从大专注开始到现在的真实流逝秒数（减去已记录时长，得到当前段的时长）
+                    elapsed_total = int((datetime.now() - self.large_session_start_time).total_seconds())
+                    # 修正：当前段时长 = 总流逝 - 历史已停顿记录的部分？不，逻辑应该更简单：
+                    # 只需根据当前状态补全 large_session_net_duration
                     if self.current_state == "studying":
-                        study_duration = max(0, self.timer.property("duration") - remaining if self.timer.property("duration") else 0)
-                        self.total_study_time += study_duration
-                        self.current_cycle_study_time += study_duration
-                        self.large_session_net_duration += study_duration
+                        remaining = self.timer.remainingTime() // 1000 if self.timer.isActive() else 0
+                        seg_duration = max(0, self.timer.property("duration") - remaining if self.timer.property("duration") else 0)
+                        self.large_session_net_duration += seg_duration
                     
-                    old_cat_name = prev_task if prev_task in ["输入", "输出"] else "专注"
-                    auto_summary = f"专注失败：从【{old_cat_name}】分类切换到了【{task_name}】分类"
-                    # 这里必须保留旧分类 ID 进行结算
-                    self.commit_large_session(auto_summary, skip_break=True)
-                else:
-                    self.reset_cycle()
+                    if self.large_session_net_duration > 0:
+                        old_cat_name = prev_task if prev_task in ["输入", "输出"] else "专注"
+                        auto_summary = f"专注失败：从【{old_cat_name}】分类切换到了【{task_name}】分类"
+                        self.commit_large_session(auto_summary, skip_break=True)
+                    else:
+                        self.reset_cycle()
                 
                 # 结算完旧记录后，才更新为新的任务和分类
                 self.current_focus_task = task_name or ""

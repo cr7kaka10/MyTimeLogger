@@ -927,6 +927,9 @@ class MyTimeLoggerGUI(QWidget):
                     total_duration += float(r[2])
                 except ValueError:
                     pass
+            # 获取分类详情映射，用于区分显示风格
+            cat_map = {cat['id']: cat for cat in self.category_manager.get_all_active()}
+            
             sessions_html = ""
             for row in group_rows:
                 start_time = row[0].split(' ')[-1] if ' ' in row[0] else row[0]
@@ -935,29 +938,60 @@ class MyTimeLoggerGUI(QWidget):
                 pause_count = row[5] if len(row) >= 8 else "0"
                 pause_reasons_raw = row[6] if len(row) >= 8 else "无"
                 summary = row[7] if len(row) >= 8 else "无记录"
-                reasons_html = ""
-                if pause_reasons_raw and pause_reasons_raw != "无":
-                    if "\n" in pause_reasons_raw or any(pause_reasons_raw.startswith(s) for s in ["- ", "+ ", "* ", "1. "]):
-                        reasons_html = f"<div class='markdown-content' style='margin-top:2px; font-size:0.9em;'>{self._render_markdown_lists(pause_reasons_raw)}</div>"
+                cat_id = row[8] if len(row) >= 9 else None
+                
+                # 判断是否为专注类（Pomodoro 模式）
+                cat_info = cat_map.get(cat_id, {})
+                group_name = cat_info.get("group_name", "")
+                is_pomodoro = group_name in ["输入", "输出"]
+                
+                if is_pomodoro:
+                    # 专注类设计：保留所有明细
+                    reasons_html = ""
+                    if pause_reasons_raw and pause_reasons_raw != "无":
+                        if "\n" in pause_reasons_raw or any(pause_reasons_raw.startswith(s) for s in ["- ", "+ ", "* ", "1. "]):
+                            reasons_html = f"<div class='markdown-content' style='margin-top:2px; font-size:0.9em;'>{self._render_markdown_lists(pause_reasons_raw)}</div>"
+                        else:
+                            r_list = [r.strip() for r in pause_reasons_raw.split("; ") if r.strip()]
+                            reasons_tags_html = "".join([f"<span class='reason-tag'>{r}</span>" for r in r_list])
+                            reasons_html = f"<div class='reason-tags' style='margin-top:6px;'>{reasons_tags_html}</div>"
                     else:
-                        r_list = [r.strip() for r in pause_reasons_raw.split("; ") if r.strip()]
-                        reasons_tags_html = "".join([f"<span class='reason-tag'>{r}</span>" for r in r_list])
-                        reasons_html = f"<div class='reason-tags' style='margin-top:6px;'>{reasons_tags_html}</div>"
+                        reasons_html = "<span class='reason-tag-empty' style='margin-left:5px;'>无暂停记录</span>"
+
+                    sessions_html += f"""
+                    <div class="session-item">
+                        <div class="session-header">
+                            <span class="session-time">⏱️ {start_time} - {end_time}</span>
+                            <span class="session-duration">专注 {duration} 分钟</span>
+                        </div>
+                        <div class="card-stats">⏸️ 主动暂停: {pause_count} 次</div>
+                        <div class="card-reasons">
+                            <strong>暂停明细:</strong>{reasons_html}
+                        </div>
+                        <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content">{self._render_markdown_lists(summary)}</div></div>
+                    </div>
+                    """
                 else:
-                    reasons_html = "<span class='reason-tag-empty' style='margin-left:5px;'>无暂停记录</span>"
-                sessions_html += f"""
-                <div class="session-item">
-                    <div class="session-header">
-                        <span class="session-time">⏱️ {start_time} - {end_time}</span>
-                        <span class="session-duration">专注 {duration} 分钟</span>
+                    # 非专注类设计：极致简化布局
+                    # 移除“总结”字样，如果是自动生成的摘要，直接展示
+                    display_summary = summary
+                    if "日常静默记录" in summary:
+                        display_summary = summary.replace("日常静默记录", "").strip()
+                    
+                    remark_html = ""
+                    if display_summary:
+                        remark_html = f"<div class='card-remark'><strong>备注:</strong> {display_summary}</div>"
+                    
+                    sessions_html += f"""
+                    <div class="session-item lifestyle">
+                        <div class="session-header">
+                            <span class="session-time">⏱️ {start_time} - {end_time}</span>
+                            <span class="session-task">{summary.split('】')[0] + '】' if '】' in summary else ''}</span>
+                            <span class="session-duration lifestyle-dur">{duration} 分钟</span>
+                        </div>
+                        {remark_html}
                     </div>
-                    <div class="card-stats">⏸️ 主动暂停: {pause_count} 次</div>
-                    <div class="card-reasons">
-                        <strong>暂停明细:</strong>{reasons_html}
-                    </div>
-                    <div class="card-summary"><strong>专注总结:</strong><div class="markdown-content">{self._render_markdown_lists(summary)}</div></div>
-                </div>
-                """
+                    """
             cards_html += f"""
             <div class="card">
                 <div class="card-header">
