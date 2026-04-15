@@ -69,9 +69,9 @@ class MyTimeLoggerGUI(QWidget):
         self.category_manager = CategoryManager()
 
         # 软件启动后延迟 3 秒，自动在后台同步今日清单（不打开窗口）
-        tt_cfg = self.config.get("ticktick_config", {})
-        if tt_cfg.get("enabled") and tt_cfg.get("access_token"):
-            QTimer.singleShot(3000, self._init_checklist_background_sync)
+        # tt_cfg = self.config.get("ticktick_config", {})
+        # if tt_cfg.get("enabled") and tt_cfg.get("access_token"):
+        #     QTimer.singleShot(3000, self._init_checklist_background_sync)
 
 
         self.countdown_timer = QTimer(self)
@@ -190,19 +190,29 @@ class MyTimeLoggerGUI(QWidget):
             old_layout = self.background_widget.layout()
             while old_layout.count():
                 item = old_layout.takeAt(0)
-                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.start_btn if hasattr(self, 'start_btn') else None]:
+                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.start_btn if hasattr(self, 'start_btn') else None, self.expand_btn if hasattr(self, 'expand_btn') else None]:
                     item.widget().deleteLater()
             from PyQt6 import sip
             sip.delete(old_layout)
 
         # 强制 Mini 横向布局
-        self.setFixedSize(260, 42)
-        self.background_widget.setFixedSize(260, 42)
+        self.setFixedSize(280, 42)
+        self.background_widget.setFixedSize(280, 42)
         self.status_label.setWordWrap(False)
         
         new_layout = QHBoxLayout(self.background_widget)
-        new_layout.setContentsMargins(10, 0, 10, 0)
+        new_layout.setContentsMargins(6, 0, 10, 0)
         new_layout.setSpacing(6)
+        
+        # 最左边添加放大按钮
+        if not hasattr(self, 'expand_btn'):
+            self.expand_btn = QPushButton(self.background_widget)
+            self.expand_btn.setIcon(QIcon(resource_path("document/expand.svg")))
+            self.expand_btn.setFixedSize(26, 26)
+            self.expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.expand_btn.setStyleSheet("QPushButton { background-color: rgba(255, 255, 255, 0.25); border: none; border-radius: 5px; } QPushButton:hover { background-color: rgba(255, 255, 255, 0.45); }")
+            self.expand_btn.clicked.connect(self._on_expand_clicked)
+        new_layout.addWidget(self.expand_btn)
         
         # 依次添加状态标签、播放按钮、总时间
         new_layout.addWidget(self.status_label)
@@ -212,16 +222,7 @@ class MyTimeLoggerGUI(QWidget):
 
         if hasattr(self, 'end_break_btn'):
             new_layout.addWidget(self.end_break_btn)
-            self.end_break_btn.setFixedSize(20, 20)
-
-        if not hasattr(self, 'expand_btn'):
-            self.expand_btn = QPushButton(self.background_widget)
-            self.expand_btn.setIcon(QIcon(resource_path("document/expand.png")))
-            self.expand_btn.setFixedSize(20, 20)
-            self.expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.expand_btn.setStyleSheet("QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: rgba(0,0,0,0.1); border-radius: 4px; }")
-            self.expand_btn.clicked.connect(self._on_expand_clicked)
-        new_layout.addWidget(self.expand_btn)
+            self.end_break_btn.setFixedSize(16, 16)
 
     # ======================== 日志与重置 ========================
 
@@ -452,14 +453,14 @@ class MyTimeLoggerGUI(QWidget):
 
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
-        self.end_break_btn = QPushButton("⏹", self.background_widget)
+        self.end_break_btn = QPushButton(self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
-        self.end_break_btn.setFixedSize(20, 20)
+        self.end_break_btn.setFixedSize(16, 16)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
-                background-color: #FF5252; color: #FFFFFF; border: none;
-                border-radius: 4px; font-size: 12px;
+                background-color: #FF5252; border: none;
+                border-radius: 3px;
             }
             QPushButton#end_break_btn:hover { background-color: #FF1744; }
         """)

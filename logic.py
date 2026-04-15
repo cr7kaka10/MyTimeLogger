@@ -218,12 +218,27 @@ class MyTimeLoggerLogic(QObject):
                     self._run_long_break_cycle()
                 else:
                     self._run_study_cycle()
-        elif self.current_state == "countup_studying" and is_countup:
-            # 如果是正计时，且任务或分类发生了实质性切换，则重置起始点归零重新计
-            if old_cat_id != category_id or old_task != task_name:
-                self.current_session_start_time = datetime.now()
-                self.state_changed.emit("⏳ 正计时中...", self.current_state)
-                logging.info(f"点击了新的分类/任务，正计时重置归零。新任务: {task_name}, 分类: {category_id}")
+        elif self.current_state == "countup_studying":
+            if is_countup:
+                # 如果是正计时，且任务或分类发生了实质性切换，则重置起始点归零重新计
+                if old_cat_id != category_id or old_task != task_name:
+                    self.current_session_start_time = datetime.now()
+                    self.state_changed.emit("⏳ 正计时中...", self.current_state)
+                    logging.info(f"点击了新的分类/任务，正计时重置归零。新任务: {task_name}, 分类: {category_id}")
+            else:
+                # 正计时切换到倒计时（输入/输出）
+                self.timer.stop()
+                self.is_paused = False
+                if self.current_cycle_study_time >= self.config["long_break_threshold"]:
+                    self._run_long_break_cycle()
+                else:
+                    self._run_study_cycle()
+        elif self.current_state in ["studying", "short_breaking", "long_breaking"]:
+            if is_countup:
+                # 倒计时或休息切换到正计时
+                self.timer.stop()
+                self.is_paused = False
+                self._run_countup_cycle()
 
         logging.info(f"专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}")
 
