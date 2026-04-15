@@ -52,7 +52,7 @@ class MyTimeLoggerGUI(QWidget):
         self.is_locked = False
         self.settings = QSettings("MyTimeLogger", "App")
         self.is_always_on_top = self.settings.value("ui/alwaysOnTop", True, type=bool)
-        self.is_mini_mode = self.settings.value("ui/isMiniMode", False, type=bool)
+        self.is_mini_mode = True # 强制 Mini 模式
 
         self.create_tray_icon()
 
@@ -188,67 +188,36 @@ class MyTimeLoggerGUI(QWidget):
 
     # ======================== 布局管理 ========================
 
-    def toggle_mini_mode(self):
-        """切换迷你/标准模式"""
-        self.is_mini_mode = not self.is_mini_mode
-        self.settings.setValue("ui/isMiniMode", self.is_mini_mode)
-        self.rebuild_layout()
-        self.update_stylesheet()
-
     def rebuild_layout(self):
-        """根据当前模式重建布局"""
+        """重建布局，仅保留 Mini 模式"""
         if self.background_widget.layout():
             old_layout = self.background_widget.layout()
             while old_layout.count():
                 item = old_layout.takeAt(0)
-                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.start_btn if hasattr(self, 'start_btn') else None, self.mini_toggle_btn]:
+                if item.widget() and item.widget() not in [self.status_label, self.total_time_label, self.end_break_btn if hasattr(self, 'end_break_btn') else None, self.start_btn if hasattr(self, 'start_btn') else None]:
                     item.widget().deleteLater()
             from PyQt6 import sip
             sip.delete(old_layout)
 
-        if self.is_mini_mode:
-            self.setFixedSize(280, 40)
-            self.background_widget.setFixedSize(280, 40)
-            self.status_label.setWordWrap(False)
-            new_layout = QHBoxLayout(self.background_widget)
-            new_layout.setContentsMargins(10, 0, 10, 0)
-            new_layout.setSpacing(8)
-            new_layout.addWidget(self.mini_toggle_btn)
-            new_layout.addWidget(self.status_label)
-            if hasattr(self, 'start_btn'):
-                new_layout.addWidget(self.start_btn)
-            new_layout.addWidget(self.total_time_label)
-            self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'expand.svg'))))
-            self.mini_toggle_btn.setIconSize(QSize(16, 16))
-        else:
-            self.setFixedSize(220, 140)
-            self.background_widget.setFixedSize(220, 140)
-            self.status_label.setWordWrap(True)
-            new_layout = QVBoxLayout(self.background_widget)
-            new_layout.setContentsMargins(10, 5, 10, 10)
-            new_layout.setSpacing(2)
-            top_row = QHBoxLayout()
-            top_row.addStretch()
-            top_row.addWidget(self.mini_toggle_btn)
-            new_layout.addLayout(top_row)
-            new_layout.addWidget(self.status_label, 0, Qt.AlignmentFlag.AlignCenter)
-            if hasattr(self, 'start_btn'):
-                new_layout.addWidget(self.start_btn, 0, Qt.AlignmentFlag.AlignCenter)
-            new_layout.addWidget(self.total_time_label, 0, Qt.AlignmentFlag.AlignCenter)
-            new_layout.addStretch()
-            self.mini_toggle_btn.setIcon(QIcon(resource_path(os.path.join('document', 'shrink.svg'))))
-            self.mini_toggle_btn.setIconSize(QSize(16, 16))
+        # 强制 Mini 横向布局
+        self.setFixedSize(260, 42)
+        self.background_widget.setFixedSize(260, 42)
+        self.status_label.setWordWrap(False)
+        
+        new_layout = QHBoxLayout(self.background_widget)
+        new_layout.setContentsMargins(10, 0, 10, 0)
+        new_layout.setSpacing(6)
+        
+        # 依次添加状态标签、播放按钮、总时间
+        new_layout.addWidget(self.status_label)
+        if hasattr(self, 'start_btn'):
+            new_layout.addWidget(self.start_btn)
+        new_layout.addWidget(self.total_time_label)
 
         if hasattr(self, 'end_break_btn'):
-            new_layout.addWidget(self.end_break_btn, 0, Qt.AlignmentFlag.AlignCenter)
-            if self.is_mini_mode:
-                self.end_break_btn.setFixedSize(75, 20)
-                self.end_break_btn.setStyleSheet(self.end_break_btn.styleSheet().replace("font-size: 12px;", "font-size: 10px;").replace("font-size: 13px;", "font-size: 10px;"))
-            else:
-                self.end_break_btn.setFixedSize(120, 30)
-                curr_style = self.end_break_btn.styleSheet()
-                if "font-size: 10px;" in curr_style:
-                    self.end_break_btn.setStyleSheet(curr_style.replace("font-size: 10px;", "font-size: 12px;"))
+            new_layout.addWidget(self.end_break_btn)
+            self.end_break_btn.setFixedSize(50, 24)
+            # 基础样式已在 _build_end_break_button 定义为红色紧凑款
 
     # ======================== 日志与重置 ========================
 
@@ -460,8 +429,8 @@ class MyTimeLoggerGUI(QWidget):
         """根据模式和设置更新样式"""
         opacity = self.settings.value("ui/opacity", 0.8, type=float)
         border_style = "border: none;" if self.is_locked else "border: 1px solid #88C0D0;"
-        label_font = 13 if self.is_mini_mode else 15
-        total_time_font = 20 if self.is_mini_mode else 26
+        label_font = 13
+        total_time_font = 20
         self.background_widget.setStyleSheet(f"""
             #background {{ background-color: rgba(46, 52, 64, {opacity}); border-radius: 10px; {border_style} }}
             QLabel {{ background-color: transparent; color: #D8DEE9; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: {label_font}px; }}
@@ -479,16 +448,16 @@ class MyTimeLoggerGUI(QWidget):
 
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
-        self.end_break_btn = QPushButton("⏹ 结束休息", self.background_widget)
+        self.end_break_btn = QPushButton("结束", self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
-                background-color: #BF616A; color: #ECEFF4; border: none;
-                border-radius: 6px; padding: 2px 10px; font-size: 12px;
+                background-color: #FF5252; color: #FFFFFF; border: none;
+                border-radius: 4px; padding: 2px 6px; font-size: 11px;
                 font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; font-weight: bold;
             }
-            QPushButton#end_break_btn:hover { background-color: #D08770; }
+            QPushButton#end_break_btn:hover { background-color: #FF1744; }
         """)
         self.end_break_btn.clicked.connect(self._on_end_break_clicked)
         self.end_break_btn.hide()
@@ -546,12 +515,12 @@ class MyTimeLoggerGUI(QWidget):
         elif state_name == "countup_studying":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("■ 结束")
+            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         elif state_name == "long_breaking":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("⏭ 结束休息")
+            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         elif state_name == "studying":
             self._set_play_btn_state("pause")
