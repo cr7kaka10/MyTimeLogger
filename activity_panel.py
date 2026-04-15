@@ -199,23 +199,17 @@ class ActivityPanel(QWidget):
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_play_pause_clicked)
         self.start_btn.setStyleSheet("""
-            QPushButton { background-color: transparent; color: #5E81AC; border: none; font-size: 18px; }
-            QPushButton:hover { color: #81A1C1; }
+            QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+            QPushButton:hover { background-color: #81A1C1; }
         """)
         bottom_layout.addWidget(self.start_btn)
         
-        self.end_break_btn = QPushButton()
-        self.end_break_btn.setFixedSize(20, 20)
+        self.end_break_btn = QPushButton("■")
+        self.end_break_btn.setFixedSize(24, 24)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FF5252;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #FF1744;
-            }
+            QPushButton { background-color: #FF5252; color: white; border: none; border-radius: 4px; font-size: 10px; }
+            QPushButton:hover { background-color: #FF1744; }
         """)
         self.end_break_btn.clicked.connect(self._on_end_break_clicked)
         self.end_break_btn.hide()
@@ -293,10 +287,18 @@ class ActivityPanel(QWidget):
         state_name = self.logic.current_state
         if state_name in ["stopped", "long_break_finished"]:
             self.start_btn.setText("▶")
+            self.start_btn.setStyleSheet("""
+                QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+                QPushButton:hover { background-color: #81A1C1; }
+            """)
             self.start_btn.show()
             self.end_break_btn.hide()
         elif state_name in ["countup_studying", "long_breaking", "studying", "short_breaking"]:
-            self.start_btn.setText("⏸")
+            self.start_btn.setText("▐▐")
+            self.start_btn.setStyleSheet("""
+                QPushButton { background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 8px; letter-spacing: 1px; padding-left: 2px; }
+                QPushButton:hover { background-color: #BF616A; }
+            """)
             self.start_btn.show()
             self.end_break_btn.show()
         else:
@@ -305,6 +307,10 @@ class ActivityPanel(QWidget):
             
         if self.logic.is_paused:
             self.start_btn.setText("▶")
+            self.start_btn.setStyleSheet("""
+                QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+                QPushButton:hover { background-color: #81A1C1; }
+            """)
             self.start_btn.show()
 
     def _on_play_pause_clicked(self):

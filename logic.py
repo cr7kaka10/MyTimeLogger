@@ -27,7 +27,7 @@ class MyTimeLoggerLogic(QObject):
     time_updated = pyqtSignal(int)
     notification_requested = pyqtSignal(str, str)
     input_reason_requested = pyqtSignal()
-    input_summary_requested = pyqtSignal()
+    input_summary_requested = pyqtSignal(bool)
     session_logged = pyqtSignal()
     _async_log_trigger = pyqtSignal(dict)
     _sync_trigger = pyqtSignal(dict)
@@ -112,7 +112,7 @@ class MyTimeLoggerLogic(QObject):
             self._clear_current_session()
             if self.current_cycle_study_time >= self.config["long_break_threshold"]:
                 self._play_sound("victory")
-                self.input_summary_requested.emit()
+                self.input_summary_requested.emit(True)
             else:
                 self._run_short_break_cycle()
         elif self.current_state == "short_breaking":
@@ -285,8 +285,7 @@ class MyTimeLoggerLogic(QObject):
             self.large_session_net_duration += study_duration
             self._clear_current_session()
             
-            self._play_sound("victory")
-            self.input_summary_requested.emit()
+            self.input_summary_requested.emit(False)
 
     def toggle_pause(self):
         """切换暂停/恢复状态"""

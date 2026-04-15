@@ -171,9 +171,12 @@ class MyTimeLoggerGUI(QWidget):
         else:
             self.logic.add_pause_reason("无")
 
-    def prompt_for_session_summary(self):
+    def prompt_for_session_summary(self, is_success=True):
         """弹出专注总结输入对话框"""
-        dialog = MarkdownInputDialog("大专注完成！", "恭喜完成一段深度专注！请总结你做了哪些事（支持 markdown 语法）：", self)
+        title = "大专注完成！" if is_success else "专注失败"
+        prompt = "恭喜完成一段深度专注！请总结你做了哪些事（支持 markdown 语法）：" if is_success else "专注被提前终止，请记录失败原因或简述进度（支持 markdown 语法）："
+        init_text = "" if is_success else "专注失败：\n"
+        dialog = MarkdownInputDialog(title, prompt, self, initial_text=init_text)
         QTimer.singleShot(100, lambda: self._activate_dialog(dialog))
         if dialog.exec() == QDialog.DialogCode.Accepted:
             summary = dialog.textValue()
@@ -214,15 +217,15 @@ class MyTimeLoggerGUI(QWidget):
             self.expand_btn.clicked.connect(self._on_expand_clicked)
         new_layout.addWidget(self.expand_btn)
         
-        # 依次添加状态标签、播放按钮、总时间
+        new_layout.addWidget(self.expand_btn)
         new_layout.addWidget(self.status_label)
+        new_layout.addWidget(self.total_time_label)
+        new_layout.addStretch()
+        
         if hasattr(self, 'start_btn'):
             new_layout.addWidget(self.start_btn)
-        new_layout.addWidget(self.total_time_label)
-
         if hasattr(self, 'end_break_btn'):
             new_layout.addWidget(self.end_break_btn)
-            self.end_break_btn.setFixedSize(8, 8)
 
     # ======================== 日志与重置 ========================
 
@@ -453,14 +456,14 @@ class MyTimeLoggerGUI(QWidget):
 
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
-        self.end_break_btn = QPushButton(self.background_widget)
+        self.end_break_btn = QPushButton("■", self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
-        self.end_break_btn.setFixedSize(8, 8)
+        self.end_break_btn.setFixedSize(24, 24)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
-                background-color: #FF5252; border: none;
-                border-radius: 2px;
+                background-color: #FF5252; color: white; border: none;
+                border-radius: 4px; font-size: 10px;
             }
             QPushButton#end_break_btn:hover { background-color: #FF1744; }
         """)
@@ -484,23 +487,17 @@ class MyTimeLoggerGUI(QWidget):
             self.start_btn.setText("▶")
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
-                    background-color: transparent; 
-                    color: #5E81AC;
-                    border: none; 
-                    font-size: 18px;
+                    background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px;
                 }
-                QPushButton#start_btn:hover { color: #81A1C1; }
+                QPushButton#start_btn:hover { background-color: #81A1C1; }
             """)
         else:
-            self.start_btn.setText("⏸")
+            self.start_btn.setText("▐▐")
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
-                    background-color: transparent; 
-                    color: #D08770;
-                    border: none; 
-                    font-size: 16px;
+                    background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 8px; letter-spacing: 1px; padding-left: 2px;
                 }
-                QPushButton#start_btn:hover { color: #BF616A; }
+                QPushButton#start_btn:hover { background-color: #BF616A; }
             """)
 
     def _on_play_pause_clicked(self):
@@ -590,10 +587,15 @@ class MyTimeLoggerGUI(QWidget):
                 
                 icon = getattr(self, '_cached_cat_icon', '📚')
                 name = getattr(self, '_cached_cat_name', '专注中')
-                self.status_label.setText(f"{icon} {name}\n⏳ {int(mins):02}:{int(secs):02}")
-                
                 up_m, up_s = divmod(int(active_cycle_time), 60)
-                self.total_time_label.setText(f"⏱ {int(up_m):02}:{int(up_s):02}")
+                # 正计时放到 status_label
+                self.status_label.setText(f"{icon} {name}\n⏱ {int(up_m):02}:{int(up_s):02}")
+                
+                # 总的倒计时放到 total_time_label
+                threshold = self.config.get("long_break_threshold", 90 * 60)
+                remaining_total = max(0, threshold - active_cycle_time)
+                down_m, down_s = divmod(int(remaining_total), 60)
+                self.total_time_label.setText(f"🎯 {int(down_m):02}:{int(down_s):02}")
             elif state == "long_breaking":
                 self.status_label.setText(f"🧘 长休息\n{int(mins):02}:{int(secs):02}")
             elif state == "short_breaking":
