@@ -204,7 +204,7 @@ class MyTimeLoggerLogic(QObject):
         self.current_category_id = category_id
         
         is_countup = False
-        if group_name and group_name not in ["输入", "输出"]:
+        if group_name not in ["输入", "输出"] and task_name not in ["输入", "输出"]:
             is_countup = True
 
         if self.current_state in ["stopped", "long_break_finished"]:

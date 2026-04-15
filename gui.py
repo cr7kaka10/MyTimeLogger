@@ -119,6 +119,8 @@ class MyTimeLoggerGUI(QWidget):
         self._build_end_break_button()
         self.generate_statistics_html()
         self.logic.reset_cycle()
+        
+        QTimer.singleShot(100, self._on_expand_clicked)
 
     # ======================== 通知与对话框 ========================
 
@@ -210,8 +212,16 @@ class MyTimeLoggerGUI(QWidget):
 
         if hasattr(self, 'end_break_btn'):
             new_layout.addWidget(self.end_break_btn)
-            self.end_break_btn.setFixedSize(50, 24)
-            # 基础样式已在 _build_end_break_button 定义为红色紧凑款
+            self.end_break_btn.setFixedSize(20, 20)
+
+        if not hasattr(self, 'expand_btn'):
+            self.expand_btn = QPushButton(self.background_widget)
+            self.expand_btn.setIcon(QIcon(resource_path("document/expand.png")))
+            self.expand_btn.setFixedSize(20, 20)
+            self.expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.expand_btn.setStyleSheet("QPushButton { background: transparent; border: none; } QPushButton:hover { background-color: rgba(0,0,0,0.1); border-radius: 4px; }")
+            self.expand_btn.clicked.connect(self._on_expand_clicked)
+        new_layout.addWidget(self.expand_btn)
 
     # ======================== 日志与重置 ========================
 
@@ -442,14 +452,14 @@ class MyTimeLoggerGUI(QWidget):
 
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
-        self.end_break_btn = QPushButton("结束", self.background_widget)
+        self.end_break_btn = QPushButton("⏹", self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
+        self.end_break_btn.setFixedSize(20, 20)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
                 background-color: #FF5252; color: #FFFFFF; border: none;
-                border-radius: 4px; padding: 2px 6px; font-size: 11px;
-                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; font-weight: bold;
+                border-radius: 4px; font-size: 12px;
             }
             QPushButton#end_break_btn:hover { background-color: #FF1744; }
         """)
@@ -511,22 +521,18 @@ class MyTimeLoggerGUI(QWidget):
         elif state_name == "countup_studying":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         elif state_name == "long_breaking":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         elif state_name == "studying":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         elif state_name == "short_breaking":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.setText("结束")
             self.end_break_btn.show()
         else:
             self.start_btn.hide()
@@ -779,12 +785,19 @@ class MyTimeLoggerGUI(QWidget):
         else:
             win.show()
 
+    def _on_expand_clicked(self):
+        """展开为主面板"""
+        self.hide()
+        win = self._ensure_activity_panel_window()
+        win.show()
+
     def _ensure_activity_panel_window(self):
         """确保活动面板窗口已创建并返回"""
         if self._activity_panel_window is None:
             self._activity_panel_window = ActivityPanel(
                 logic=self.logic,
-                category_manager=self.category_manager
+                category_manager=self.category_manager,
+                main_window=self
             )
         return self._activity_panel_window
 

@@ -87,10 +87,11 @@ class CategoryButton(QPushButton):
 class ActivityPanel(QWidget):
     """柳比歇夫活动面板"""
 
-    def __init__(self, logic, category_manager):
+    def __init__(self, logic, category_manager, main_window=None):
         super().__init__()
         self.logic = logic
         self.category_manager = category_manager
+        self.main_window = main_window
         
         self.setWindowFlags(
             Qt.WindowType.Tool | 
@@ -150,6 +151,16 @@ class ActivityPanel(QWidget):
         """)
         refresh_btn.clicked.connect(self.refresh_categories)
 
+        self.shrink_btn = QPushButton()
+        self.shrink_btn.setIcon(QIcon("document/shrink.png")) # 或者 svg
+        self.shrink_btn.setFixedSize(24, 24)
+        self.shrink_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.shrink_btn.setStyleSheet("""
+            QPushButton { background: transparent; border: none; }
+            QPushButton:hover { background-color: rgba(0, 0, 0, 0.1); border-radius: 4px; }
+        """)
+        self.shrink_btn.clicked.connect(self._on_shrink_clicked)
+
         close_btn = QPushButton("×")
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -163,6 +174,7 @@ class ActivityPanel(QWidget):
         title_layout.addStretch()
         title_layout.addWidget(refresh_btn)
         title_layout.addWidget(manage_btn)
+        title_layout.addWidget(self.shrink_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
 
@@ -192,13 +204,13 @@ class ActivityPanel(QWidget):
         """)
         bottom_layout.addWidget(self.start_btn)
         
-        self.end_break_btn = QPushButton("结束")
+        self.end_break_btn = QPushButton("⏹")
+        self.end_break_btn.setFixedSize(20, 20)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton {
                 background-color: #FF5252; color: #FFFFFF; border: none;
-                border-radius: 4px; padding: 2px 6px; font-size: 11px;
-                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; font-weight: bold;
+                border-radius: 4px; font-size: 12px;
             }
             QPushButton:hover { background-color: #FF1744; }
         """)
@@ -208,6 +220,11 @@ class ActivityPanel(QWidget):
         
         bg_layout.addLayout(bottom_layout)
         self._update_btn_visibility()
+
+    def _on_shrink_clicked(self):
+        self.hide()
+        if self.main_window:
+            self.main_window.show()
 
     def _open_category_manager(self):
         """打开分类管理弹窗"""
