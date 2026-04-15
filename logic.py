@@ -200,14 +200,13 @@ class MyTimeLoggerLogic(QObject):
         old_cat_id = self.current_category_id
         old_task = self.current_focus_task
         
-        self.current_focus_task = task_name or ""
-        self.current_category_id = category_id
-        
         is_countup = False
         if group_name not in ["输入", "输出"] and task_name not in ["输入", "输出"]:
             is_countup = True
 
         if self.current_state in ["stopped", "long_break_finished"]:
+            self.current_focus_task = task_name or ""
+            self.current_category_id = category_id
             self.is_paused = False
             if self.current_state == "long_break_finished":
                 self.reset_cycle()
@@ -220,12 +219,16 @@ class MyTimeLoggerLogic(QObject):
                     self._run_study_cycle()
         elif self.current_state == "countup_studying":
             if is_countup:
+                self.current_focus_task = task_name or ""
+                self.current_category_id = category_id
                 # 如果是正计时，且任务或分类发生了实质性切换，则重置起始点归零重新计
                 if old_cat_id != category_id or old_task != task_name:
                     self.current_session_start_time = datetime.now()
                     self.state_changed.emit("⏳ 正计时中...", self.current_state)
                     logging.info(f"点击了新的分类/任务，正计时重置归零。新任务: {task_name}, 分类: {category_id}")
             else:
+                self.current_focus_task = task_name or ""
+                self.current_category_id = category_id
                 # 正计时切换到倒计时（输入/输出）
                 self.timer.stop()
                 self.is_paused = False
@@ -238,8 +241,30 @@ class MyTimeLoggerLogic(QObject):
                 # 倒计时或休息切换到正计时
                 self.timer.stop()
                 self.is_paused = False
-                self.reset_cycle()
+                
+                # 自动记录专注失败原因（使用原有的分类信息提交）
+                if self.current_cycle_study_time > 0 or self.large_session_net_duration > 0:
+                    remaining = self.timer.remainingTime() // 1000 if self.timer.isActive() else 0
+                    if self.current_state == "studying":
+                        study_duration = max(0, self.timer.property("duration") - remaining if self.timer.property("duration") else 0)
+                        self.total_study_time += study_duration
+                        self.current_cycle_study_time += study_duration
+                        self.large_session_net_duration += study_duration
+                    
+                    old_cat_name = old_task if old_task in ["输入", "输出"] else "专注"
+                    auto_summary = f"专注失败：从【{old_cat_name}】分类切换到了【{task_name}】分类"
+                    self.commit_large_session(auto_summary, skip_break=True)
+                else:
+                    self.reset_cycle()
+                
+                # 结算完旧记录后，才更新为新的任务和分类
+                self.current_focus_task = task_name or ""
+                self.current_category_id = category_id
                 self._run_countup_cycle()
+            else:
+                # 输入输出互切，不重置，只更新显示
+                self.current_focus_task = task_name or ""
+                self.current_category_id = category_id
 
         logging.info(f"专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}")
 
