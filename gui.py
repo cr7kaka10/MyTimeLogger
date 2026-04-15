@@ -222,7 +222,7 @@ class MyTimeLoggerGUI(QWidget):
 
         if hasattr(self, 'end_break_btn'):
             new_layout.addWidget(self.end_break_btn)
-            self.end_break_btn.setFixedSize(16, 16)
+            self.end_break_btn.setFixedSize(8, 8)
 
     # ======================== 日志与重置 ========================
 
@@ -455,12 +455,12 @@ class MyTimeLoggerGUI(QWidget):
         """创建结束休息按钮，初始隐藏"""
         self.end_break_btn = QPushButton(self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
-        self.end_break_btn.setFixedSize(16, 16)
+        self.end_break_btn.setFixedSize(8, 8)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
                 background-color: #FF5252; border: none;
-                border-radius: 3px;
+                border-radius: 2px;
             }
             QPushButton#end_break_btn:hover { background-color: #FF1744; }
         """)
@@ -582,12 +582,18 @@ class MyTimeLoggerGUI(QWidget):
                 m, s = divmod(int(elapsed), 60)
                 icon = getattr(self, '_cached_cat_icon', '⏳')
                 name = getattr(self, '_cached_cat_name', '正计时')
-                self.status_label.setText(f"{icon} {name}...\n{int(m):02}:{int(s):02}")
+                self.status_label.setText(f"{icon} {name}\n⏱ {int(m):02}:{int(s):02}")
+                self.total_time_label.setText("")
             elif state == "studying":
                 session_elapsed = self.logic.current_session_duration - (remaining_ms // 1000)
                 active_cycle_time = self.logic.current_cycle_study_time + session_elapsed
-                self.update_total_time(active_cycle_time, realtime=True)
-                self.status_label.setText(f"📚 学习中...\n(第 {self.logic.cycle_count} 轮)")
+                
+                icon = getattr(self, '_cached_cat_icon', '📚')
+                name = getattr(self, '_cached_cat_name', '专注中')
+                self.status_label.setText(f"{icon} {name}\n⏳ {int(mins):02}:{int(secs):02}")
+                
+                up_m, up_s = divmod(int(active_cycle_time), 60)
+                self.total_time_label.setText(f"⏱ {int(up_m):02}:{int(up_s):02}")
             elif state == "long_breaking":
                 self.status_label.setText(f"🧘 长休息\n{int(mins):02}:{int(secs):02}")
             elif state == "short_breaking":

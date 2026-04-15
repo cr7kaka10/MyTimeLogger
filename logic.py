@@ -265,14 +265,13 @@ class MyTimeLoggerLogic(QObject):
         self.timer.start(24 * 3600 * 1000)
 
     def end_countup_now(self):
-        """手动结束正计时，并触发总结落库"""
+        """手动结束正计时，并静默落库"""
         if self.current_state == "countup_studying":
             self.timer.stop()
             session_elapsed = (datetime.now() - self.current_session_start_time).total_seconds()
             self.large_session_net_duration += int(session_elapsed)
-            self._play_sound("victory")
-            # 通过已有的总结弹窗流程去完成最终落库
-            self.input_summary_requested.emit()
+            # 独立静默提交，避免任何音效或弹窗
+            self.commit_large_session("日常静默记录", skip_break=True)
 
     def end_study_now(self):
         """手动提前结束当前倒计时专注，计入真实时长并触发总结环节"""
@@ -296,8 +295,6 @@ class MyTimeLoggerLogic(QObject):
         elif self.timer.isActive():
             self.pause()
             if self.current_state == "studying":
-                self.input_reason_requested.emit()
-            elif self.current_state == "countup_studying":
                 self.input_reason_requested.emit()
 
     def start_or_resume(self):
@@ -397,7 +394,7 @@ class MyTimeLoggerLogic(QObject):
         elif self.current_state == "long_breaking":
             self._finish_long_break()
 
-    def commit_large_session(self, summary):
+    def commit_large_session(self, summary, skip_break=False):
         """提交大专注会话数据"""
         if self.large_session_start_time and self.large_session_net_duration > 0:
             end_time = datetime.now()
@@ -420,7 +417,11 @@ class MyTimeLoggerLogic(QObject):
             logging.info(f"大专注会话已提交! 纯时长: {self.large_session_net_duration}s, 暂停: {self.large_session_pause_count}次, 摘要: {summary[:50]}...")
             self.session_logged.emit()
         self._clear_large_session()
-        self._run_long_break_cycle()
+        if not skip_break:
+            self._run_long_break_cycle()
+        else:
+            self.current_state = "stopped"
+            self.state_changed.emit("沉浸式学习", "stopped")
 
     def add_pause_reason(self, reason):
         """记录暂停原因"""
