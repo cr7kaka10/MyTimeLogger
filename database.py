@@ -254,6 +254,19 @@ class StudyLogger:
             logging.error(f"读取数据库失败: {e}")
             return []
 
+    def get_category_id_by_name(self, name):
+        """根据分类名称查找 ID"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception as e:
+            logging.error(f"查找分类 ID 失败: {e}")
+            return None
+
 
 # ==============================================================================
 # 异步数据库工作者 (Worker Thread)

@@ -242,6 +242,10 @@ class MyTimeLoggerLogic(QObject):
                 self.timer.stop()
                 self.is_paused = False
                 
+                #记录下旧的关联信息用于结算
+                prev_task = old_task
+                prev_cat_id = old_cat_id
+                
                 # 自动记录专注失败原因（使用原有的分类信息提交）
                 if self.current_cycle_study_time > 0 or self.large_session_net_duration > 0:
                     remaining = self.timer.remainingTime() // 1000 if self.timer.isActive() else 0
@@ -251,8 +255,9 @@ class MyTimeLoggerLogic(QObject):
                         self.current_cycle_study_time += study_duration
                         self.large_session_net_duration += study_duration
                     
-                    old_cat_name = old_task if old_task in ["输入", "输出"] else "专注"
+                    old_cat_name = prev_task if prev_task in ["输入", "输出"] else "专注"
                     auto_summary = f"专注失败：从【{old_cat_name}】分类切换到了【{task_name}】分类"
+                    # 这里必须保留旧分类 ID 进行结算
                     self.commit_large_session(auto_summary, skip_break=True)
                 else:
                     self.reset_cycle()
@@ -340,6 +345,13 @@ class MyTimeLoggerLogic(QObject):
         """启动长休息"""
         self.current_state = "long_breaking"
         break_duration = self.config["long_break_duration"]
+        
+        # 自动切换到“休息”分类
+        rest_cat_id = self.local_logger.get_category_id_by_name("休息")
+        if rest_cat_id:
+            self.current_category_id = rest_cat_id
+            self.current_focus_task = "休息"
+            
         self.state_changed.emit("🧘 长时间休息...", self.current_state)
         self.time_updated.emit(self.total_study_time)
         self._play_sound("start_long_break")
@@ -426,8 +438,14 @@ class MyTimeLoggerLogic(QObject):
             pause_reasons_str = "; ".join(self.large_session_pause_reasons) if self.large_session_pause_reasons else "无"
             # 如果有关联的专注任务，拼接为总结前缀
             final_summary = summary if summary else "无总结"
-            if self.current_focus_task:
-                final_summary = f"【{self.current_focus_task}】{final_summary}"
+            
+            # 记录下需要的 ID 避免被 _clear 清掉
+            target_cat_id = self.current_category_id
+            target_task = self.current_focus_task
+            
+            if target_task:
+                final_summary = f"【{target_task}】{final_summary}"
+                
             log_data = {
                 "start_time": self.large_session_start_time,
                 "end_time": end_time,
@@ -435,12 +453,13 @@ class MyTimeLoggerLogic(QObject):
                 "pause_count": self.large_session_pause_count,
                 "pause_reasons": pause_reasons_str,
                 "session_summary": final_summary,
-                "category_id": self.current_category_id
+                "category_id": target_cat_id
             }
             self.local_logger.log_session(**log_data)
             self._sync_trigger.emit(log_data)
-            logging.info(f"大专注会话已提交! 纯时长: {self.large_session_net_duration}s, 暂停: {self.large_session_pause_count}次, 摘要: {summary[:50]}...")
+            logging.info(f"大专注会话已提交! 纯时长: {self.large_session_net_duration}s, 摘要: {final_summary[:50]}...")
             self.session_logged.emit()
+        
         self._clear_large_session()
         if not skip_break:
             self._run_long_break_cycle()
