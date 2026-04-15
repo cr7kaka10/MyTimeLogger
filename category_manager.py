@@ -93,7 +93,7 @@ class CategoryManager:
             cursor.execute('''
                 SELECT * FROM categories 
                 WHERE is_active = 1 
-                ORDER BY group_name, sort_order ASC
+                ORDER BY sort_order ASC
             ''')
             rows = cursor.fetchall()
             conn.close()
