@@ -88,12 +88,6 @@ class MyTimeLoggerGUI(QWidget):
         self.background_widget = QWidget(self)
         self.background_widget.setObjectName("background")
 
-        self.mini_toggle_btn = QPushButton(self.background_widget)
-        self.mini_toggle_btn.setFixedSize(20, 20)
-        self.mini_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.mini_toggle_btn.clicked.connect(self.toggle_mini_mode)
-        self.mini_toggle_btn.setStyleSheet("QPushButton { background: transparent; color: #88C0D0; border: none; font-size: 14px; } QPushButton:hover { color: #A3BE8C; }")
-
         self.status_label = QLabel()
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(False)
