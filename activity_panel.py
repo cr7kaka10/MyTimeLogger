@@ -171,11 +171,43 @@ class ActivityPanel(QWidget):
         bg_layout.addLayout(self.grid_layout)
         self.refresh_categories()
 
-        # 底部状态栏
+        # 底部状态栏及控制按钮
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(10, 5, 10, 5)
+        
         self.status_label = QLabel("当前: 无 ⏱ 00:00")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("color: #5E81AC; font-size: 13px; font-weight: bold; background: transparent; border: none; margin-top: 5px;")
-        bg_layout.addWidget(self.status_label)
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.status_label.setStyleSheet("color: #5E81AC; font-size: 13px; font-weight: bold; background: transparent; border: none;")
+        bottom_layout.addWidget(self.status_label)
+        
+        bottom_layout.addStretch()
+        
+        self.start_btn = QPushButton("▶")
+        self.start_btn.setFixedSize(24, 24)
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.clicked.connect(self._on_play_pause_clicked)
+        self.start_btn.setStyleSheet("""
+            QPushButton { background-color: transparent; color: #5E81AC; border: none; font-size: 18px; }
+            QPushButton:hover { color: #81A1C1; }
+        """)
+        bottom_layout.addWidget(self.start_btn)
+        
+        self.end_break_btn = QPushButton("结束")
+        self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.end_break_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF5252; color: #FFFFFF; border: none;
+                border-radius: 4px; padding: 2px 6px; font-size: 11px;
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; font-weight: bold;
+            }
+            QPushButton:hover { background-color: #FF1744; }
+        """)
+        self.end_break_btn.clicked.connect(self._on_end_break_clicked)
+        self.end_break_btn.hide()
+        bottom_layout.addWidget(self.end_break_btn)
+        
+        bg_layout.addLayout(bottom_layout)
+        self._update_btn_visibility()
 
     def _open_category_manager(self):
         """打开分类管理弹窗"""
@@ -235,6 +267,42 @@ class ActivityPanel(QWidget):
 
     def _on_logic_state_changed(self, text, state):
         self._update_button_states()
+        self._update_btn_visibility()
+
+    def _update_btn_visibility(self):
+        state_name = self.logic.current_state
+        if state_name in ["stopped", "long_break_finished"]:
+            self.start_btn.setText("▶")
+            self.start_btn.show()
+            self.end_break_btn.hide()
+        elif state_name in ["countup_studying", "long_breaking", "studying", "short_breaking"]:
+            self.start_btn.setText("⏸")
+            self.start_btn.show()
+            self.end_break_btn.show()
+        else:
+            self.start_btn.hide()
+            self.end_break_btn.hide()
+            
+        if self.logic.is_paused:
+            self.start_btn.setText("▶")
+            self.start_btn.show()
+
+    def _on_play_pause_clicked(self):
+        state = self.logic.current_state
+        if state in ["stopped", "long_break_finished"]:
+            self.logic.start_only()
+        elif self.logic.is_paused:
+            self.logic.toggle_pause()
+        elif state in ["studying", "countup_studying", "short_breaking", "long_breaking"]:
+            self.logic.toggle_pause()
+
+    def _on_end_break_clicked(self):
+        if self.logic.current_state == "countup_studying":
+            self.logic.end_countup_now()
+        elif self.logic.current_state == "studying":
+            self.logic.end_study_now()
+        else:
+            self.logic.end_break_now()
 
     def _update_button_states(self):
         curr_id = self.logic.current_category_id
@@ -257,17 +325,17 @@ class ActivityPanel(QWidget):
                         cat_name = btn.category_data.get("name")
                         break
             
-            # 计算已进行时间
+            # 计算已进行或剩余时间
             if self.logic.current_state == "studying":
                 remaining_ms = self.logic.timer.remainingTime()
-                elapsed_sec = self.logic.current_session_duration - (remaining_ms // 1000)
-                icon = "🔥"
+                elapsed_sec = remaining_ms // 1000
+                icon = "🔥倒计时"
             else:
                 if self.logic.current_session_start_time:
                     elapsed_sec = int((datetime.now() - self.logic.current_session_start_time).total_seconds())
                 else:
                     elapsed_sec = 0
-                icon = "⏳"
+                icon = "⏳已计"
                 
             mins, secs = divmod(elapsed_sec, 60)
             self.status_label.setText(f"{icon} {cat_name} ⏱ {mins:02d}:{secs:02d}")

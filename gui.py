@@ -422,13 +422,13 @@ class MyTimeLoggerGUI(QWidget):
     def update_stylesheet(self):
         """根据模式和设置更新样式"""
         opacity = self.settings.value("ui/opacity", 0.8, type=float)
-        border_style = "border: none;" if self.is_locked else "border: 1px solid #88C0D0;"
+        border_style = "border: none;" if self.is_locked else "border: 1px solid #E5E9F0;"
         label_font = 13
         total_time_font = 20
         self.background_widget.setStyleSheet(f"""
-            #background {{ background-color: rgba(46, 52, 64, {opacity}); border-radius: 10px; {border_style} }}
-            QLabel {{ background-color: transparent; color: #D8DEE9; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: {label_font}px; }}
-            #total_time_label {{ font-size: {total_time_font}px; font-weight: bold; color: #00CED1; padding-top: 2px; letter-spacing: 1px; }}
+            #background {{ background-color: rgba(240, 242, 245, {opacity}); border-radius: 10px; {border_style} }}
+            QLabel {{ background-color: transparent; color: #2E3440; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: {label_font}px; }}
+            #total_time_label {{ font-size: {total_time_font}px; font-weight: bold; color: #5E81AC; padding-top: 2px; letter-spacing: 1px; }}
         """)
 
     def _build_start_button(self):
@@ -461,6 +461,8 @@ class MyTimeLoggerGUI(QWidget):
         """点击结束按钮（根据状态区分为结束休息或结束正计时）"""
         if self.logic.current_state == "countup_studying":
             self.logic.end_countup_now()
+        elif self.logic.current_state == "studying":
+            self.logic.end_study_now()
         else:
             self.logic.end_break_now()
 
@@ -472,22 +474,22 @@ class MyTimeLoggerGUI(QWidget):
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
                     background-color: transparent; 
-                    color: #88C0D0;
+                    color: #5E81AC;
                     border: none; 
                     font-size: 18px;
                 }
-                QPushButton#start_btn:hover { color: #8FBCBB; }
+                QPushButton#start_btn:hover { color: #81A1C1; }
             """)
         else:
             self.start_btn.setText("⏸")
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
                     background-color: transparent; 
-                    color: #EBCB8B;
+                    color: #D08770;
                     border: none; 
                     font-size: 16px;
                 }
-                QPushButton#start_btn:hover { color: #D08770; }
+                QPushButton#start_btn:hover { color: #BF616A; }
             """)
 
     def _on_play_pause_clicked(self):
@@ -519,11 +521,13 @@ class MyTimeLoggerGUI(QWidget):
         elif state_name == "studying":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.hide()
+            self.end_break_btn.setText("结束")
+            self.end_break_btn.show()
         elif state_name == "short_breaking":
             self._set_play_btn_state("pause")
             self.start_btn.show()
-            self.end_break_btn.hide()
+            self.end_break_btn.setText("结束")
+            self.end_break_btn.show()
         else:
             self.start_btn.hide()
             self.end_break_btn.hide()

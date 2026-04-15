@@ -259,6 +259,21 @@ class MyTimeLoggerLogic(QObject):
             # 通过已有的总结弹窗流程去完成最终落库
             self.input_summary_requested.emit()
 
+    def end_study_now(self):
+        """手动提前结束当前倒计时专注，计入真实时长并触发总结环节"""
+        if self.current_state == "studying":
+            self.timer.stop()
+            remaining = self.timer.remainingTime() // 1000
+            study_duration = max(0, self.timer.property("duration") - remaining)
+            
+            self.total_study_time += study_duration
+            self.current_cycle_study_time += study_duration
+            self.large_session_net_duration += study_duration
+            self._clear_current_session()
+            
+            self._play_sound("victory")
+            self.input_summary_requested.emit()
+
     def toggle_pause(self):
         """切换暂停/恢复状态"""
         if self.is_paused:
