@@ -238,6 +238,7 @@ class MyTimeLoggerLogic(QObject):
                 # 倒计时或休息切换到正计时
                 self.timer.stop()
                 self.is_paused = False
+                self.reset_cycle()
                 self._run_countup_cycle()
 
         logging.info(f"专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}")

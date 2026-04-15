@@ -189,26 +189,26 @@ class ActivityPanel(QWidget):
         
         self.status_label = QLabel("当前: 无 ⏱ 00:00")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.status_label.setStyleSheet("color: #5E81AC; font-size: 13px; font-weight: bold; background: transparent; border: none;")
+        self.status_label.setStyleSheet("color: #5E81AC; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-size: 13px; font-weight: bold; background: transparent; border: none;")
         bottom_layout.addWidget(self.status_label)
         
         bottom_layout.addStretch()
         
-        self.start_btn = QPushButton("▶")
+        self.start_btn = QPushButton("\uf04b")
         self.start_btn.setFixedSize(24, 24)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_play_pause_clicked)
         self.start_btn.setStyleSheet("""
-            QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+            QPushButton { font-family: 'Font Awesome 6 Free'; font-weight: 900; background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
             QPushButton:hover { background-color: #81A1C1; }
         """)
         bottom_layout.addWidget(self.start_btn)
         
-        self.end_break_btn = QPushButton("■")
+        self.end_break_btn = QPushButton("\uf04d")
         self.end_break_btn.setFixedSize(24, 24)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
-            QPushButton { background-color: #FF5252; color: white; border: none; border-radius: 4px; font-size: 10px; }
+            QPushButton { font-family: 'Font Awesome 6 Free'; font-weight: 900; background-color: #FF5252; color: white; border: none; border-radius: 4px; font-size: 10px; }
             QPushButton:hover { background-color: #FF1744; }
         """)
         self.end_break_btn.clicked.connect(self._on_end_break_clicked)
@@ -286,17 +286,17 @@ class ActivityPanel(QWidget):
     def _update_btn_visibility(self):
         state_name = self.logic.current_state
         if state_name in ["stopped", "long_break_finished"]:
-            self.start_btn.setText("▶")
+            self.start_btn.setText("\uf04b")
             self.start_btn.setStyleSheet("""
-                QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-weight: 900; background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
                 QPushButton:hover { background-color: #81A1C1; }
             """)
             self.start_btn.show()
             self.end_break_btn.hide()
         elif state_name in ["countup_studying", "long_breaking", "studying", "short_breaking"]:
-            self.start_btn.setText("▐▐")
+            self.start_btn.setText("\uf04c")
             self.start_btn.setStyleSheet("""
-                QPushButton { background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 8px; letter-spacing: 1px; padding-left: 2px; }
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-weight: 900; background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 1px; }
                 QPushButton:hover { background-color: #BF616A; }
             """)
             self.start_btn.show()
@@ -306,9 +306,9 @@ class ActivityPanel(QWidget):
             self.end_break_btn.hide()
             
         if self.logic.is_paused:
-            self.start_btn.setText("▶")
+            self.start_btn.setText("\uf04b")
             self.start_btn.setStyleSheet("""
-                QPushButton { background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
+                QPushButton { font-family: 'Font Awesome 6 Free'; font-weight: 900; background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px; }
                 QPushButton:hover { background-color: #81A1C1; }
             """)
             self.start_btn.show()

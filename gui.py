@@ -442,6 +442,7 @@ class MyTimeLoggerGUI(QWidget):
         self.background_widget.setStyleSheet(f"""
             #background {{ background-color: rgba(240, 242, 245, {opacity}); border-radius: 10px; {border_style} }}
             QLabel {{ background-color: transparent; color: #2E3440; font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif; font-size: {label_font}px; }}
+            #status_label {{ font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; }}
             #total_time_label {{ font-size: {total_time_font}px; font-weight: bold; color: #5E81AC; padding-top: 2px; letter-spacing: 1px; }}
         """)
 
@@ -456,12 +457,13 @@ class MyTimeLoggerGUI(QWidget):
 
     def _build_end_break_button(self):
         """创建结束休息按钮，初始隐藏"""
-        self.end_break_btn = QPushButton("■", self.background_widget)
+        self.end_break_btn = QPushButton("\uf04d", self.background_widget)
         self.end_break_btn.setObjectName("end_break_btn")
         self.end_break_btn.setFixedSize(24, 24)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton#end_break_btn {
+                font-family: 'Font Awesome 6 Free'; font-weight: 900;
                 background-color: #FF5252; color: white; border: none;
                 border-radius: 4px; font-size: 10px;
             }
@@ -484,18 +486,20 @@ class MyTimeLoggerGUI(QWidget):
         """设置播放/暂停按钮的外观。mode: 'play' | 'pause'"""
         self._play_btn_mode = mode
         if mode == "play":
-            self.start_btn.setText("▶")
+            self.start_btn.setText("\uf04b")
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
+                    font-family: 'Font Awesome 6 Free'; font-weight: 900;
                     background-color: #5E81AC; color: white; border: none; border-radius: 4px; font-size: 10px; padding-left: 2px;
                 }
                 QPushButton#start_btn:hover { background-color: #81A1C1; }
             """)
         else:
-            self.start_btn.setText("▐▐")
+            self.start_btn.setText("\uf04c")
             self.start_btn.setStyleSheet("""
                 QPushButton#start_btn {
-                    background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 8px; letter-spacing: 1px; padding-left: 2px;
+                    font-family: 'Font Awesome 6 Free'; font-weight: 900;
+                    background-color: #D08770; color: white; border: none; border-radius: 4px; font-size: 10px;
                 }
                 QPushButton#start_btn:hover { background-color: #BF616A; }
             """)
