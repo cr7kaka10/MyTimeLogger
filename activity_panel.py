@@ -132,7 +132,7 @@ class ActivityPanel(QWidget):
 
         # 标题栏
         title_layout = QHBoxLayout()
-        title_label = QLabel("📊 柳比歇夫时间管理面板")
+        title_label = QLabel("📊 沉浸式学习")
         title_label.setStyleSheet("color: #3B4252; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
         
         manage_btn = QPushButton("⚙️ 管理")
@@ -152,12 +152,12 @@ class ActivityPanel(QWidget):
         refresh_btn.clicked.connect(self.refresh_categories)
 
         self.shrink_btn = QPushButton()
-        self.shrink_btn.setIcon(QIcon("document/shrink.png")) # 或者 svg
+        self.shrink_btn.setIcon(QIcon("document/shrink.svg"))
         self.shrink_btn.setFixedSize(24, 24)
         self.shrink_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.shrink_btn.setStyleSheet("""
             QPushButton { background: transparent; border: none; }
-            QPushButton:hover { background-color: rgba(0, 0, 0, 0.1); border-radius: 4px; }
+            QPushButton:hover { background-color: rgba(255, 255, 255, 0.3); border-radius: 4px; }
         """)
         self.shrink_btn.clicked.connect(self._on_shrink_clicked)
 
@@ -204,15 +204,18 @@ class ActivityPanel(QWidget):
         """)
         bottom_layout.addWidget(self.start_btn)
         
-        self.end_break_btn = QPushButton("⏹")
+        self.end_break_btn = QPushButton()
         self.end_break_btn.setFixedSize(20, 20)
         self.end_break_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.end_break_btn.setStyleSheet("""
             QPushButton {
-                background-color: #FF5252; color: #FFFFFF; border: none;
-                border-radius: 4px; font-size: 12px;
+                background-color: #FF5252;
+                border: none;
+                border-radius: 4px;
             }
-            QPushButton:hover { background-color: #FF1744; }
+            QPushButton:hover {
+                background-color: #FF1744;
+            }
         """)
         self.end_break_btn.clicked.connect(self._on_end_break_clicked)
         self.end_break_btn.hide()
@@ -328,38 +331,65 @@ class ActivityPanel(QWidget):
             btn.set_active(is_active)
 
     def _on_timer_tick(self):
-        """每秒更新状态显示"""
+        """每秒更新状态显示 - 同步mini面板完整信息"""
         if not self.isVisible():
             return
-            
-        # 更新当前计时
+        
+        # 获取当前分类信息
         curr_id = self.logic.current_category_id
+        cat_name = "未分类"
+        cat_icon = "⏳"
+        if curr_id:
+            for btn in self.buttons:
+                if btn.category_data.get("id") == curr_id:
+                    cat_name = btn.category_data.get("name")
+                    cat_icon = btn.category_data.get("icon", "⏳")
+                    break
+        
+        # 计算周期剩余时间（距长休息）
+        threshold = getattr(self.logic, 'config', {}).get("long_break_threshold", 90 * 60) if hasattr(self.logic, 'config') else 90 * 60
+        active_cycle_time = getattr(self.logic, 'current_cycle_study_time', 0)
+        if self.logic.current_state == "studying" and self.logic.timer.isActive():
+            session_elapsed = getattr(self.logic, 'current_session_duration', 0) - (self.logic.timer.remainingTime() // 1000)
+            active_cycle_time += session_elapsed
+        remaining_cycle = max(0, threshold - active_cycle_time)
+        cycle_mins, cycle_secs = divmod(int(remaining_cycle), 60)
+        
+        # 构建状态文本 - 只显示分类名称、计时、周期剩余
         if self.logic.current_state in ["studying", "countup_studying"] and not self.logic.is_paused:
-            cat_name = "未分类"
-            if curr_id:
-                for btn in self.buttons:
-                    if btn.category_data.get("id") == curr_id:
-                        cat_name = btn.category_data.get("name")
-                        break
-            
-            # 计算已进行或剩余时间
             if self.logic.current_state == "studying":
-                remaining_ms = self.logic.timer.remainingTime()
-                elapsed_sec = remaining_ms // 1000
-                icon = "🔥倒计时"
+                up_m, up_s = divmod(int(active_cycle_time), 60)
+                status_text = f"{cat_icon} {cat_name}"
+                timer_text = f"⏱ {up_m:02d}:{up_s:02d}"
             else:
                 if self.logic.current_session_start_time:
                     elapsed_sec = int((datetime.now() - self.logic.current_session_start_time).total_seconds())
                 else:
                     elapsed_sec = 0
-                icon = "⏳已计"
-                
-            mins, secs = divmod(elapsed_sec, 60)
-            self.status_label.setText(f"{icon} {cat_name} ⏱ {mins:02d}:{secs:02d}")
+                m, s = divmod(elapsed_sec, 60)
+                status_text = f"{cat_icon} {cat_name}"
+                timer_text = f"⏱ {m:02d}:{s:02d}"
+            
+            cycle_text = f"🎯 {cycle_mins:02d}:{cycle_secs:02d}"
+            self.status_label.setText(f"{status_text}     {timer_text}     {cycle_text}")
         elif self.logic.is_paused:
-            self.status_label.setText("⏸️ 已暂停")
+            self.status_label.setText(f"⏸️ 已暂停     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
+        elif self.logic.current_state == "long_breaking":
+            if self.logic.timer.isActive():
+                remaining_ms = self.logic.timer.remainingTime()
+                mins, secs = divmod(remaining_ms // 1000, 60)
+                self.status_label.setText(f"🧘 长休息     ⏱ {mins:02d}:{secs:02d}")
+            else:
+                self.status_label.setText("🧘 长休息")
+        elif self.logic.current_state == "short_breaking":
+            if self.logic.timer.isActive():
+                remaining_ms = self.logic.timer.remainingTime()
+                mins, secs = divmod(remaining_ms // 1000, 60)
+                self.status_label.setText(f"☕ 短暂休息     ⏱ {mins:02d}:{secs:02d}")
+            else:
+                self.status_label.setText("☕ 短暂休息")
         else:
-            self.status_label.setText("当前: 闲置 ⏱ 00:00")
+            self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
 
     def _update_summary(self):
         """计算今日各分组的时间汇总"""
@@ -406,6 +436,14 @@ class ActivityPanel(QWidget):
 
     def mouseReleaseEvent(self, event):
         self._drag_pos = None
+
+    def contextMenuEvent(self, event):
+        """右键菜单 - 复用主窗口菜单"""
+        if self.main_window and hasattr(self.main_window, 'populate_context_menu'):
+            from PyQt6.QtWidgets import QMenu
+            menu = QMenu(self)
+            self.main_window.populate_context_menu(menu)
+            menu.exec(event.globalPos())
 
     def showEvent(self, event):
         self.refresh_categories()
