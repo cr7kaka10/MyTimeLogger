@@ -419,6 +419,15 @@ class DailyChecklistWindow(QWidget):
             selected = diag.get_selected()
             if selected: self._on_focus_clicked(selected)
 
+    def _on_task_completed_ok(self, task_id):
+        """同步成功的处理逻辑"""
+        logger.info(f"任务 {task_id} 已同步到 TickTick")
+
+    def _on_task_complete_failed(self, task_id, error):
+        """同步失败的处理逻辑"""
+        logger.error(f"任务 {task_id} 同步失败: {error}")
+        self.status_bar.setText(f"❌ 同步失败: {error}")
+
     # 窗口控制
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
