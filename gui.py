@@ -71,10 +71,10 @@ class MyTimeLoggerGUI(QWidget):
         # 默认显示时间管理大面板
         QTimer.singleShot(300, self.toggle_activity_panel)
 
-        # 软件启动后延迟 3 秒，自动在后台同步今日清单（不打开窗口）
+        # 软件启动后延迟 100 毫秒，自动在后台同步今日清单（不打开窗口）
         tt_cfg = self.config.get("ticktick_config", {})
         if tt_cfg.get("enabled") and tt_cfg.get("access_token"):
-            QTimer.singleShot(3000, self._init_checklist_background_sync)
+            QTimer.singleShot(100, self._init_checklist_background_sync)
 
 
         self.countdown_timer = QTimer(self)

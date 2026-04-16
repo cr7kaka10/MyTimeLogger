@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-分类管理弹窗模块 (category_dialog.py)
-=====================================
+分类管理弹窗模块 (category_dialog.py) - 亮色升级版
+=================================================
 提供两个对话框：
 1. CategoryManagerDialog 供用户自定义增删改查分类。
 2. CategorySelectDialog 供日清单等模块启动专注前强制选择分类使用。
@@ -25,7 +25,6 @@ class GroupItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor("#BF616A"))
         font = painter.font()
         font.setBold(True)
-        # 增大字号让其更加明显
         font.setPointSize(16)
         painter.setFont(font)
         painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "×")
@@ -34,7 +33,6 @@ class GroupItemDelegate(QStyledItemDelegate):
     def editorEvent(self, event, model, option, index):
         if event.type() == QEvent.Type.MouseButtonRelease:
             rect = option.rect
-            # 扩大点按热区：从右侧算起宽度达35px，高度覆盖整个条目
             btn_rect = QRect(rect.right() - 35, rect.top(), 35, rect.height())
             if btn_rect.contains(event.pos()):
                 self.delete_clicked.emit(index.data())
@@ -112,22 +110,18 @@ class IconSelectorDialog(QDialog):
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; color: #2E3440; font-family: 'Microsoft YaHei'; }
             QTabWidget::pane { border: 1px solid #D8DEE9; border-radius: 4px; margin-top: -1px; background: #FFFFFF; }
-            QTabBar { font-family: 'Microsoft YaHei'; }
             QTabBar::tab { background: #F0F2F5; color: #4C566A; padding: 8px 12px; border: 1px solid #D8DEE9; border-top-left-radius: 4px; border-top-right-radius: 4px; }
             QTabBar::tab:selected { background: #FFFFFF; color: #2E3440; font-weight: bold; border-bottom-color: #FFFFFF; }
-            QToolTip { font-family: 'Microsoft YaHei'; background: #FFFFFF; color: #2E3440; border: 1px solid #D8DEE9; }
         """)
         self.selected_icon = None
-        self._full_lib_loaded = False  # 懒加载标记
+        self._full_lib_loaded = False 
 
-        # 构建 FA 字体检测器，用于过滤无效图标
         self._fa_font = QFont('Font Awesome 6 Free')
         self._fa_font.setWeight(QFont.Weight.Black)
         self._fa_font.setPixelSize(20)
         self._fa_fm = QFontMetrics(self._fa_font)
         
         main_layout = QVBoxLayout(self)
-        
         self.tabs = QTabWidget()
         icon_btn_style = """
             QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px;} 
@@ -138,11 +132,9 @@ class IconSelectorDialog(QDialog):
             grid_layout = QGridLayout(tab_widget)
             grid_layout.setSpacing(6)
             grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-            
             col_idx = 0
             for char, name in icon_list:
-                if not self._fa_fm.inFont(char):
-                    continue
+                if not self._fa_fm.inFont(char): continue
                 btn = QPushButton(char)
                 btn.setFixedSize(45, 45)
                 btn.setToolTip(name)
@@ -150,69 +142,40 @@ class IconSelectorDialog(QDialog):
                 btn.clicked.connect(lambda *args, c=char: self._on_select(c))
                 grid_layout.addWidget(btn, col_idx // 9, col_idx % 9)
                 col_idx += 1
-                
             self.tabs.addTab(tab_widget, cat_name)
             
-        # ====== 扩增：完整字库滚动屏（懒加载） ======
         scroll_tab = QWidget()
         scroll_layout = QVBoxLayout(scroll_tab)
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        
         self._full_lib_scroll_area = QScrollArea()
         self._full_lib_scroll_area.setWidgetResizable(True)
-        self._full_lib_scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        
-        placeholder = QLabel("切换到此页面后将自动加载...")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet("color: #4C566A; font-size: 14px;")
-        self._full_lib_scroll_area.setWidget(placeholder)
-        
+        self._full_lib_scroll_area.setWidget(QLabel("加载中..."))
         scroll_layout.addWidget(self._full_lib_scroll_area)
-        self._full_lib_tab_index = self.tabs.addTab(scroll_tab, "🗃️ 完整字库(688个)")
-        
-        # 切换 tab 时懒加载完整字库
+        self._full_lib_tab_index = self.tabs.addTab(scroll_tab, "🗃️ 完整库")
         self.tabs.currentChanged.connect(self._on_tab_changed)
-            
         main_layout.addWidget(self.tabs)
 
     def _on_select(self, char):
-        """选中图标后关闭弹窗"""
         self.selected_icon = char
         self.accept()
 
     def _on_tab_changed(self, index):
-        """切换到完整字库 tab 时懒加载按钮，并过滤无效图标"""
         if index == self._full_lib_tab_index and not self._full_lib_loaded:
             self._full_lib_loaded = True
-            content_widget = QWidget()
-            full_grid = QGridLayout(content_widget)
-            full_grid.setSpacing(6)
-            full_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-            
-            icon_btn_style = """
-                QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px;} 
-                QPushButton:hover { background: #E0E8F0; border: 1px solid #5E81AC; }
-            """
-            col_idx = 0
-            for char_code in range(0xf000, 0xf900):
-                char = chr(char_code)
-                if not self._fa_fm.inFont(char):
-                    continue
+            content = QWidget()
+            grid = QGridLayout(content)
+            idx = 0
+            for code in range(0xf000, 0xf900):
+                char = chr(code)
+                if not self._fa_fm.inFont(char): continue
                 btn = QPushButton(char)
                 btn.setFixedSize(45, 45)
-                btn.setStyleSheet(icon_btn_style)
+                btn.setStyleSheet("QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px; } QPushButton:hover { background: #5E81AC; color: white; }")
                 btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-                full_grid.addWidget(btn, col_idx // 9, col_idx % 9)
-                col_idx += 1
-            
-            self._full_lib_scroll_area.setWidget(content_widget)
-            # 更新 tab 标题显示实际数量
-            self.tabs.setTabText(self._full_lib_tab_index, f"🗃️ 完整字库({col_idx}个)")
-
+                grid.addWidget(btn, idx // 9, idx % 9)
+                idx += 1
+            self._full_lib_scroll_area.setWidget(content)
 
 class CategoryManagerDialog(QDialog):
-    """分类管理 CRUD 弹窗"""
-    
     def __init__(self, category_manager, parent=None):
         super().__init__(parent)
         self.category_manager = category_manager
@@ -220,301 +183,163 @@ class CategoryManagerDialog(QDialog):
         self.setMinimumSize(500, 350)
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; color: #2E3440; font-family: 'Microsoft YaHei'; }
-            QLabel { color: #2E3440; font-family: 'Microsoft YaHei'; }
-            QListWidget { background-color: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 5px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
-            QListWidget::item:selected { background-color: #E5E9F0; color: #5E81AC; border-left: 3px solid #5E81AC; }
-            QLineEdit, QComboBox { background-color: #FFFFFF; color: #2E3440; border: 1px solid #D8DEE9; border-radius: 4px; padding: 4px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: bold; }
-            QPushButton { background-color: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 4px; padding: 6px; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; }
-            QPushButton:hover { background-color: #E0E8F0; }
+            QListWidget { background-color: #F8F9FB; border: 1px solid #D8DEE9; border-radius: 6px; padding: 4px; }
+            QListWidget::item:selected { background-color: #5E81AC; color: white; border-radius: 4px; }
+            QLineEdit, QComboBox { border: 1px solid #D8DEE9; border-radius: 4px; padding: 4px; background: white; }
+            QPushButton { background-color: #F0F2F5; border: 1px solid #D8DEE9; border-radius: 4px; padding: 6px; }
+            QPushButton:hover { background-color: #E5E9F0; }
         """)
-        self.current_category = None
         self._build_ui()
         self._load_categories()
 
     def _build_ui(self):
-        main_layout = QHBoxLayout(self)
+        layout = QHBoxLayout(self)
+        left = QVBoxLayout()
+        self.list = QListWidget()
+        self.list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.list.model().rowsMoved.connect(self._on_reordered)
+        self.list.currentRowChanged.connect(self._on_selected)
+        left.addWidget(QLabel("分类列表:"))
+        left.addWidget(self.list)
+        layout.addLayout(left, 1)
 
-        # 左侧列表
-        left_layout = QVBoxLayout()
-        self.list_widget = QListWidget()
-        # 开启拖拽支持
-        self.list_widget.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.list_widget.model().rowsMoved.connect(self._on_list_reordered)
-        self.list_widget.currentRowChanged.connect(self._on_list_selected)
-        left_layout.addWidget(QLabel("已启用分类 (支持拖拽排序):"))
-        left_layout.addWidget(self.list_widget)
+        right = QVBoxLayout()
+        form = QFormLayout()
+        self.name_in = QLineEdit()
+        self.icon_in = QLineEdit()
+        self.group_cb = QComboBox()
+        self.group_cb.setEditable(True)
+        self.color_in = QLineEdit()
+        form.addRow("名称:", self.name_in)
+        form.addRow("图标:", self.icon_in)
+        form.addRow("分组:", self.group_cb)
+        form.addRow("颜色:", self.color_in)
+        right.addLayout(form)
 
-        # 右侧表单
-        right_layout = QVBoxLayout()
-        form_layout = QFormLayout()
-        
-        self.name_input = QLineEdit()
-        self.icon_input = QLineEdit()
-        self.icon_input.setPlaceholderText("可输Emoji，或点右侧挑选=>")
-        
-        self.icon_btn = QPushButton("库")
-        self.icon_btn.setStyleSheet("""
-            QPushButton { background-color: #5E81AC; color: white; border: none; } 
-            QPushButton:hover { background-color: #81A1C1; }
-        """)
-        self.icon_btn.clicked.connect(self._open_icon_picker)
-        
-        icon_layout = QHBoxLayout()
-        icon_layout.addWidget(self.icon_input)
-        icon_layout.addWidget(self.icon_btn)
-        
-        self.group_combo = QComboBox()
-        self.group_combo.setEditable(True)
-        self.group_delegate = GroupItemDelegate(self)
-        self.group_combo.setItemDelegate(self.group_delegate)
-        self.group_delegate.delete_clicked.connect(self._on_delete_group)
-        self.group_combo.view().viewport().installEventFilter(self)
-        
-        self.color_input = QLineEdit()
-        self.color_input.setPlaceholderText("如: #5E81AC")
-        
-        form_layout.addRow("名称:", self.name_input)
-        form_layout.addRow("图标:", icon_layout)
-        form_layout.addRow("分组:", self.group_combo)
-        form_layout.addRow("颜色:", self.color_input)
-        
-        right_layout.addLayout(form_layout)
-
-        # 按钮区域
-        btn_layout = QHBoxLayout()
-        self.btn_add = QPushButton("🆕 新增")
-        self.btn_save = QPushButton("💾 保存修改")
-        self.btn_delete = QPushButton("🗑️ 删除")
-        
-        self.btn_add.clicked.connect(self._on_add)
-        self.btn_save.clicked.connect(self._on_save)
-        self.btn_delete.clicked.connect(self._on_delete)
-
-        self.btn_delete.setStyleSheet("""
-            QPushButton { background-color: #BF616A; color: white; border: none; } 
-            QPushButton:hover { background-color: #D08770; }
-        """)
-
-        btn_layout.addWidget(self.btn_add)
-        btn_layout.addWidget(self.btn_save)
-        btn_layout.addWidget(self.btn_delete)
-        
-        right_layout.addStretch()
-        right_layout.addLayout(btn_layout)
-
-        main_layout.addLayout(left_layout, 1)
-        main_layout.addLayout(right_layout, 2)
-        
-        # 底部关闭按钮
-        bottom_layout = QHBoxLayout()
-        bottom_layout.addStretch()
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.accept)
-        bottom_layout.addWidget(close_btn)
-        right_layout.addLayout(bottom_layout)
+        btns = QHBoxLayout()
+        add_btn = QPushButton("新增")
+        add_btn.clicked.connect(self._on_add)
+        save_btn = QPushButton("保存")
+        save_btn.clicked.connect(self._on_save)
+        del_btn = QPushButton("删除")
+        del_btn.setStyleSheet("QPushButton { background-color: #BF616A; color: white; }")
+        del_btn.clicked.connect(self._on_delete)
+        btns.addWidget(add_btn); btns.addWidget(save_btn); btns.addWidget(del_btn)
+        right.addLayout(btns)
+        layout.addLayout(right, 2)
 
     def _load_categories(self):
-        self.list_widget.clear()
+        self.list.clear()
         self.categories = self.category_manager.get_all_active()
-        
-        # 收集所有的 unique groups
-        group_set = set()
-        for cat in self.categories:
-            item = QListWidgetItem(f"{cat['icon']} {cat['name']} ({cat['group_name']})")
-            item.setData(Qt.ItemDataRole.UserRole, cat)
-            self.list_widget.addItem(item)
-            group_set.add(cat['group_name'])
-            
-        # 补充默认分组如果不存在
-        for default_grp in ["输入", "输出", "生活"]:
-            group_set.add(default_grp)
-            
-        current_text = self.group_combo.currentText()
-        self.group_combo.blockSignals(True)
-        self.group_combo.clear()
-        self.group_combo.addItems(sorted(list(group_set)))
-        self.group_combo.setCurrentText(current_text if current_text else "输入")
-        self.group_combo.blockSignals(False)
-            
-        self._clear_form()
+        groups = set(["输入", "输出", "生活"])
+        for c in self.categories:
+            item = QListWidgetItem(f"{c['icon']} {c['name']}")
+            item.setData(Qt.ItemDataRole.UserRole, c)
+            self.list.addItem(item)
+            groups.add(c['group_name'])
+        self.group_cb.clear()
+        self.group_cb.addItems(sorted(list(groups)))
 
-    def _open_icon_picker(self):
-        diag = IconSelectorDialog(self)
-        if diag.exec() == QDialog.DialogCode.Accepted and diag.selected_icon:
-            self.icon_input.setText(diag.selected_icon)
-
-    def _clear_form(self):
-        self.current_category = None
-        self.name_input.clear()
-        self.icon_input.clear()
-        self.color_input.setText("#5E81AC")
-        self.group_combo.setCurrentIndex(0)
-
-    def _on_list_selected(self, index):
-        if index < 0 or index >= len(self.categories):
-            return
-        cat = self.categories[index]
-        self.current_category = cat
-        self.name_input.setText(cat['name'])
-        self.icon_input.setText(cat.get('icon', ''))
-        self.color_input.setText(cat.get('color', '#5E81AC'))
-        self.group_combo.setCurrentText(cat.get('group_name', '输入'))
+    def _on_selected(self, idx):
+        if idx < 0: return
+        cat = self.categories[idx]
+        self.current_id = cat['id']
+        self.name_in.setText(cat['name'])
+        self.icon_in.setText(cat['icon'])
+        self.group_cb.setCurrentText(cat['group_name'])
+        self.color_in.setText(cat['color'])
 
     def _on_add(self):
-        name = self.name_input.text().strip()
-        icon = self.icon_input.text().strip()
-        color = self.color_input.text().strip()
-        group = self.group_combo.currentText()
-        
-        if not name:
-            QMessageBox.warning(self, "错误", "名称不能为空")
-            return
-            
-        cat_id = self.category_manager.add_category(name, icon, color, group)
-        if cat_id:
-            QMessageBox.information(self, "成功", "分类添加成功")
-            self._load_categories()
-        else:
-            QMessageBox.critical(self, "错误", "添加失败")
+        self.category_manager.add_category(self.name_in.text(), self.icon_in.text(), self.color_in.text(), self.group_cb.currentText())
+        self._load_categories()
 
     def _on_save(self):
-        if not self.current_category:
-            QMessageBox.warning(self, "提示", "请先选择要修改的分类")
-            return
-            
-        name = self.name_input.text().strip()
-        icon = self.icon_input.text().strip()
-        color = self.color_input.text().strip()
-        group = self.group_combo.currentText()
-        cat_id = self.current_category['id']
-        
-        if self.category_manager.update_category(cat_id, name, icon, color, group):
-            QMessageBox.information(self, "成功", "修改已保存")
+        if hasattr(self, 'current_id'):
+            self.category_manager.update_category(self.current_id, self.name_in.text(), self.icon_in.text(), self.color_in.text(), self.group_cb.currentText())
             self._load_categories()
-        else:
-            QMessageBox.critical(self, "错误", "修改失败")
-
-    def _on_list_reordered(self, parent, start, end, destination, row):
-        """处理拖拽排序回写"""
-        order_list = []
-        for index in range(self.list_widget.count()):
-            item = self.list_widget.item(index)
-            cat_data = item.data(Qt.ItemDataRole.UserRole)
-            if cat_data:
-                order_list.append((cat_data['id'], index + 1))
-        
-        if order_list:
-            if self.category_manager.reorder_categories(order_list):
-                # 重新加载同步所有本地列表数据
-                self._load_categories()
-            else:
-                QMessageBox.warning(self, "错误", "排序保存失败！")
 
     def _on_delete(self):
-        if not self.current_category:
-            return
-            
-        reply = QMessageBox.question(self, "确认删除", f"确定要删除分类 '{self.current_category['name']}' 吗？\n(这不会删除历史记录)", 
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            if self.category_manager.remove_category(self.current_category['id']):
-                self._load_categories()
-            else:
-                QMessageBox.critical(self, "错误", "删除失败")
-
-    def _on_delete_group(self, group_name):
-        # 隐藏下拉框
-        self.group_combo.hidePopup()
-        reply = QMessageBox.question(self, "确认删除分组", f"删除分组 '{group_name}' 会把该组下所有相关分类移动至 '未分组'，确定吗？", 
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            for cat in self.categories:
-                if cat['group_name'] == group_name:
-                    self.category_manager.update_category(cat['id'], cat['name'], cat.get('icon', ''), cat.get('color', ''), "未分组")
+        if hasattr(self, 'current_id'):
+            self.category_manager.remove_category(self.current_id)
             self._load_categories()
-            # 从下拉框中移除
-            idx = self.group_combo.findText(group_name)
-            if idx >= 0:
-                self.group_combo.removeItem(idx)
-            self.group_combo.setCurrentText("未分组")
 
-    def eventFilter(self, obj, event):
-        # 拦截下拉框弹窗的列表点击事件以支持 X 号删除
-        if hasattr(self, 'group_combo') and obj == self.group_combo.view().viewport():
-            if event.type() == QEvent.Type.MouseButtonRelease:
-                pos = event.pos()
-                index = self.group_combo.view().indexAt(pos)
-                if index.isValid():
-                    rect = self.group_combo.view().visualRect(index)
-                    # 匹配委托里的热区：右侧 35px
-                    btn_rect = QRect(rect.right() - 35, rect.top(), 35, rect.height())
-                    if btn_rect.contains(pos):
-                        group_name = index.data()
-                        if group_name:
-                            # 异步调用删除，避免闪退或重入
-                            QTimer.singleShot(0, lambda: self._on_delete_group(group_name))
-                        return True
-        return super().eventFilter(obj, event)
-
+    def _on_reordered(self, *args):
+        ids = []
+        for i in range(self.list.count()):
+            cat = self.list.item(i).data(Qt.ItemDataRole.UserRole)
+            ids.append((cat['id'], i+1))
+        self.category_manager.reorder_categories(ids)
 
 class CategorySelectDialog(QDialog):
-    """日清单等功能启动专注前弹出的精简分类选择器"""
-    
+    """分类选择器 - 亮色升级版"""
     def __init__(self, category_manager, task_title="未命名任务", parent=None):
         super().__init__(parent)
         self.category_manager = category_manager
         self.task_title = task_title
         self.selected_category_id = None
         self.selected_group_name = None
+        self.initial_group = None # 预设分组
         
-        self.setWindowTitle("请选择活动分类")
-        self.setFixedSize(400, 300)
+        self.setWindowTitle("选择活动分类")
+        self.setFixedSize(450, 400)
         self.setStyleSheet("""
-            QDialog { background-color: #2E3440; color: #D8DEE9; }
-            QLabel { color: #ECEFF4; }
+            QDialog { background-color: #FFFFFF; }
+            QLabel { color: #2E3440; font-family: 'Microsoft YaHei'; }
+            QTabWidget::pane { border: 1px solid #D8DEE9; border-radius: 4px; background: white; }
+            QTabBar::tab { background: #F0F2F5; padding: 8px 20px; border: 1px solid #D8DEE9; min-width: 80px; }
+            QTabBar::tab:selected { background: white; border-bottom-color: white; font-weight: bold; color: #5E81AC; }
         """)
         self._build_ui()
+
+    def set_initial_group(self, group_name):
+        """设置预选分组"""
+        self.initial_group = group_name
+        # 尝试切换对应的 tab
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == group_name:
+                self.tabs.setCurrentIndex(i)
+                break
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         
-        title_label = QLabel(f"即将开始: {self.task_title}\n请选择它属于哪个分类：")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet("font-size: 13px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title_label)
+        header = QLabel(f"<b>🎯 专注目标:</b> {self.task_title}\n请选择分类：")
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
+        layout.addWidget(header)
 
-        grid_layout = QGridLayout()
-        grouped_cats = self.category_manager.get_grouped()
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("QTabWidget::tab-bar { alignment: center; }")
         
-        row_offset = 0
-        for group_name, cats in grouped_cats.items():
-            if group_name not in ["输入", "输出"]:
-                continue
-            if not cats: continue
+        grouped_cats = self.category_manager.get_grouped()
+        # 确保显示所有分组
+        for group_name in ["输入", "输出", "生活"]:
+            cats = grouped_cats.get(group_name, [])
+            tab = QWidget()
+            tab_layout = QVBoxLayout(tab)
             
-            # 分组标题
-            grp_label = QLabel(f"── {group_name} ──")
-            grp_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            grp_label.setStyleSheet("color: #4C566A; font-size: 11px;")
-            grid_layout.addWidget(grp_label, row_offset, 0, 1, 4)
-            row_offset += 1
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            content = QWidget()
+            grid = QGridLayout(content)
+            grid.setSpacing(10)
+            grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
             
             from activity_panel import CategoryButton
             for i, cat in enumerate(cats):
                 btn = CategoryButton(cat)
                 btn.category_clicked.connect(self._on_category_clicked)
-                grid_layout.addWidget(btn, row_offset + i // 4, i % 4)
+                grid.addWidget(btn, i // 4, i % 4)
             
-            row_offset += (len(cats) - 1) // 4 + 1
+            scroll.setWidget(content)
+            tab_layout.addWidget(scroll)
+            self.tabs.addTab(tab, group_name)
             
-        layout.addLayout(grid_layout)
-        layout.addStretch()
-
+        layout.addWidget(self.tabs)
+        
         cancel_btn = QPushButton("取消")
-        cancel_btn.setStyleSheet("""
-            QPushButton { background-color: #4C566A; color: #ECEFF4; border-radius: 4px; padding: 6px; }
-            QPushButton:hover { background-color: #BF616A; }
-        """)
+        cancel_btn.setStyleSheet("QPushButton { background: #E5E9F0; border-radius: 4px; padding: 6px 15px; color: #4C566A; } QPushButton:hover { background: #BF616A; color: white; }")
         cancel_btn.clicked.connect(self.reject)
         layout.addWidget(cancel_btn, alignment=Qt.AlignmentFlag.AlignRight)
 

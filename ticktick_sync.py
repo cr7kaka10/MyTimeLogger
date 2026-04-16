@@ -174,13 +174,22 @@ class TickTickSyncWorker(QObject):
                 except:
                     pass
 
+        # 处理标签映射到分组
+        tags = t.get("tags", [])
+        group_name_from_tag = None
+        for tag in tags:
+            if tag in ["输入", "输出", "生活"]:
+                group_name_from_tag = tag
+                break
+
         return {
             "id": t["id"],
             "project_id": t["projectId"],
             "title": t["title"],
             "priority": t.get("priority", 0),
-            "tags": t.get("tags", []),
+            "tags": tags,
             "project_name": project_name,
+            "group_name": group_name_from_tag,
             "due_date": due_str,
             "is_completed": False,
         }

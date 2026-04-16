@@ -170,8 +170,18 @@ class ActivityPanel(QWidget):
         """)
         close_btn.clicked.connect(self.hide)
         
+        checklist_btn = QPushButton("📋 清单")
+        checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        checklist_btn.setStyleSheet("""
+            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
+            QPushButton:hover { color: #81A1C1; }
+        """)
+        if self.main_window and hasattr(self.main_window, "toggle_daily_checklist"):
+            checklist_btn.clicked.connect(self.main_window.toggle_daily_checklist)
+
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(checklist_btn)
         title_layout.addWidget(refresh_btn)
         title_layout.addWidget(manage_btn)
         title_layout.addWidget(self.shrink_btn)
