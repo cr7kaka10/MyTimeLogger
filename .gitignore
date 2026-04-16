@@ -15,4 +15,4 @@ statistics.html
 
 # 只保留空 log 文件夹，忽略内部所有内容
 log/**
-!log/.gitkeep
+!log/.gitkeepandroid/.gradle/
