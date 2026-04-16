@@ -27,7 +27,8 @@ class OfficialTickTickClient:
         self.client = httpx.AsyncClient(
             headers=self.headers, 
             timeout=15.0,
-            follow_redirects=True
+            follow_redirects=True,
+            verify=False  # 绕过 Windows 下的 SSL 证书校验问题
         )
 
     async def get_projects(self) -> list:
