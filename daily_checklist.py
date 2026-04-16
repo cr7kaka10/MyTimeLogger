@@ -351,6 +351,11 @@ class DailyChecklistWindow(QWidget):
     def _load_position(self):
         p = self.settings.value("pos")
         if p: self.move(p)
+    def start_background_sync(self):
+        """后台静默同步，供主程序启动时调用"""
+        self.sync_worker.refresh()
+        self.auto_refresh_timer.start()
+
     def cleanup(self):
         self.auto_refresh_timer.stop()
         self.sync_thread.quit()
