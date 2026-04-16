@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-日清单模块 (daily_checklist.py) - 增强同步版
-==========================================
-独立浮动手持窗口，支持与主面板实时的播放状态联动。
+日清单模块 (daily_checklist.py) - 视觉对齐与逻辑修复版
+===================================================
+独立浮动窗口，支持与主面板实时的播放状态联动。
 """
 
 import logging
@@ -36,7 +36,7 @@ PRIORITY_MAP = {
 }
 
 class TaskItemWidget(QFrame):
-    """单个任务项 Widget（增强版：带状态联功的播放按钮）"""
+    """单个任务项 Widget（增强版：带状态联动的播放按钮）"""
 
     focus_clicked = pyqtSignal(dict)
     complete_clicked = pyqtSignal(dict)
@@ -44,8 +44,8 @@ class TaskItemWidget(QFrame):
     def __init__(self, task_data: dict, parent=None):
         super().__init__(parent)
         self.task_data = task_data
-        self.is_active = False   # 是否是当前专注的任务
-        self.is_paused = False   # 若是当前任务，是否处于暂停态
+        self.is_active = False   
+        self.is_paused = False   
         self._build_ui()
 
     def _build_ui(self):
@@ -69,9 +69,9 @@ class TaskItemWidget(QFrame):
         self.title_label.setWordWrap(True)
         self.title_label.setStyleSheet(f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-weight: 500; }}")
 
-        # 播放/暂停按钮（FA 图标）
-        self.play_btn = QPushButton("\uf04b") # Default Play
-        self.play_btn.setFixedSize(32, 32)
+        # 播放/暂停按钮（1:1 复刻主面板 start_btn）
+        self.play_btn = QPushButton("\uf04b") 
+        self.play_btn.setFixedSize(24, 24) # 完美对齐 24x24
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_btn.clicked.connect(lambda: self.focus_clicked.emit(self.task_data))
         self._update_play_btn_style()
@@ -124,20 +124,22 @@ class TaskItemWidget(QFrame):
         return f"QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 3px; border: 2px solid {BORDER_COLOR}; background: white; }} QCheckBox::indicator:hover {{ border-color: {SAPPHIRE_BLUE}; }} QCheckBox::indicator:checked {{ background: {SAPPHIRE_BLUE}; border-color: {SAPPHIRE_BLUE}; }}"
 
     def _update_play_btn_style(self):
-        # 根据状态显示图标
+        # 视觉 1:1 对齐 ActivityPanel 的样式
         if self.is_active and not self.is_paused:
             self.play_btn.setText("\uf04c") # Pause
-            color = "#D08770" # 橙红色
+            color = "#D08770" 
+            padding = "0px"
         else:
             self.play_btn.setText("\uf04b") # Play
-            color = SAPPHIRE_BLUE
+            color = "#5E81AC"
+            padding = "2px" # 为播放图标加一点左偏置，使其感官居中
         
         self.play_btn.setStyleSheet(f"""
             QPushButton {{
-                font-family: 'Font Awesome 6 Free'; font-weight: 900; font-size: 16px;
-                background: {color}15; color: {color}; border: 1px solid {color}40; border-radius: 16px;
+                font-family: 'Font Awesome 6 Free'; font-weight: 900; font-size: 10px;
+                background-color: {color}; color: white; border: none; border-radius: 4px; padding-left: {padding};
             }}
-            QPushButton:hover {{ background: {color}; color: white; }}
+            QPushButton:hover {{ background-color: {SAPPHIRE_HOVER}; }}
         """)
 
     def set_sync_state(self, is_active: bool, is_paused: bool):
@@ -150,12 +152,46 @@ class TaskItemWidget(QFrame):
         if state == Qt.CheckState.Checked.value:
             self.complete_clicked.emit(self.task_data)
 
+class FocusSwitchDialog(QDialog):
+    """切换专注对话框（亮色版）"""
+    def __init__(self, remaining_tasks, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("切换专注目标")
+        self.setMinimumSize(350, 250)
+        self.setStyleSheet(f"""
+            QDialog {{ background: #FFFFFF; }}
+            QLabel {{ color: {TEXT_PRIMARY}; font-size: 13px; font-family: 'Microsoft YaHei'; }}
+            QListWidget {{ background: #F8F9FB; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; padding: 4px; }}
+            QListWidget::item {{ padding: 8px; border-bottom: 1px solid #F0F2F5; }}
+            QListWidget::item:selected {{ background: {ITEM_HOVER_BG}; color: {SAPPHIRE_BLUE}; font-weight: bold; border-radius: 4px; }}
+            QPushButton {{ background: {SAPPHIRE_BLUE}; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; }}
+            QPushButton:hover {{ background: {SAPPHIRE_HOVER}; }}
+        """)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel("<b>✅ 当前任务已完成！</b>\n接下来的任务是："))
+        self.list = QListWidget()
+        for t in remaining_tasks:
+            p_text = PRIORITY_MAP.get(t.get('priority', 0), PRIORITY_MAP[0])[0]
+            item = QListWidgetItem(f"{p_text} {t['title']}")
+            item.setData(Qt.ItemDataRole.UserRole, t), self.list.addItem(item)
+        layout.addWidget(self.list)
+        btns = QHBoxLayout()
+        skip = QPushButton("跳过")
+        skip.setStyleSheet("QPushButton { background: #E5E9F0; color: #4C566A; }"), skip.clicked.connect(self.reject)
+        ok = QPushButton("开始新专注"), ok.clicked.connect(self.accept)
+        btns.addWidget(skip), btns.addWidget(ok), layout.addLayout(btns)
+    def get_selected(self):
+        item = self.list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
 class DailyChecklistWindow(QWidget):
-    """日清单窗口（状态联动版）"""
-    def __init__(self, config, logic=None, parent=None):
+    """日清单窗口（修复按钮激活逻辑）"""
+    def __init__(self, config, logic=None, category_manager=None, parent=None):
         super().__init__(parent)
         self.config = config
         self.logic = logic
+        self.category_manager = category_manager # 显式引用，不依赖 parent()
         self.settings = QSettings("MyTimeLogger", "DailyChecklist")
         self.task_widgets = {}
         self.current_focus_task_id = None
@@ -170,7 +206,6 @@ class DailyChecklistWindow(QWidget):
         self._build_ui()
         self._load_position()
 
-        # 连接逻辑信号，实现实时状态联动
         if self.logic:
             self.logic.state_changed.connect(self._on_logic_state_changed)
 
@@ -181,7 +216,7 @@ class DailyChecklistWindow(QWidget):
 
     def _init_worker(self):
         self.sync_thread = QThread()
-        self.sync_worker = TickTickSyncWorker(self.config)
+        self.sync_worker = TickTickSyncWorker(self.config, self.category_manager)
         self.sync_worker.moveToThread(self.sync_thread)
         self.sync_worker.tasks_ready.connect(self._on_tasks_ready)
         self.sync_worker.sync_error.connect(self._on_sync_error)
@@ -194,7 +229,6 @@ class DailyChecklistWindow(QWidget):
         self.bg.setObjectName("checklistBg")
         self.bg.setGeometry(0, 0, 400, 520)
         self.bg.setStyleSheet(f"#checklistBg {{ background-color: rgba(255, 255, 255, 0.98); border: 1px solid {BORDER_COLOR}; border-radius: 12px; }}")
-
         layout = QVBoxLayout(self.bg)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -205,35 +239,24 @@ class DailyChecklistWindow(QWidget):
         header_layout.setContentsMargins(16, 0, 12, 0)
         title_label = QLabel("📋 <b>今日清单</b>")
         title_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 16px; font-family: 'Microsoft YaHei';")
-        header_layout.addWidget(title_label)
-        header_layout.addStretch()
+        header_layout.addWidget(title_label), header_layout.addStretch()
 
         btn_style = f"QPushButton {{ color: {TEXT_SECONDARY}; background: transparent; font-size: 16px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {SAPPHIRE_BLUE}; }}"
         self.refresh_btn = QPushButton("🔄")
-        self.refresh_btn.setFixedSize(30,30)
-        self.refresh_btn.clicked.connect(self._do_refresh)
-        self.refresh_btn.setStyleSheet(btn_style)
+        self.refresh_btn.setFixedSize(30,30), self.refresh_btn.clicked.connect(self._do_refresh), self.refresh_btn.setStyleSheet(btn_style)
         close_btn = QPushButton("×")
-        close_btn.setFixedSize(30, 30)
-        close_btn.clicked.connect(self.hide)
-        close_btn.setStyleSheet(btn_style)
-
-        header_layout.addWidget(self.refresh_btn)
-        header_layout.addWidget(close_btn)
-        layout.addWidget(header)
+        close_btn.setFixedSize(30,30), close_btn.clicked.connect(self.hide), close_btn.setStyleSheet(btn_style)
+        header_layout.addWidget(self.refresh_btn), header_layout.addWidget(close_btn), layout.addWidget(header)
 
         self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setWidgetResizable(True), self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setStyleSheet("QScrollArea { background: transparent; }")
         self.container = QWidget()
         self.container.setStyleSheet("background: transparent;")
         self.task_layout = QVBoxLayout(self.container)
         self.task_layout.setContentsMargins(15, 10, 15, 10)
-        self.task_layout.setSpacing(10)
-        self.task_layout.addStretch()
-        self.scroll.setWidget(self.container)
-        layout.addWidget(self.scroll)
+        self.task_layout.setSpacing(10), self.task_layout.addStretch()
+        self.scroll.setWidget(self.container), layout.addWidget(self.scroll)
 
         self.status_bar = QLabel("⏱ 等待同步...")
         self.status_bar.setFixedHeight(30)
@@ -241,8 +264,7 @@ class DailyChecklistWindow(QWidget):
         layout.addWidget(self.status_bar)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0,0,0,0)
-        outer.addWidget(self.bg)
+        outer.setContentsMargins(0,0,0,0), outer.addWidget(self.bg)
 
     def _do_refresh(self):
         self.status_bar.setText("⏱ 同步中...")
@@ -253,22 +275,15 @@ class DailyChecklistWindow(QWidget):
         from datetime import datetime
         self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办")
 
-    def _on_sync_error(self, msg):
-        self.status_bar.setText(f"❌ {msg}")
+    def _on_sync_error(self, msg): self.status_bar.setText(f"❌ {msg}")
 
     def _on_logic_state_changed(self, state_text, state_id):
-        """核心逻辑层状态变化后的反馈"""
         is_paused = self.logic.is_paused
-        # 更新所有 Widget 按钮态
         for tid, w in self.task_widgets.items():
             is_active = (tid == self.current_focus_task_id)
             w.set_sync_state(is_active, is_paused)
-        
-        # 状态栏同步
-        if state_id == "stopped":
-             self.status_bar.setText("⏱ 处理闲置状态")
-        else:
-             self.status_bar.setText(f"🎯 {state_text.splitlines()[0]}")
+        if state_id == "stopped": self.status_bar.setText("⏱ 闲置中")
+        else: self.status_bar.setText(f"🎯 {state_text.splitlines()[0]}")
 
     def _render_tasks(self, tasks):
         for w in self.task_widgets.values(): w.deleteLater()
@@ -276,17 +291,13 @@ class DailyChecklistWindow(QWidget):
         while self.task_layout.count() > 1:
             item = self.task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-
         sorted_tasks = sorted(tasks, key=lambda t: (-t.get("priority", 0), t.get("due_date", "") or "zzz"))
         for task in sorted_tasks:
             w = TaskItemWidget(task)
             w.focus_clicked.connect(self._on_focus_clicked)
             w.complete_clicked.connect(self._on_complete_clicked)
-            
-            # 初始化状态
             is_active = (self.current_focus_task_id == task['id'])
             w.set_sync_state(is_active, self.logic.is_paused if self.logic else False)
-            
             self.task_widgets[task['id']] = w
             self.task_layout.insertWidget(self.task_layout.count()-1, w)
 
@@ -294,27 +305,43 @@ class DailyChecklistWindow(QWidget):
         task_id = task_data["id"]
         task_name = task_data["title"]
         group_tag = task_data.get("group_name") 
+        logger.info(f"[DEBUG] 日清单按钮点击: {task_name} (ID: {task_id})")
 
-        # 如果点击的是当前正在专注的任务，则执行 播放/暂停 切换
         if self.current_focus_task_id == task_id and self.logic and self.logic.current_state != "stopped":
+            logger.info("[DEBUG] 切换当前任务播放/暂停")
             self.logic.toggle_pause()
             return
 
-        if self.logic and self.parent() and hasattr(self.parent(), "category_manager"):
+        # 自动化匹配逻辑：标签即分类名 (直接秒开，跳过弹窗)
+        tags = task_data.get("tags", [])
+        if tags:
+            all_cats = self.category_manager.get_all_active()
+            # 查找名称与标签一致的分类
+            matched_cat = next((c for c in all_cats if c['name'] in tags), None)
+            if matched_cat:
+                logger.info(f"[AUTO] 自动匹配分类名: {matched_cat['name']}，跳过弹窗")
+                self.current_focus_task_id = task_id
+                self.logic.start_with_context(task_name, matched_cat['id'], matched_cat['group_name'])
+                return
+
+        # 降级处理：仅在没有匹配到任何标签时才弹框
+        if self.logic and self.category_manager:
             from category_dialog import CategorySelectDialog
             from PyQt6.QtWidgets import QDialog
-            dialog = CategorySelectDialog(self.parent().category_manager, task_name, self)
+            dialog = CategorySelectDialog(self.category_manager, task_name, self)
             if group_tag:
                 if hasattr(dialog, "set_initial_group"): dialog.set_initial_group(group_tag)
             
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 cat_id = dialog.selected_category_id
                 cat_group = dialog.selected_group_name
+                logger.info(f"[DEBUG] 分类已选: {cat_group}, ID: {cat_id}")
                 self.current_focus_task_id = task_id
-                # 显式重置 logic 状态确保启动
                 self.logic.start_with_context(task_name, cat_id, cat_group)
             else:
-                return
+                logger.info("[DEBUG] 用户取消选择")
+        else:
+            logger.error(f"[ERROR] 逻辑层或分类管理器缺失: Logic={bool(self.logic)}, CM={bool(self.category_manager)}")
 
     def _on_complete_clicked(self, task_data):
         tid = task_data["id"]
@@ -342,21 +369,13 @@ class DailyChecklistWindow(QWidget):
         if e.buttons() & Qt.MouseButton.LeftButton and self.dragPos: self.move(e.globalPosition().toPoint() - self.dragPos)
     def mouseReleaseEvent(self, e): self.dragPos = None
     def show(self):
-        super().show()
-        self._do_refresh()
+        super().show(), self._do_refresh()
         self._on_logic_state_changed("", self.logic.current_state if self.logic else "stopped")
-    def hide(self):
-        self.settings.setValue("pos", self.pos())
-        super().hide()
+    def hide(self): self.settings.setValue("pos", self.pos()), super().hide()
     def _load_position(self):
         p = self.settings.value("pos")
         if p: self.move(p)
     def start_background_sync(self):
-        """后台静默同步，供主程序启动时调用"""
-        self.sync_worker.refresh()
-        self.auto_refresh_timer.start()
-
+        self.sync_worker.refresh(), self.auto_refresh_timer.start()
     def cleanup(self):
-        self.auto_refresh_timer.stop()
-        self.sync_thread.quit()
-        self.sync_thread.wait()
+        self.auto_refresh_timer.stop(), self.sync_thread.quit(), self.sync_thread.wait()

@@ -788,7 +788,8 @@ class MyTimeLoggerGUI(QWidget):
             from daily_checklist import DailyChecklistWindow
             self._checklist_window = DailyChecklistWindow(
                 config=self.config,
-                logic=self.logic
+                logic=self.logic,
+                category_manager=self.category_manager
             )
         return self._checklist_window
 
