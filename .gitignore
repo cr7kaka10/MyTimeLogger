@@ -15,4 +15,14 @@ statistics.html
 
 # 只保留空 log 文件夹，忽略内部所有内容
 log/**
-!log/.gitkeepandroid/.gradle/
+!log/.gitkeep
+
+# Android
+android/.gradle/
+android/app/build/
+android/gradle_debug.log
+
+# Python
+__pycache__/
+*.pyc
+my_time_logger.lock

@@ -10,12 +10,13 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import androidx.glance.GlanceModifier
 
 class NoteWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
             Column(
-                modifier = androidx.glance.layout.Modifier.fillMaxSize(),
+                modifier = GlanceModifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
