@@ -29,10 +29,10 @@ BG_LIGHT = "#FFFFFF"
 ITEM_HOVER_BG = "rgba(94, 129, 172, 0.05)"
 
 PRIORITY_MAP = {
-    5: ("⏫ 高", "#BF616A", "rgba(191,97,106,0.1)"),
-    3: ("🔶 中", "#D08770", "rgba(208,135,112,0.1)"),
-    1: ("🔽 低", "#5E81AC", "rgba(94,129,172,0.1)"),
-    0: ("── 无", "#4C566A", "rgba(76,86,106,0.05)"),
+    5: ("\uf024", "#FF5252", "rgba(255,82,82,0.1)"),   # 高 (红旗)
+    3: ("\uf024", "#FF9800", "rgba(255,152,0,0.1)"),  # 中 (橙旗)
+    1: ("\uf024", "#2196F3", "rgba(33,150,243,0.1)"), # 低 (蓝旗)
+    0: ("\uf024", "#CBD2D9", "rgba(76,86,106,0.05)"), # 无 (灰旗 - 无色)
 }
 
 class TaskItemWidget(QFrame):
@@ -40,6 +40,7 @@ class TaskItemWidget(QFrame):
 
     focus_clicked = pyqtSignal(dict)
     complete_clicked = pyqtSignal(dict)
+    priority_changed = pyqtSignal(dict, int)
 
     def __init__(self, task_data: dict, parent=None):
         super().__init__(parent)
@@ -87,19 +88,15 @@ class TaskItemWidget(QFrame):
         row2.setSpacing(6)
 
         priority = self.task_data.get("priority", 0)
-        p_text, p_color, p_bg = PRIORITY_MAP.get(priority, PRIORITY_MAP[0])
-        priority_label = QLabel(p_text)
+        p_icon, p_color, p_bg = PRIORITY_MAP.get(priority, PRIORITY_MAP[0])
+        priority_label = QLabel(p_icon)
         priority_label.setStyleSheet(
-            f"QLabel {{ font-size: 11px; padding: 1px 8px; border-radius: 4px; "
-            f"background: {p_bg}; color: {p_color}; font-weight: bold; border: 1px solid {p_color}40; }}"
+            f"QLabel {{ font-family: 'Font Awesome 6 Free'; font-size: 14px; padding: 2px 4px; "
+            f"color: {p_color}; background: transparent; border: none; }}"
         )
         row2.addWidget(priority_label)
 
-        project_name = self.task_data.get("project_name", "")
-        if project_name and project_name != "收集箱":
-            proj_label = QLabel(f"📁 {project_name}")
-            proj_label.setStyleSheet(f"QLabel {{ font-size: 11px; padding: 1px 8px; border-radius: 4px; background: #F0F2F5; color: #5E81AC; border: 1px solid {BORDER_COLOR}; }}")
-            row2.addWidget(proj_label)
+        # 移除项目组信息（如收件箱），保持界面简洁
 
         for tag in self.task_data.get("tags", []):
             tag_label = QLabel(f"🏷 {tag}")
@@ -152,6 +149,42 @@ class TaskItemWidget(QFrame):
         if state == Qt.CheckState.Checked.value:
             self.complete_clicked.emit(self.task_data)
 
+    def contextMenuEvent(self, event):
+        """右键菜单切换优先级"""
+        from PyQt6.QtWidgets import QMenu
+        from PyQt6.QtGui import QAction
+        
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: white; border: 1px solid #D8DEE9; border-radius: 6px; padding: 4px; }
+            QMenu::item { padding: 6px 24px; color: #2E3440; font-size: 13px; }
+            QMenu::item:selected { background-color: rgba(94, 129, 172, 0.1); color: #5E81AC; border-radius: 4px; }
+        """)
+        
+        # 优先级映射：5-高, 3-中, 1-低, 0-无
+        priorities = [
+            (5, "高 (红色)", "#FF5252"),
+            (3, "中 (橙色)", "#FF9800"),
+            (1, "低 (蓝色)", "#2196F3"),
+            (0, "无 (灰色)", "#CBD2D9"),
+        ]
+        
+        current_p = self.task_data.get("priority", 0)
+        
+        for val, label, color in priorities:
+            icon_txt = "\uf024"
+            # 创建带彩色旗帜的 Action
+            action = QAction(f"{label}", self)
+            if val == current_p:
+                action.setCheckable(True)
+                action.setChecked(True)
+                
+            # 利用 lambda 捕获 val
+            action.triggered.connect(lambda _, v=val: self.priority_changed.emit(self.task_data, v))
+            menu.addAction(action)
+            
+        menu.exec(event.globalPos())
+
 class FocusSwitchDialog(QDialog):
     """切换专注对话框（亮色版）"""
     def __init__(self, remaining_tasks, parent=None):
@@ -187,6 +220,8 @@ class FocusSwitchDialog(QDialog):
 
 class DailyChecklistWindow(QWidget):
     """日清单窗口（修复按钮激活逻辑）"""
+    request_priority_update = pyqtSignal(str, str, int)
+
     def __init__(self, config, logic=None, category_manager=None, parent=None):
         super().__init__(parent)
         self.config = config
@@ -209,10 +244,15 @@ class DailyChecklistWindow(QWidget):
         if self.logic:
             self.logic.state_changed.connect(self._on_logic_state_changed)
 
-        interval = self.config.get("ticktick_config", {}).get("sync_interval", 300)
-        self.auto_refresh_timer = QTimer(self)
-        self.auto_refresh_timer.setInterval(interval * 1000)
-        self.auto_refresh_timer.timeout.connect(self._do_refresh)
+        # 按用户要求：下线定时同步逻辑，改为按需同步（启动、操作、刷新时触发）
+        # interval = self.config.get("ticktick_config", {}).get("sync_interval", 300)
+        # self.auto_refresh_timer = QTimer(self)
+        # self.auto_refresh_timer.setInterval(interval * 1000)
+        # self.auto_refresh_timer.timeout.connect(self._do_refresh)
+        # self.auto_refresh_timer.start()
+
+        # 启动时确保同步一次（异步静默触发）
+        QTimer.singleShot(500, self._do_refresh)
 
     def _init_worker(self):
         self.sync_thread = QThread()
@@ -222,6 +262,10 @@ class DailyChecklistWindow(QWidget):
         self.sync_worker.sync_error.connect(self._on_sync_error)
         self.sync_worker.task_completed_ok.connect(self._on_task_completed_ok)
         self.sync_worker.task_complete_failed.connect(self._on_task_complete_failed)
+        
+        # 连接优先级更新信号 (UI Thread -> Sync Thread)
+        self.request_priority_update.connect(self.sync_worker.update_priority)
+        
         self.sync_thread.start()
 
     def _build_ui(self):
@@ -288,18 +332,43 @@ class DailyChecklistWindow(QWidget):
     def _render_tasks(self, tasks):
         for w in self.task_widgets.values(): w.deleteLater()
         self.task_widgets.clear()
+        
+        # 清理布局项目
         while self.task_layout.count() > 1:
             item = self.task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
+
+        # 显示所有任务（包括无优化的）
         sorted_tasks = sorted(tasks, key=lambda t: (-t.get("priority", 0), t.get("due_date", "") or "zzz"))
         for task in sorted_tasks:
             w = TaskItemWidget(task)
             w.focus_clicked.connect(self._on_focus_clicked)
             w.complete_clicked.connect(self._on_complete_clicked)
+            w.priority_changed.connect(self._on_priority_changed)
             is_active = (self.current_focus_task_id == task['id'])
             w.set_sync_state(is_active, self.logic.is_paused if self.logic else False)
             self.task_widgets[task['id']] = w
             self.task_layout.insertWidget(self.task_layout.count()-1, w)
+
+    def _on_priority_changed(self, task_data, new_priority):
+        """处理优先级变更：立即更新本地并后台同步"""
+        task_id = task_data["id"]
+        project_id = task_data["project_id"]
+        
+        logger.info(f"修改任务 {task_id} 优先级为 {new_priority}")
+        
+        # 1. 立即更新当前的缓存数据（为了重新渲染）
+        cached_tasks = self.sync_worker.get_cached_tasks()
+        for t in cached_tasks:
+            if t["id"] == task_id:
+                t["priority"] = new_priority
+                break
+        
+        # 2. 重新渲染列表（会自动触发重排）
+        self._render_tasks(cached_tasks)
+        
+        # 3. 通过信号请求后台同步（确保在 SyncWorker 所在的线程中执行）
+        self.request_priority_update.emit(task_id, project_id, new_priority)
 
     def _on_focus_clicked(self, task_data):
         task_id = task_data["id"]
@@ -321,7 +390,7 @@ class DailyChecklistWindow(QWidget):
             if matched_cat:
                 logger.info(f"[AUTO] 自动匹配分类名: {matched_cat['name']}，跳过弹窗")
                 self.current_focus_task_id = task_id
-                self.logic.start_with_context(task_name, matched_cat['id'], matched_cat['group_name'])
+                self.logic.start_with_context(task_name, matched_cat['id'], matched_cat['group_name'], category_name=matched_cat['name'])
                 return
 
         # 降级处理：仅在没有匹配到任何标签时才弹框
@@ -376,6 +445,6 @@ class DailyChecklistWindow(QWidget):
         p = self.settings.value("pos")
         if p: self.move(p)
     def start_background_sync(self):
-        self.sync_worker.refresh(), self.auto_refresh_timer.start()
+        self.sync_worker.refresh()
     def cleanup(self):
-        self.auto_refresh_timer.stop(), self.sync_thread.quit(), self.sync_thread.wait()
+        self.sync_thread.quit(), self.sync_thread.wait()

@@ -190,29 +190,32 @@ class MyTimeLoggerLogic(QObject):
             else:
                 self._run_study_cycle()
 
-    def start_with_context(self, task_name, category_id=None, group_name=None):
-        """启动专注并关联任务名和分类。
-        
-        如果已在专注中，仅更新关联任务名和分类。
-        如果未在专注中，则启动对应模式的计时。
-        对于正计时分类，切换不同分类时会重置计时起点。
+    def start_with_context(self, task_name, category_id, group_name, category_name=None):
         """
+        开始一个带上下文的任务
+        :param task_name: 任务名称（显示用）
+        :param category_id: 分类 ID
+        :param group_name: 分组名（用于记录，不再作为倒计时判定唯一标准）
+        :param category_name: 分类名称（名称穿透校验核心依据）
+        """
+        # 名称穿透校验：只有分类名为“输入”或“输出”时，才进入 90min 倒计时
+        # 如果 category_name 未传，则回退到 task_name (兼容主面板直接点击)
+        target_name = category_name or task_name
+        is_countup = True
+        if target_name in ["输入", "输出"]:
+            is_countup = False
+
         old_cat_id = self.current_category_id
         old_task = self.current_focus_task
-        
-        is_countup = False
-        if group_name not in ["输入", "输出"] and task_name not in ["输入", "输出"]:
-            is_countup = True
 
         if self.current_state in ["stopped", "long_break_finished"]:
             self.current_focus_task = task_name or ""
             self.current_category_id = category_id
-            self.is_paused = False
-            if self.current_state == "long_break_finished":
-                self.reset_cycle()
+            
             if is_countup:
                 self._run_countup_cycle()
             else:
+                # 倒计时模式
                 if self.current_cycle_study_time >= self.config["long_break_threshold"]:
                     self._run_long_break_cycle()
                 else:

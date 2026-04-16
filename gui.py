@@ -68,9 +68,6 @@ class MyTimeLoggerGUI(QWidget):
         self._activity_panel_window = None  # 活动面板窗口
         self.category_manager = CategoryManager()
 
-        # 默认显示时间管理大面板
-        QTimer.singleShot(300, self.toggle_activity_panel)
-
         # 软件启动后延迟 100 毫秒，自动在后台同步今日清单（不打开窗口）
         tt_cfg = self.config.get("ticktick_config", {})
         if tt_cfg.get("enabled") and tt_cfg.get("access_token"):
@@ -123,7 +120,8 @@ class MyTimeLoggerGUI(QWidget):
         self.generate_statistics_html()
         self.logic.reset_cycle()
         
-        QTimer.singleShot(100, self._on_expand_clicked)
+        # 启动即开启大面板模式
+        QTimer.singleShot(300, self._on_expand_clicked)
 
     # ======================== 通知与对话框 ========================
 
@@ -630,18 +628,18 @@ class MyTimeLoggerGUI(QWidget):
     def _on_tray_activated(self, reason):
         """托盘图标点击事件处理"""
         if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick]:
-            # 分类管理面板与托盘图标的显隐绑定
-            self.toggle_activity_panel()
-            # 同时确保 Mini 栏本身处于隐藏状态，避免干扰（如果大面板开启）
+            # 分类管理面板与状态条显隐互斥绑定
             win = self._ensure_activity_panel_window()
             if win.isVisible():
-                self.hide() 
+                self.switch_ui_mode(to_mini=True)
+            else:
+                self.switch_ui_mode(to_mini=False)
         
         # 始终置顶逻辑（右键托盘菜单触发 Context 信号）
         elif self.is_always_on_top and reason == QSystemTrayIcon.ActivationReason.Context:
             if not (self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
                 self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-            self.show()
+            # 移除这里的 self.show()，避免右键菜单弹出时 Mini 栏意外出现
             self.activateWindow()
             self.raise_()
 
@@ -806,11 +804,23 @@ class MyTimeLoggerGUI(QWidget):
         else:
             win.show()
 
+    def switch_ui_mode(self, to_mini: bool):
+        """
+        统一切换 UI 模式：Mini 栏 ↔ 大面板 (完全互斥)
+        """
+        full_win = self._ensure_activity_panel_window()
+        if to_mini:
+            full_win.hide()
+            self.show()
+            self.is_mini_mode = True
+        else:
+            self.hide()
+            full_win.show()
+            self.is_mini_mode = False
+
     def _on_expand_clicked(self):
-        """展开为主面板"""
-        self.hide()
-        win = self._ensure_activity_panel_window()
-        win.show()
+        """切换为大面板模式"""
+        self.switch_ui_mode(to_mini=False)
 
     def _ensure_activity_panel_window(self):
         """确保活动面板窗口已创建并返回"""
@@ -823,12 +833,12 @@ class MyTimeLoggerGUI(QWidget):
         return self._activity_panel_window
 
     def toggle_activity_panel(self):
-        """切换活动面板窗口显隐"""
-        win = self._ensure_activity_panel_window()
-        if win.isVisible():
-            win.hide()
+        """切换活动面板 (集成互斥逻辑)"""
+        full_win = self._ensure_activity_panel_window()
+        if full_win.isVisible():
+            self.switch_ui_mode(to_mini=True)
         else:
-            win.show()
+            self.switch_ui_mode(to_mini=False)
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
         """更新累计时间显示"""

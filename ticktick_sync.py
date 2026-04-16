@@ -47,6 +47,18 @@ class OfficialTickTickClient:
         resp = await self.client.post(url)
         resp.raise_for_status()
 
+    async def update_task(self, project_id: str, task_id: str, data: dict):
+        # 官方推荐路径
+        url = f"{self.base_url}/project/{project_id}/task/{task_id}"
+        logger.info(f"[API] 正在更新任务: {task_id}, 项目: {project_id}, Payload: {data}")
+        resp = await self.client.post(url, json=data)
+        
+        if resp.status_code != 200:
+            logger.error(f"[API] 更新失败! 状态码: {resp.status_code}, 内容: {resp.text}")
+        
+        resp.raise_for_status()
+        logger.info(f"[API] 任务 {task_id} 更新成功")
+
     async def close(self):
         await self.client.aclose()
 
@@ -183,6 +195,43 @@ class TickTickSyncWorker(QObject):
         except Exception as e:
             logger.error(f"完成任务失败: {e}")
             self.task_complete_failed.emit(task_id, str(e))
+
+    @pyqtSlot(str, str, int)
+    def update_priority(self, task_id, project_id, priority):
+        tt_cfg = self.config.get("ticktick_config", {})
+        token = tt_cfg.get("access_token")
+        try:
+            # 强制转换为 int 类型，防止数据类型混叠导致 API 500 错误
+            priority_val = int(priority)
+            
+            # 1. 更新本地缓存
+            for t in self._cached_tasks:
+                if t["id"] == task_id:
+                    t["priority"] = priority_val
+                    break
+            
+            # 2. 更新云端 (使用更鲁棒的 payload)
+            self._run(self._do_update(token, project_id, task_id, {"priority": priority_val}))
+            
+            # 3. 更新数据库
+            for t in self._cached_tasks:
+                if t["id"] == task_id:
+                    self.db_logger.upsert_task(t)
+                    break
+                    
+            logger.info(f"任务 {task_id} 优先级本地更新已就绪，正在同步云端")
+            # 成功后重新触发一次局部刷新，确保 UI 完全同步
+            self.tasks_ready.emit(list(self._cached_tasks))
+        except Exception as e:
+            logger.error(f"更新优先级失败: {e}")
+            self.sync_error.emit(f"更新失败: {e}")
+
+    async def _do_update(self, token, project_id, task_id, data):
+        client = OfficialTickTickClient(token)
+        try:
+            await client.update_task(project_id, task_id, data)
+        finally:
+            await client.close()
 
     async def _do_complete(self, token, project_id, task_id):
         client = OfficialTickTickClient(token)

@@ -168,7 +168,7 @@ class ActivityPanel(QWidget):
             QPushButton { color: #4C566A; background: transparent; font-size: 16px; border: none; font-weight: bold; }
             QPushButton:hover { color: #BF616A; }
         """)
-        close_btn.clicked.connect(self.hide)
+        close_btn.clicked.connect(self._on_shrink_clicked)
         
         checklist_btn = QPushButton("📋 清单")
         checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -229,9 +229,11 @@ class ActivityPanel(QWidget):
         self._update_btn_visibility()
 
     def _on_shrink_clicked(self):
-        self.hide()
-        if self.main_window:
-            self.main_window.show()
+        """返回 Mini 模式"""
+        if self.main_window and hasattr(self.main_window, "switch_ui_mode"):
+            self.main_window.switch_ui_mode(to_mini=True)
+        else:
+            self.hide()
 
     def _open_category_manager(self):
         """打开分类管理弹窗"""
@@ -286,7 +288,7 @@ class ActivityPanel(QWidget):
         cat_id = cat_data.get("id")
         cat_name = cat_data.get("name")
         group_name = cat_data.get("group_name")
-        self.logic.start_with_context(cat_name, cat_id, group_name)
+        self.logic.start_with_context(cat_name, cat_id, group_name, category_name=cat_name)
         self._update_button_states()
 
     def _on_logic_state_changed(self, text, state):
