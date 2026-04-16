@@ -272,8 +272,11 @@ class MyTimeLoggerLogic(QObject):
                 # 输入输出互切，不重置，只更新显示
                 self.current_focus_task = task_name or ""
                 self.current_category_id = category_id
+            
+            # 确保即使在已运行状态下切换任务，也能触发 UI 更新
+            self.state_changed.emit(self.current_state, self.current_state)
 
-        logging.info(f"专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}")
+        logging.info(f"[LOGIC] 专注关联任务: {task_name}, 分类: {category_id}, 是否正计时: {is_countup}, 当前状态: {self.current_state}")
 
     def _run_countup_cycle(self):
         """启动正计时轮次（适用于生活等其他分类）"""
