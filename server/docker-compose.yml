@@ -6,8 +6,8 @@ services:
     ports:
       - "8080:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-mysql+pymysql://root:rootpassword@db:3306/mytimelogger}
-      - SECRET_KEY=${SECRET_KEY:-default-secret-key}
+      - DATABASE_URL=${DATABASE_URL}
+      - SECRET_KEY=${SECRET_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
     depends_on:
       - db
@@ -21,8 +21,8 @@ services:
   db:
     image: mysql:8.0
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-mytimelogger}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
     command: >
       --innodb-buffer-pool-size=64M
       --max-connections=20

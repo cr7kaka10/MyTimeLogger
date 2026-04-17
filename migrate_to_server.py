@@ -9,10 +9,10 @@ def migrate():
     config = {
         "api_config": {
             "enabled": True,
-            "base_url": os.environ.get("SYNC_BASE_URL", "http://127.0.0.1:8000/api/"),
-            "ws_url": os.environ.get("SYNC_WS_URL", "ws://127.0.0.1:8000/ws/sync"),
-            "username": os.environ.get("SYNC_USERNAME", "admin"),
-            "password": os.environ.get("SYNC_PASSWORD", "adminpassword")
+            "base_url": os.environ.get("SYNC_BASE_URL"),
+            "ws_url": os.environ.get("SYNC_WS_URL"),
+            "username": os.environ.get("SYNC_USERNAME"),
+            "password": os.environ.get("SYNC_PASSWORD")
         }
     }
 

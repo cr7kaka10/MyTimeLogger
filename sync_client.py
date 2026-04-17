@@ -16,11 +16,11 @@ class SyncClient:
 
         # Load API URL from config, default to localhost if not set
         api_config = self.config.get("api_config", {})
-        self.base_url = api_config.get("base_url", os.environ.get("SYNC_BASE_URL", "http://127.0.0.1:8080/api/"))
-        self.ws_url = api_config.get("ws_url", os.environ.get("SYNC_WS_URL", "ws://127.0.0.1:8080/ws/sync"))
+        self.base_url = api_config.get("base_url", os.environ.get("SYNC_BASE_URL"))
+        self.ws_url = api_config.get("ws_url", os.environ.get("SYNC_WS_URL"))
         self.token = api_config.get("token", os.environ.get("SYNC_TOKEN"))
-        self.username = api_config.get("username", os.environ.get("SYNC_USERNAME", "admin"))
-        self.password = api_config.get("password", os.environ.get("SYNC_PASSWORD", "adminpass"))
+        self.username = api_config.get("username", os.environ.get("SYNC_USERNAME"))
+        self.password = api_config.get("password", os.environ.get("SYNC_PASSWORD"))
 
     def login(self):
         """Authenticate with the server to get an access token."""

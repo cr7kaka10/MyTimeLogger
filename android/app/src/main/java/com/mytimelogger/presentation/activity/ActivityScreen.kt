@@ -10,14 +10,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 data class ActivityItem(val name: String, val icon: String)
 
 @Composable
 fun ActivityScreen(
-    activities: List<ActivityItem>,
+    viewModel: ActivityViewModel = viewModel(),
     onActivityClick: (ActivityItem) -> Unit
 ) {
+    val activities by viewModel.activities.collectAsState()
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(text = "Lyubishchev Activity Tracker", modifier = Modifier.padding(bottom = 16.dp))
 
@@ -27,7 +32,10 @@ fun ActivityScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(activities) { activity ->
-                ActivityCard(activity = activity, onClick = { onActivityClick(activity) })
+                ActivityCard(activity = activity, onClick = {
+                    viewModel.onActivityClick(activity)
+                    onActivityClick(activity)
+                })
             }
         }
     }
