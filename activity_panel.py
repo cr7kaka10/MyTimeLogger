@@ -5,11 +5,10 @@
 柳比歇夫分类计时的主界面，网格排列类别图标，点击后联动主程序的计时逻辑。
 """
 
-import sys
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-                             QPushButton, QLabel, QFrame, QApplication)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt6.QtGui import QIcon, QFont, QColor
+                             QPushButton, QLabel, QFrame)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QIcon
 from datetime import datetime
 import sqlite3
 
