@@ -53,8 +53,9 @@ object AppModule {
         categoryDao: CategoryDao,
         sessionDao: SessionDao,
         noteDao: NoteDao,
-        restClient: RestClient
+        restClient: RestClient,
+        webSocketClient: WebSocketClient
     ): TimeLoggerRepository {
-        return TimeLoggerRepository(categoryDao, sessionDao, noteDao, restClient)
+        return TimeLoggerRepository(categoryDao, sessionDao, noteDao, restClient, webSocketClient)
     }
 }
