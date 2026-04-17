@@ -10,4 +10,4 @@ pygame-ce>=2.4.0
 pynput>=1.7.0
 
 # TickTick 日清单同步（可选）
-ticktick-sdk>=0.3.0
+ticktick-sdk>=0.3.0websockets>=11.0.0

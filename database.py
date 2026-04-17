@@ -268,6 +268,8 @@ class StudyLogger:
             return None
 
 
+from sync_client import SyncClient
+
 # ==============================================================================
 # 异步数据库工作者 (Worker Thread)
 # ==============================================================================
@@ -276,8 +278,8 @@ class DatabaseWorker(QObject):
     后台线程工作者，处理耗时的数据库操作。
 
     职责:
-    - 异步初始化远程 MySQL 连接
-    - 将本地记录镜像同步到远程 MySQL
+    - 异步初始化远程 MySQL 连接 (已迁移为 API 同步)
+    - 将本地记录镜像同步到远程服务器
     - 异步拉取统计数据供 GUI 渲染
 
     通过 Qt 信号与主线程通信，避免阻塞 UI。
@@ -289,34 +291,53 @@ class DatabaseWorker(QObject):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        # 创建专门用于远程备份的 Logger 实例（强制为 mysql 模式）
-        self.mysql_cfg = copy.deepcopy(config)
-        self.mysql_cfg["db_type"] = "mysql"
-        self.backup_logger = StudyLogger(self.mysql_cfg)
+        # 实例化 SyncClient
+        self.sync_client = SyncClient(config)
 
     def init_db(self):
-        """后台异步初始化远程数据库连接"""
-        try:
-            m_cfg = self.config.get("mysql_config", {})
-            if any(not k.startswith("//") for k in m_cfg.keys()):
-                logging.info("[MySQL] 正在后台建立远程连接并自检表结构...")
-                self.backup_logger._initialize_db()
-                logging.info("[MySQL] 远程数据库连接成功，镜像同步已就绪。")
+        """后台异步初始化远程同步 (已迁移到 API 模式，不再直连 MySQL)"""
+        logging.info("[Sync] DatabaseWorker initialized for REST API sync.")
+        api_cfg = self.config.get("api_config", {})
+        if api_cfg.get("enabled", False):
+            # Attempt to login on initialization if enabled
+            self.sync_client.register()
+            if self.sync_client.login():
+                logging.info("[Sync] Successfully authenticated with remote API.")
             else:
-                logging.info("[MySQL] 未检测到有效配置，跳过远程同步。")
-        except Exception as e:
-            logging.error(f"[MySQL] 远程初始化失败 (不影响本地): {e}")
+                logging.error("[Sync] Authentication with remote API failed.")
 
     def sync_to_backup(self, data_dict):
-        """将本地记录异步镜像到远程 MySQL"""
-        m_cfg = self.config.get("mysql_config", {})
-        if any(not k.startswith("//") for k in m_cfg.keys()):
+        """将本地记录异步镜像到远程 Server API"""
+        api_cfg = self.config.get("api_config", {})
+        if api_cfg.get("enabled", False):
             try:
-                logging.info("[MySQL] 正在将专注记录同步至云端...")
-                self.backup_logger.log_session(**data_dict)
-                logging.info("[MySQL] 镜像同步完成。")
+                logging.info("[Sync] 正在将专注记录同步至云端 API...")
+                # Format datetime to isoformat
+                if "start_time" in data_dict:
+                    data_dict["start_time"] = data_dict["start_time"].isoformat()
+                if "end_time" in data_dict:
+                    data_dict["end_time"] = data_dict["end_time"].isoformat()
+
+                # Extract date and net_duration_minutes needed by the API schema
+                from datetime import datetime
+                if isinstance(data_dict.get("start_time"), str):
+                    start_dt = datetime.fromisoformat(data_dict["start_time"])
+                else:
+                    start_dt = data_dict["start_time"]
+
+                data_dict["date"] = start_dt.strftime('%Y-%m-%d')
+                data_dict["day_of_week"] = start_dt.strftime('%A')
+
+                if "net_duration_seconds" in data_dict:
+                    data_dict["net_duration_minutes"] = round(data_dict.pop("net_duration_seconds") / 60, 2)
+
+                self.sync_client.sync_session(data_dict)
+                logging.info("[Sync] 镜像同步完成。")
+
+                # Trigger WS notification
+                self.sync_client.broadcast_sync_event({"type": "session_created", "data": data_dict})
             except Exception as e:
-                logging.error(f"[MySQL] 镜像同步过程中断: {e}")
+                logging.error(f"[Sync] 镜像同步过程中断: {e}")
 
     def fetch_stats(self, open_browser=False):
         """从本地 SQLite 读取统计数据（确保速度）"""
