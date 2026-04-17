@@ -71,14 +71,17 @@ class CategoryManager:
             if count == 0:
                 logging.info("分类表为空，正在插入预置分类...")
                 now_str = datetime.now().isoformat()
-                for cat in DEFAULT_CATEGORIES:
-                    cursor.execute('''
-                        INSERT INTO categories (id, name, icon, color, group_name, sort_order, is_active, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
+                data = [
+                    (
                         str(uuid.uuid4()), cat['name'], cat['icon'], cat['color'], 
                         cat['group_name'], cat['sort_order'], 1, now_str
-                    ))
+                    )
+                    for cat in DEFAULT_CATEGORIES
+                ]
+                cursor.executemany('''
+                    INSERT INTO categories (id, name, icon, color, group_name, sort_order, is_active, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', data)
                 conn.commit()
             conn.close()
         except Exception as e:
@@ -180,8 +183,10 @@ class CategoryManager:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            for cat_id, order in id_order_list:
-                cursor.execute("UPDATE categories SET sort_order = ? WHERE id = ?", (order, cat_id))
+            # 使用 executemany 减少 N+1 查询开销
+            # 注意: 传入参数顺序需与 SQL 占位符一致 (order, cat_id)
+            params = [(order, cat_id) for cat_id, order in id_order_list]
+            cursor.executemany("UPDATE categories SET sort_order = ? WHERE id = ?", params)
             conn.commit()
             conn.close()
             return True
