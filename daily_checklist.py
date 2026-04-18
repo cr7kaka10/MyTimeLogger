@@ -414,6 +414,19 @@ class DailyChecklistWindow(QWidget):
 
     def _on_complete_clicked(self, task_data):
         tid = task_data["id"]
+        title = task_data.get("title", "")
+        priority = task_data.get("priority", 0)
+        
+        # 积分入账
+        try:
+            from database import StudyLogger
+            db = StudyLogger(self.config)
+            coins = db.get_task_coins(priority)
+            db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
+            logger.info(f"任务完成积分入账: +{coins} ({title})")
+        except Exception as e:
+            logger.error(f"任务积分入账失败: {e}")
+        
         self.sync_worker.remove_from_cache(tid)
         if tid in self.task_widgets: self.task_widgets.pop(tid).deleteLater()
         if self.current_focus_task_id == tid:

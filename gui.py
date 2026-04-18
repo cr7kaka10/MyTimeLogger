@@ -66,6 +66,7 @@ class MyTimeLoggerGUI(QWidget):
 
         self._checklist_window = None  # 日清单窗口（首次访问时创建）
         self._activity_panel_window = None  # 活动面板窗口
+        self._habit_tracker_window = None  # 习惯打卡窗口
         self.category_manager = CategoryManager()
 
         # 软件启动后延迟 100 毫秒，自动在后台同步今日清单（不打开窗口）
@@ -412,6 +413,8 @@ class MyTimeLoggerGUI(QWidget):
         checklist_action.triggered.connect(self.toggle_daily_checklist)
         activity_panel_action = QAction("📊 柳比歇夫时间管理  (Alt+Z)", self)
         activity_panel_action.triggered.connect(self.toggle_activity_panel)
+        habit_action = QAction("✅ 习惯打卡", self)
+        habit_action.triggered.connect(self.toggle_habit_tracker)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
         quit_action = QAction("❌ 退 出", self)
@@ -428,6 +431,7 @@ class MyTimeLoggerGUI(QWidget):
         menu.addAction(open_log_action)
         menu.addAction(activity_panel_action)
         menu.addAction(checklist_action)
+        menu.addAction(habit_action)
         menu.addAction(stat_action)
         menu.addSeparator()
         menu.addAction(quit_action)
@@ -839,6 +843,21 @@ class MyTimeLoggerGUI(QWidget):
             self.switch_ui_mode(to_mini=True)
         else:
             self.switch_ui_mode(to_mini=False)
+
+    def _ensure_habit_window(self):
+        """确保习惯打卡窗口已创建并返回"""
+        if self._habit_tracker_window is None:
+            from habit_tracker import HabitTrackerWindow
+            self._habit_tracker_window = HabitTrackerWindow(config=self.config)
+        return self._habit_tracker_window
+
+    def toggle_habit_tracker(self):
+        """切换习惯打卡窗口显隐"""
+        win = self._ensure_habit_window()
+        if win.isVisible():
+            win.hide()
+        else:
+            win.show()
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
         """更新累计时间显示"""

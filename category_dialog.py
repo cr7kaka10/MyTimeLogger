@@ -39,74 +39,46 @@ class GroupItemDelegate(QStyledItemDelegate):
                 return True
         return super().editorEvent(event, model, option, index)
 
-FA_CATEGORIES = {
-    "工作 & 效率": [
-        ("\uf02d", "书本/阅读"), ("\uf108", "电脑/编程"), ("\uf109", "台式机/办公"),
-        ("\uf07b", "文件夹"), ("\uf115", "打开的文件夹"), ("\uf15c", "文档/笔记"),
-        ("\uf0c6", "附件/回形针"), ("\uf0b1", "公文包/办公"), ("\uf02e", "书签/标记"),
-        ("\uf1ea", "报纸/阅读"), ("\uf201", "趋势/数据"), ("\uf080", "条形图"),
-        ("\uf200", "饼图"), ("\uf0ca", "列表/清单"), ("\uf0ae", "任务/进度"),
-        ("\uf073", "日历/计划"), ("\uf133", "打卡/签到"), ("\uf274", "添加计划"),
-        ("\uf017", "时钟/时间"), ("\uf0eb", "灯泡/创意"), ("\uf135", "火箭/起飞"),
-        ("\uf0e8", "架构/网络"), ("\uf114", "空文件夹"), ("\uf0ce", "桌子/会议"),
-        ("\uf03a", "列表/排序"), ("\uf0c5", "复制/文档"), ("\uf0ee", "上传/云端"),
-        ("\uf019", "下载/保存"), ("\uf012", "信号/网络"), ("\uf2b5", "握手/合作"),
-        ("\uf0a1", "喇叭/广播"), ("\uf55b", "钱包/财务"), ("\uf0d6", "钞票/资金"),
-        ("\uf153", "人民币/日元"), ("\uf155", "美元/生意"), ("\uf24e", "天平/法律"),
-        ("\uf21b", "身份/工牌")
-    ],
+EMOJI_CATEGORIES = {
     "生活 & 居家": [
-        ("\uf015", "主页/家庭"), ("\uf236", "床/睡觉"), ("\uf2cd", "个人/洗头"),
-        ("\uf2e7", "餐饮/吃饭"), ("\uf0f4", "咖啡/休息"), ("\uf0fc", "啤酒/饮酒"),
-        ("\uf578", "鱼/海鲜"), ("\uf805", "汉堡/快餐"), ("\uf78c", "胡萝卜/蔬菜"),
-        ("\uf07a", "购物车/购物"), ("\uf290", "袋子/买菜"), ("\uf54f", "商店/小卖部"),
-        ("\uf68f", "店铺/商业"), ("\uf21e", "心跳/健康"), ("\uf0f9", "急救/看病"),
-        ("\uf481", "药丸/吃药"), ("\uf118", "微笑/情绪"), ("\uf5a4", "戒指/首饰"),
-        ("\uf1ae", "儿童/小孩"), ("\uf0c0", "群组/社交"), ("\uf002", "搜索/查找"),
-        ("\uf234", "加好友/社交"), ("\uf1fd", "生日/蛋糕"), ("\uf06b", "火热/做饭"),
-        ("\uf185", "太阳/白天"), ("\uf186", "月亮/夜晚"), ("\uf0e9", "雨伞/下雨"),
-        ("\uf2dc", "雪花/冬天"), ("\uf021", "循环/刷新"), ("\uf1b2", "方块/积木"),
-        ("\uf12e", "拼图/逻辑"), ("\uf06c", "叶子/环保"), ("\uf552", "洗手池/卫生间"),
-        ("\uf2a0", "温度计/气温"), ("\uf1ad", "建筑/城市"), ("\uf2b9", "联系人/卡片"),
-        ("\uf0f2", "行李/旅行")
+        ("🪥", "刷牙"), ("🧴", "护肤/洗脸"), ("🚿", "洗澡"), ("🛏️", "叠被/睡眠"),
+        ("🌞", "早起"), ("🌙", "早睡"), ("💧", "喝水"), ("🍎", "吃水果"),
+        ("🥗", "吃蔬菜"), ("💊", "吃药"), ("🚭", "戒烟"), ("📵", "限屏幕"),
+        ("💰", "记账/存钱"), ("🧹", "打扫"), ("🍳", "做饭"), ("🍽️", "一日三餐"),
+        ("☕", "咖啡/茶"), ("🍷", "戒酒/饮品"), ("👗", "穿搭"), ("🗑️", "极简/扔垃圾"),
+        ("🛒", "购物"), ("🐶", "遛狗/宠物"), ("🌱", "浇花"), ("🏠", "顾家")
     ],
-    "娱乐 & 休闲": [
-        ("\uf11b", "手柄/游戏"), ("\uf001", "音乐/听歌"), ("\uf025", "耳机/听课"),
-        ("\uf008", "电影/影视"), ("\uf03e", "照片/图像"), ("\uf030", "相机/拍照"),
-        ("\uf043", "水滴/画画"), ("\uf53f", "调色板/绘画"), ("\uf70c", "跑步/运动"),
-        ("\uf44b", "哑铃/健身"), ("\uf434", "足球/球类"), ("\uf45f", "乒乓球/运动"),
-        ("\uf6cf", "骰子/桌游"), ("\uf521", "VR/虚拟现实"), ("\uf5dc", "大脑/思考"),
-        ("\uf188", "昆虫/自然"), ("\uf51f", "金币/财富"), ("\uf091", "奖杯/荣誉"),
-        ("\uf005", "星星/收藏"), ("\uf145", "入场券/活动"), ("\uf5eb", "龙/虚幻"),
-        ("\uf57a", "小人/舞蹈"), ("\uf5a0", "地图/冒险"), ("\uf500", "朋友/聚会"),
-        ("\uf5b2", "魔术/魔法"), ("\uf0fb", "飞机/冲浪"), ("\uf29b", "购物中心/逛街")
+    "学习 & 工作": [
+        ("📖", "阅读"), ("🎧", "听书/播客"), ("💻", "编程/工作"), ("📚", "复习/背单字"),
+        ("📝", "写日记/笔记"), ("💡", "思考/复盘"), ("🗣️", "口语/演讲"), ("🎓", "上课"),
+        ("📈", "进阶/理财"), ("🎯", "目标/专注"), ("⏰", "时间管理"), ("🔬", "研究"),
+        ("📁", "整理文件"), ("✏️", "写作/画图"), ("📊", "数据分析"), ("📋", "待办清单")
     ],
-    "交通 & 行程": [
-        ("\uf1b9", "汽车/车"), ("\uf207", "公交/通勤"), ("\uf238", "火车/地铁"),
-        ("\uf559", "出租车/打车"), ("\uf206", "自行车/骑行"), ("\uf2fc", "摩托/机车"),
-        ("\uf072", "飞机/出差"), ("\uf5b0", "航班/出发"), ("\uf21d", "轮船/航海"),
-        ("\uf275", "工厂/生产"), ("\uf0f8", "医院/医疗"), ("\uf19c", "大学/教育"),
-        ("\uf549", "学校/校园"), ("\uf041", "坐标/打卡"), ("\uf5ea", "方向/路名"),
-        ("\uf124", "图钉/地点"), ("\uf024", "旗帜/目的地"), ("\uf502", "指南针/导航")
+    "运动 & 健康": [
+        ("🏃", "跑步"), ("🚶", "散步"), ("🏋️", "健身/铁"), ("🧘", "瑜伽/冥想"),
+        ("🏊", "游泳"), ("🚴", "骑行"), ("🧗", "攀岩"), ("🏸", "羽毛球"),
+        ("🏀", "篮球"), ("⚽", "足球"), ("🎾", "网球"), ("🏓", "乒乓球"),
+        ("🕺", "跳舞"), ("💪", "力量训练"), ("⚖️", "称体重"), ("❤️", "健康监测")
     ],
-    "物品 & 工具": [
-        ("\uf5ad", "钢笔/写作"), ("\uf304", "原珠笔/记号"), ("\uf040", "铅笔/编辑"),
-        ("\uf246", "鼠标/外设"), ("\uf11c", "键盘/输入"), ("\uf10a", "平板/电子"),
-        ("\uf3ce", "手机/通讯"), ("\uf028", "喇叭/音量"), ("\uf0f3", "闹钟/提醒"),
-        ("\uf023", "锁/隐私"), ("\uf13e", "解锁/公开"), ("\uf084", "钥匙/密码"),
-        ("\uf013", "齿轮/机器"), ("\uf0ad", "扳手/修理"), ("\uf0e0", "信封/邮件"),
-        ("\uf2b6", "打开的邮件"), ("\uf02c", "标签/分类"), ("\uf067", "加号/新建"),
-        ("\uf00c", "打勾/完成"), ("\uf00d", "叉号/取消"), ("\uf071", "警告/注意"),
-        ("\uf05a", "提示/信息"), ("\uf059", "问号/帮助"), ("\uf11e", "旗帜/里程碑"),
-        ("\uf466", "快递箱/包裹"), ("\uf410", "手机应用/碎片"), ("\uf0c4", "剪刀/裁剪")
+    "心理 & 休闲": [
+        ("🙏", "感恩"), ("😌", "放松/深呼吸"), ("🎨", "画画"), ("🎵", "练琴/音乐"),
+        ("🎤", "唱歌"), ("🎮", "游戏"), ("🎬", "看电影/剧"), ("📱", "刷社交"),
+        ("📸", "摄影"), ("🎲", "桌游"), ("🧩", "拼图/乐高"), ("🍿", "零食"),
+        ("🎂", "生日/庆祝"), ("💬", "社交/聊天"), ("🎉", "聚会"), ("✈️", "旅行")
+    ],
+    "交通 & 其他": [
+        ("🚗", "开车"), ("🚌", "公交"), ("🚇", "地铁"), ("🚕", "打车"),
+        ("🚲", "单车"), ("🏫", "学校"), ("🏢", "公司"), ("🏥", "医院"),
+        ("🗺️", "导航"), ("⛽", "加油"), ("🏪", "便利店"), ("⭐", "综合类")
     ]
 }
 
 class IconSelectorDialog(QDialog):
+    """Emoji 图标选择器"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("选择主题矢量图标 (aTimeLogger 风格)")
-        self.setFixedSize(540, 480)
+        self.setWindowTitle("选择 Emoji 图标")
+        self.setFixedSize(480, 420)
         self.setStyleSheet("""
             QDialog { background-color: #FFFFFF; color: #2E3440; font-family: 'Microsoft YaHei'; }
             QTabWidget::pane { border: 1px solid #D8DEE9; border-radius: 4px; margin-top: -1px; background: #FFFFFF; }
@@ -114,66 +86,39 @@ class IconSelectorDialog(QDialog):
             QTabBar::tab:selected { background: #FFFFFF; color: #2E3440; font-weight: bold; border-bottom-color: #FFFFFF; }
         """)
         self.selected_icon = None
-        self._full_lib_loaded = False 
 
-        self._fa_font = QFont('Font Awesome 6 Free')
-        self._fa_font.setWeight(QFont.Weight.Black)
-        self._fa_font.setPixelSize(20)
-        self._fa_fm = QFontMetrics(self._fa_font)
-        
         main_layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
-        icon_btn_style = """
-            QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px;} 
+        emoji_btn_style = """
+            QPushButton { font-size: 22px; background: #F0F2F5; border: 1px solid #D8DEE9; border-radius: 6px; }
             QPushButton:hover { background: #E0E8F0; border: 1px solid #5E81AC; }
         """
-        for cat_name, icon_list in FA_CATEGORIES.items():
+        for cat_name, emoji_list in EMOJI_CATEGORIES.items():
             tab_widget = QWidget()
-            grid_layout = QGridLayout(tab_widget)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            content = QWidget()
+            grid_layout = QGridLayout(content)
             grid_layout.setSpacing(6)
             grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-            col_idx = 0
-            for char, name in icon_list:
-                if not self._fa_fm.inFont(char): continue
-                btn = QPushButton(char)
+            for idx, (emoji, name) in enumerate(emoji_list):
+                btn = QPushButton(emoji)
                 btn.setFixedSize(45, 45)
                 btn.setToolTip(name)
-                btn.setStyleSheet(icon_btn_style)
-                btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-                grid_layout.addWidget(btn, col_idx // 9, col_idx % 9)
-                col_idx += 1
+                btn.setStyleSheet(emoji_btn_style)
+                btn.clicked.connect(lambda *args, e=emoji: self._on_select(e))
+                grid_layout.addWidget(btn, idx // 8, idx % 8)
+            scroll.setWidget(content)
+            tab_layout = QVBoxLayout(tab_widget)
+            tab_layout.setContentsMargins(0, 0, 0, 0)
+            tab_layout.addWidget(scroll)
             self.tabs.addTab(tab_widget, cat_name)
-            
-        scroll_tab = QWidget()
-        scroll_layout = QVBoxLayout(scroll_tab)
-        self._full_lib_scroll_area = QScrollArea()
-        self._full_lib_scroll_area.setWidgetResizable(True)
-        self._full_lib_scroll_area.setWidget(QLabel("加载中..."))
-        scroll_layout.addWidget(self._full_lib_scroll_area)
-        self._full_lib_tab_index = self.tabs.addTab(scroll_tab, "🗃️ 完整库")
-        self.tabs.currentChanged.connect(self._on_tab_changed)
         main_layout.addWidget(self.tabs)
 
-    def _on_select(self, char):
-        self.selected_icon = char
+    def _on_select(self, emoji):
+        self.selected_icon = emoji
         self.accept()
-
-    def _on_tab_changed(self, index):
-        if index == self._full_lib_tab_index and not self._full_lib_loaded:
-            self._full_lib_loaded = True
-            content = QWidget()
-            grid = QGridLayout(content)
-            idx = 0
-            for code in range(0xf000, 0xf900):
-                char = chr(code)
-                if not self._fa_fm.inFont(char): continue
-                btn = QPushButton(char)
-                btn.setFixedSize(45, 45)
-                btn.setStyleSheet("QPushButton { font-family: 'Font Awesome 6 Free'; font-size: 20px; font-weight: 900; background: #F0F2F5; color: #3B4252; border: 1px solid #D8DEE9; border-radius: 6px; } QPushButton:hover { background: #5E81AC; color: white; }")
-                btn.clicked.connect(lambda *args, c=char: self._on_select(c))
-                grid.addWidget(btn, idx // 9, idx % 9)
-                idx += 1
-            self._full_lib_scroll_area.setWidget(content)
 
 class CategoryManagerDialog(QDialog):
     def __init__(self, category_manager, parent=None):

@@ -36,7 +36,7 @@ class CategoryButton(QPushButton):
 
         self.icon_label = QLabel(self.category_data.get("icon", "📌"))
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setStyleSheet("font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: 900; font-size: 28px; background: transparent; border: none;")
+        self.icon_label.setStyleSheet("font-family: 'Microsoft YaHei', 'Segoe UI Emoji'; font-size: 28px; background: transparent; border: none;")
 
         self.name_label = QLabel(self.category_data.get("name", "未命名"))
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -61,7 +61,7 @@ class CategoryButton(QPushButton):
             
         # 文本统一黑色雅黑，图标跟随设定的颜色
         self.name_label.setStyleSheet(f"font-family: 'Microsoft YaHei'; font-size: 12px; font-weight: bold; color: #2E3440; background: transparent; border: none;")
-        self.icon_label.setStyleSheet(f"font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-weight: 900; font-size: 28px; color: {color}; background: transparent; border: none;")
+        self.icon_label.setStyleSheet(f"font-family: 'Microsoft YaHei', 'Segoe UI Emoji'; font-size: 28px; color: {color}; background: transparent; border: none;")
         
         if self.is_active_category:
             self.setStyleSheet(f"""
@@ -179,8 +179,18 @@ class ActivityPanel(QWidget):
         if self.main_window and hasattr(self.main_window, "toggle_daily_checklist"):
             checklist_btn.clicked.connect(self.main_window.toggle_daily_checklist)
 
+        habit_btn = QPushButton("✅ 习惯")
+        habit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        habit_btn.setStyleSheet("""
+            QPushButton { color: #A3BE8C; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
+            QPushButton:hover { color: #8FBF65; }
+        """)
+        if self.main_window and hasattr(self.main_window, "toggle_habit_tracker"):
+            habit_btn.clicked.connect(self.main_window.toggle_habit_tracker)
+
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(habit_btn)
         title_layout.addWidget(checklist_btn)
         title_layout.addWidget(refresh_btn)
         title_layout.addWidget(manage_btn)
