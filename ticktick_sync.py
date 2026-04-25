@@ -12,6 +12,7 @@ import logging
 import httpx
 import json
 from datetime import datetime, timezone, timedelta
+from typing import Set
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
@@ -76,6 +77,8 @@ class TickTickSyncWorker(QObject):
         
         self._project_map = {}
         self._cached_tasks = []
+        self._raw_task_map = {}   # task_id -> 原始 API 返回的全量数据
+        self._locally_completed: Set[str] = set()  # 本地已完成但 API 延迟未清除的 task_id
         self._client = None
         self._loop = None
 
@@ -103,6 +106,9 @@ class TickTickSyncWorker(QObject):
             return
         try:
             tasks = self._run(self._fetch_all_tasks(token))
+            
+            # 过滤掉本地已完成但 TickTick 端由于延迟还没清除的任务
+            tasks = [t for t in tasks if t["id"] not in self._locally_completed]
             
             # 自动映射分类 ID 并持久化落盘
             self._persist_and_link_tasks(tasks)
@@ -147,16 +153,18 @@ class TickTickSyncWorker(QObject):
                 p_id = data.get("project", {}).get("id")
                 p_name = self._project_map.get(p_id, "收集箱")
                 for t in data.get("tasks", []):
-                    if t.get("status", 0) != 0: continue
+                    if t.get("status", 0) != 0: continue  # 跳过已完成
                     due_date_str = t.get("dueDate")
-                    if not due_date_str: continue
+                    if not due_date_str: continue  # 跳过无截止日期
                     try:
                         clean_date = due_date_str.replace("+0000", "Z")
                         due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
                         due_cst = due_dt.astimezone(CST).date()
                     except:
                         continue
-                    if due_cst <= today_cst:
+                    if due_cst <= today_cst:  # 今日及过期任务
+                        task_id = t["id"]
+                        self._raw_task_map[task_id] = t  # 缓存原始全量数据
                         result.append(self._task_to_dict(t, p_name))
             return result
         finally:
@@ -190,6 +198,9 @@ class TickTickSyncWorker(QObject):
         tt_cfg = self.config.get("ticktick_config", {})
         token = tt_cfg.get("access_token")
         try:
+            # 加入本地已完成集合，防止刷新时因 API 延迟又把它拉回来
+            self._locally_completed.add(task_id)
+            
             self._run(self._do_complete(token, project_id, task_id))
             
             # 更新本地数据库状态
@@ -205,6 +216,7 @@ class TickTickSyncWorker(QObject):
             self.task_completed_ok.emit(task_id)
         except Exception as e:
             logger.error(f"完成任务失败: {e}")
+            self._locally_completed.discard(task_id)  # 失败时移出集合
             self.task_complete_failed.emit(task_id, str(e))
 
     @pyqtSlot(str, str, int)
@@ -256,15 +268,25 @@ class TickTickSyncWorker(QObject):
     async def _do_complete(self, token, project_id, task_id):
         client = OfficialTickTickClient(token)
         try:
-            project_data = await client.get_project_data(project_id)
-            tasks = project_data.get("tasks", [])
-            target_task = next((t for t in tasks if t["id"] == task_id), None)
+            # 优先使用缓存的原始全量数据，避免多一次 GET 请求
+            target_task = self._raw_task_map.get(task_id)
+            
+            if not target_task:
+                # 缓存没有，从 API 拉取
+                project_data = await client.get_project_data(project_id)
+                tasks = project_data.get("tasks", [])
+                target_task = next((t for t in tasks if t["id"] == task_id), None)
             
             if target_task:
-                target_task["status"] = 2
-                await client.update_task(project_id, task_id, target_task)
+                # 必须提供全量数据 + status=2 + completedTime
+                # TickTick API 只传部分字段会静默忽略更新
+                payload = dict(target_task)
+                payload["status"] = 2
+                payload["completedTime"] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000+0000')
+                logger.info(f"[完成] 任务 '{payload.get('title', task_id)}' -> status=2")
+                await client.update_task(project_id, task_id, payload)
             else:
-                logger.warning(f"任务 {task_id} 在活动列表未找到，直接调用 complete 兜底")
+                logger.warning(f"任务 {task_id} 在活动列表未找到，直接调用 complete 接口兜底")
                 await client.complete_task(project_id, task_id)
         finally:
             await client.close()
