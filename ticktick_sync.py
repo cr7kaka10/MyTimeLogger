@@ -171,15 +171,38 @@ class TickTickSyncWorker(QObject):
             await client.close()
 
     def _task_to_dict(self, t, project_name) -> dict:
+        today_cst = datetime.now(CST).date()
         due_str = "全天"
-        if not t.get("isAllDay"):
-            due_date_str = t.get("dueDate")
-            if due_date_str:
-                try:
-                    clean_date = due_date_str.replace("+0000", "Z")
-                    due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
-                    due_str = due_dt.astimezone(CST).strftime("%H:%M")
-                except: pass
+        due_date_full = ""
+        is_overdue = False
+
+        due_date_str = t.get("dueDate")
+        if due_date_str:
+            try:
+                clean_date = due_date_str.replace("+0000", "Z")
+                due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
+                due_cst = due_dt.astimezone(CST)
+                due_day = due_cst.date()
+                is_overdue = due_day < today_cst
+
+                if t.get("isAllDay"):
+                    if due_day == today_cst:
+                        due_date_full = "今天 全天"
+                    else:
+                        due_date_full = due_cst.strftime("%-m/%-d 全天") if hasattr(due_cst, 'strftime') else due_cst.strftime("%m/%d 全天")
+                else:
+                    time_str = due_cst.strftime("%H:%M")
+                    due_str = time_str
+                    if due_day == today_cst:
+                        due_date_full = f"今天 {time_str}"
+                    else:
+                        # Windows strftime 不支持 %-m，用 lstrip('0') 模拟
+                        m = str(due_cst.month)
+                        d = str(due_cst.day)
+                        due_date_full = f"{m}/{d} {time_str}"
+            except:
+                pass
+
         tags = t.get("tags", [])
         return {
             "id": t["id"],
@@ -190,6 +213,8 @@ class TickTickSyncWorker(QObject):
             "tags": tags,
             "project_name": project_name,
             "due_date": due_str,
+            "due_date_full": due_date_full,
+            "is_overdue": is_overdue,
             "is_completed": False,
         }
 

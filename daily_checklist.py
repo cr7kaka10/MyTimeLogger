@@ -103,10 +103,15 @@ class TaskItemWidget(QFrame):
             tag_label.setStyleSheet(f"QLabel {{ font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #E5E9F0; color: {TEXT_SECONDARY}; }}")
             row2.addWidget(tag_label)
 
-        due = self.task_data.get("due_date", "")
-        if due and due != "全天":
-            due_label = QLabel(f"⏰ {due}")
-            due_label.setStyleSheet("QLabel { font-size: 11px; color: #BF616A; font-weight: bold; }")
+        due_full = self.task_data.get("due_date_full", "")
+        is_overdue = self.task_data.get("is_overdue", False)
+        if due_full:
+            if is_overdue:
+                due_label = QLabel(f"🔴 {due_full}")
+                due_label.setStyleSheet("QLabel { font-size: 11px; color: #BF616A; font-weight: bold; }")
+            else:
+                due_label = QLabel(f"⏰ {due_full}")
+                due_label.setStyleSheet(f"QLabel {{ font-size: 11px; color: {TEXT_SECONDARY}; }}")
             row2.addWidget(due_label)
 
         row2.addStretch()
