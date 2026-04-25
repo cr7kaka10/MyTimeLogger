@@ -48,9 +48,9 @@ class OfficialTickTickClient:
         resp.raise_for_status()
 
     async def update_task(self, project_id: str, task_id: str, data: dict):
-        # 官方推荐路径
-        url = f"{self.base_url}/project/{project_id}/task/{task_id}"
-        logger.info(f"[API] 正在更新任务: {task_id}, 项目: {project_id}, Payload: {data}")
+        # 官方推荐路径，必须使用 POST /task/{task_id}
+        url = f"{self.base_url}/task/{task_id}"
+        logger.info(f"[API] 正在更新任务: {task_id}, 项目: {project_id}, Payload keys: {list(data.keys())}")
         resp = await self.client.post(url, json=data)
         
         if resp.status_code != 200:
@@ -240,20 +240,32 @@ class TickTickSyncWorker(QObject):
     async def _do_update(self, token, project_id, task_id, data):
         client = OfficialTickTickClient(token)
         try:
-            await client.update_task(project_id, task_id, data)
+            project_data = await client.get_project_data(project_id)
+            tasks = project_data.get("tasks", [])
+            target_task = next((t for t in tasks if t["id"] == task_id), None)
+            if not target_task:
+                raise ValueError(f"未在项目 {project_id} 中找到任务 {task_id}")
+            
+            for k, v in data.items():
+                target_task[k] = v
+                
+            await client.update_task(project_id, task_id, target_task)
         finally:
             await client.close()
 
     async def _do_complete(self, token, project_id, task_id):
         client = OfficialTickTickClient(token)
         try:
-            # TickTick 官方的 complete 接口有时返回 200 但没有实际更改状态
-            # 使用 update 接口显式设定 status 为 2 (已完成) 作为保障
-            try:
-                await client.update_task(project_id, task_id, {"status": 2})
-            except Exception as e:
-                logger.warning(f"使用 update_task 更新状态失败: {e}")
-            await client.complete_task(project_id, task_id)
+            project_data = await client.get_project_data(project_id)
+            tasks = project_data.get("tasks", [])
+            target_task = next((t for t in tasks if t["id"] == task_id), None)
+            
+            if target_task:
+                target_task["status"] = 2
+                await client.update_task(project_id, task_id, target_task)
+            else:
+                logger.warning(f"任务 {task_id} 在活动列表未找到，直接调用 complete 兜底")
+                await client.complete_task(project_id, task_id)
         finally:
             await client.close()
 
