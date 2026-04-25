@@ -191,6 +191,17 @@ class TickTickSyncWorker(QObject):
         token = tt_cfg.get("access_token")
         try:
             self._run(self._do_complete(token, project_id, task_id))
+            
+            # 更新本地数据库状态
+            try:
+                for t in self._cached_tasks:
+                    if t["id"] == task_id:
+                        t["status"] = 2
+                        self.db_logger.upsert_task(t)
+                        break
+            except Exception as dbe:
+                logger.error(f"更新本地数据库完成状态失败: {dbe}")
+
             self.task_completed_ok.emit(task_id)
         except Exception as e:
             logger.error(f"完成任务失败: {e}")
@@ -236,6 +247,12 @@ class TickTickSyncWorker(QObject):
     async def _do_complete(self, token, project_id, task_id):
         client = OfficialTickTickClient(token)
         try:
+            # TickTick 官方的 complete 接口有时返回 200 但没有实际更改状态
+            # 使用 update 接口显式设定 status 为 2 (已完成) 作为保障
+            try:
+                await client.update_task(project_id, task_id, {"status": 2})
+            except Exception as e:
+                logger.warning(f"使用 update_task 更新状态失败: {e}")
             await client.complete_task(project_id, task_id)
         finally:
             await client.close()
