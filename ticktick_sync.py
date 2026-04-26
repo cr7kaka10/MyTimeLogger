@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 CST = timezone(timedelta(hours=8)) 
 
 class OfficialTickTickClient:
-    def __init__(self, access_token: str):
+    def __init__(self, access_token: str, host: str = "dida365.com"):
         self.access_token = access_token
-        self.base_url = "https://api.ticktick.com/open/v1"
+        self.base_url = f"https://api.{host}/open/v1"
         self.headers = {"Authorization": f"Bearer {access_token}"}
         self.client = httpx.AsyncClient(
             headers=self.headers, 
@@ -60,6 +60,32 @@ class OfficialTickTickClient:
         resp.raise_for_status()
         logger.info(f"[API] 任务 {task_id} 更新成功")
 
+    # ==================== 习惯 API ====================
+    async def get_habits(self) -> list:
+        """获取所有习惯"""
+        resp = await self.client.get(f"{self.base_url}/habit")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def checkin_habit(self, habit_id: str, stamp: str, status: int = 0, value: float = 1.0):
+        """习惯打卡 stamp 格式: YYYYMMDD, status: 0=完成 2=未完成"""
+        url = f"{self.base_url}/habit/{habit_id}/checkin"
+        payload = {"stamp": int(stamp), "status": status, "value": value}
+        resp = await self.client.post(url, json=payload)
+        resp.raise_for_status()
+        return resp.json() if resp.text else {}
+
+    async def get_habit_checkins(self, habit_ids: list, from_stamp: str, to_stamp: str) -> list:
+        """获取习惯打卡记录 habit_ids: list, stamps: YYYYMMDD"""
+        params = {
+            "habitIds": ",".join(habit_ids),
+            "from": from_stamp,
+            "to": to_stamp
+        }
+        resp = await self.client.get(f"{self.base_url}/habit/checkins", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
     async def close(self):
         await self.client.aclose()
 
@@ -74,6 +100,7 @@ class TickTickSyncWorker(QObject):
         self.config = config
         self.category_manager = category_manager
         self.db_logger = StudyLogger(config)
+        self._host = config.get("ticktick_config", {}).get("host", "dida365.com")
         
         self._project_map = {}
         self._cached_tasks = []
@@ -138,7 +165,7 @@ class TickTickSyncWorker(QObject):
             self.db_logger.upsert_task(t)
 
     async def _fetch_all_tasks(self, token: str):
-        client = OfficialTickTickClient(token)
+        client = OfficialTickTickClient(token, self._host)
         try:
             projects = await client.get_projects()
             self._project_map = {p["id"]: p["name"] for p in projects}
@@ -275,7 +302,7 @@ class TickTickSyncWorker(QObject):
             self.sync_error.emit(f"更新失败: {e}")
 
     async def _do_update(self, token, project_id, task_id, data):
-        client = OfficialTickTickClient(token)
+        client = OfficialTickTickClient(token, self._host)
         try:
             project_data = await client.get_project_data(project_id)
             tasks = project_data.get("tasks", [])
@@ -291,7 +318,7 @@ class TickTickSyncWorker(QObject):
             await client.close()
 
     async def _do_complete(self, token, project_id, task_id):
-        client = OfficialTickTickClient(token)
+        client = OfficialTickTickClient(token, self._host)
         try:
             # 优先使用缓存的原始全量数据，避免多一次 GET 请求
             target_task = self._raw_task_map.get(task_id)
@@ -321,3 +348,42 @@ class TickTickSyncWorker(QObject):
             self._loop.close()
             self._loop = None
         logger.info("TickTick Worker 资源已清理")
+
+    # ==================== 习惯同步 ====================
+    def fetch_remote_habits(self) -> list:
+        """同步获取远端习惯列表"""
+        tt_cfg = self.config.get("ticktick_config", {})
+        token = tt_cfg.get("access_token")
+        if not token:
+            return []
+        try:
+            return self._run(self._do_fetch_habits(token))
+        except Exception as e:
+            logger.error(f"获取远端习惯失败: {e}")
+            return []
+
+    async def _do_fetch_habits(self, token):
+        client = OfficialTickTickClient(token, self._host)
+        try:
+            return await client.get_habits()
+        finally:
+            await client.close()
+
+    def sync_habit_checkin(self, habit_id: str, stamp: str, status: int = 0):
+        """同步打卡到远端 (stamp 格式: YYYYMMDD, status: 0=完成 2=失败)"""
+        tt_cfg = self.config.get("ticktick_config", {})
+        token = tt_cfg.get("access_token")
+        if not token:
+            return
+        try:
+            self._run(self._do_checkin(token, habit_id, stamp, status))
+        except Exception as e:
+            logger.error(f"远端习惯打卡失败: {e}")
+
+    async def _do_checkin(self, token, habit_id, stamp, status):
+        client = OfficialTickTickClient(token, self._host)
+        try:
+            await client.checkin_habit(habit_id, stamp, status)
+            logger.info(f"[习惯] 打卡同步成功 habit={habit_id} stamp={stamp} status={status}")
+        finally:
+            await client.close()
