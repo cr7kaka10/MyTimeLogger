@@ -437,13 +437,14 @@ class HabitTrackerWindow(QWidget):
 
         # 构建 {habit_id: {stamp: status}} 映射
         self._cached_checkins = {}
-        for ci in checkins_raw:
-            hid = ci.get('habitId', '')
-            stamp = str(ci.get('checkinStamp', ''))
-            status = ci.get('status', -1)
+        for block in checkins_raw:
+            hid = block.get('habitId', '')
             if hid not in self._cached_checkins:
                 self._cached_checkins[hid] = {}
-            self._cached_checkins[hid][stamp] = status
+            for ci in block.get('checkins', []):
+                stamp = str(ci.get('stamp', ''))
+                status = ci.get('status', -1)
+                self._cached_checkins[hid][stamp] = status
 
         self._update_ui_from_cache()
 
