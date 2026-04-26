@@ -1,0 +1,40 @@
+{
+    "study_time_min": 300,
+    "study_time_max": 420,
+    "short_break_duration": 10,
+    "long_break_threshold": 5400,
+    "long_break_duration": 1200,
+    "music_folder": "study_music",
+    "sound_files": {
+        "start_short_break": "start_short_break.mp3",
+        "start_long_break": "start_long_break.mp3",
+        "end_long_break": "end_long_break.mp3",
+        "victory": "victory.mp3",
+        "start_study": "start_study.mp3"
+    },
+    "total_study_time": 2109,
+    "reset_password": "111",
+    "hotkeys": {
+        "toggle_pause": "<alt>+c",
+        "toggle_checklist": "<alt>+x",
+        "toggle_activity_panel": "<alt>+z"
+    },
+    "db_type": "sqlite",
+    "mysql_config": {
+        "host": "223.109.142.12",
+        "user": "root",
+        "password": "@mufc130130131",
+        "database": "mytimelogger",
+        "port": 3306
+    },
+    "ticktick_config": {
+        "enabled": true,
+        "host": "dida365.com",
+        "client_id": "DTqB741G0RHsr84oaY",
+        "client_secret": "5YMCRVbl17U235K83OFjF4a2AEEbQvkn",
+        "access_token": "960471be-aa8e-40e6-9062-0538db478a73",
+        "username": "kaka10cr7@163.com",
+        "password": "mufc130130131",
+        "sync_interval": 300
+    }
+}
