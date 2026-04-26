@@ -445,14 +445,19 @@ class HabitTrackerWindow(QWidget):
                 self._cached_checkins[hid] = {}
             self._cached_checkins[hid][stamp] = status
 
+        self._update_ui_from_cache()
+
+    def _update_ui_from_cache(self):
+        """仅根据本地缓存重新渲染UI"""
+        today_stamp = datetime.now().strftime('%Y%m%d')
         # 渲染日视图
-        self._render_daily(habits, today_stamp)
+        self._render_daily(self._cached_habits, today_stamp)
         # 渲染周视图
-        self.weekly_view_widget.refresh(habits, self._cached_checkins)
+        self.weekly_view_widget.refresh(self._cached_habits, self._cached_checkins)
 
         # 更新状态栏
-        total = len(habits)
-        done = sum(1 for h in habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 0)
+        total = len(self._cached_habits)
+        done = sum(1 for h in self._cached_habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 0)
         balance = self.db.get_balance()
         self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}")
 
@@ -510,8 +515,12 @@ class HabitTrackerWindow(QWidget):
             self.db.add_ledger_entry(coins, f"取消习惯打卡")
             self._show_coin_toast(coins)
 
-        # 刷新显示
-        self._refresh()
+        # 本地更新状态并刷新UI，不要马上调API去拉回旧数据
+        if habit_id not in self._cached_checkins:
+            self._cached_checkins[habit_id] = {}
+        self._cached_checkins[habit_id][stamp] = new_status
+        
+        self._update_ui_from_cache()
 
     def _show_coin_toast(self, coins):
         """积分变动 toast 动画"""
