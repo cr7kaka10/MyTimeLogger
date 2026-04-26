@@ -226,7 +226,10 @@ class HabitWeeklyView(QWidget):
         icon_res = habit.get('iconRes', '')
         if icon_res.startswith('txt_'):
             return icon_res[4:]
-        return icon_res or '✅'
+        # 如果是内置系统代号（通常包含字母/下划线）或是空，使用默认图标
+        if not icon_res or icon_res.startswith('habit_') or icon_res.isascii():
+            return '🎯'
+        return icon_res
 
 
 class HabitTrackerWindow(QWidget):
@@ -403,7 +406,10 @@ class HabitTrackerWindow(QWidget):
         icon_res = habit.get('iconRes', '')
         if icon_res.startswith('txt_'):
             return icon_res[4:]
-        return icon_res or '✅'
+        # 如果是内置系统代号（通常包含字母/下划线）或是空，使用默认图标
+        if not icon_res or icon_res.startswith('habit_') or icon_res.isascii():
+            return '🎯'
+        return icon_res
 
     def _refresh(self):
         """从滴答清单拉取习惯和打卡数据"""
