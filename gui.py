@@ -632,12 +632,16 @@ class MyTimeLoggerGUI(QWidget):
     def _on_tray_activated(self, reason):
         """托盘图标点击事件处理"""
         if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick]:
-            # 分类管理面板与状态条显隐互斥绑定
-            win = self._ensure_activity_panel_window()
-            if win.isVisible():
-                self.switch_ui_mode(to_mini=True)
+            # 仅唤出当前处于活动状态的界面，不进行模式切换
+            if getattr(self, 'is_mini_mode', True):
+                self.show()
+                self.activateWindow()
+                self.raise_()
             else:
-                self.switch_ui_mode(to_mini=False)
+                win = self._ensure_activity_panel_window()
+                win.show()
+                win.activateWindow()
+                win.raise_()
         
         # 始终置顶逻辑（右键托盘菜单触发 Context 信号）
         elif self.is_always_on_top and reason == QSystemTrayIcon.ActivationReason.Context:
