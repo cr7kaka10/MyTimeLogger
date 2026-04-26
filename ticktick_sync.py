@@ -94,6 +94,9 @@ class TickTickSyncWorker(QObject):
     sync_error = pyqtSignal(str)
     task_completed_ok = pyqtSignal(str)
     task_complete_failed = pyqtSignal(str, str)
+    
+    # 习惯信号
+    habits_ready = pyqtSignal(list, dict)  # habits_list, checkins_map
 
     def __init__(self, config, category_manager=None):
         super().__init__()
@@ -142,6 +145,10 @@ class TickTickSyncWorker(QObject):
             
             self._cached_tasks = tasks
             self.tasks_ready.emit(list(tasks))
+            
+            # 同时拉取习惯和打卡数据
+            self._refresh_habits_internal(token)
+            
         except Exception as e:
             logger.error(f"TickTick 同步失败: {e}")
             self.sync_error.emit(f"同步失败: {e}")
@@ -350,6 +357,35 @@ class TickTickSyncWorker(QObject):
         logger.info("TickTick Worker 资源已清理")
 
     # ==================== 习惯同步 ====================
+    def _refresh_habits_internal(self, token):
+        try:
+            habits = self._run(self._do_fetch_habits(token))
+            habits = [h for h in habits if h.get('status', 0) == 0]
+            habits.sort(key=lambda h: h.get('sortOrder', 0))
+            
+            from datetime import datetime, timedelta
+            today = datetime.now()
+            today_stamp = today.strftime('%Y%m%d')
+            start_of_week = today - timedelta(days=today.weekday())
+            week_start_stamp = start_of_week.strftime('%Y%m%d')
+
+            habit_ids = [h['id'] for h in habits]
+            checkins_raw = self._run(self._do_fetch_checkins(token, habit_ids, week_start_stamp, today_stamp)) if habit_ids else []
+            
+            checkins_map = {}
+            for block in checkins_raw:
+                hid = block.get('habitId', '')
+                if hid not in checkins_map:
+                    checkins_map[hid] = {}
+                for ci in block.get('checkins', []):
+                    stamp = str(ci.get('stamp', ''))
+                    status = ci.get('status', -1)
+                    checkins_map[hid][stamp] = status
+                    
+            self.habits_ready.emit(habits, checkins_map)
+        except Exception as e:
+            logger.error(f"后台拉取习惯数据失败: {e}")
+
     def fetch_remote_habits(self) -> list:
         """同步获取远端习惯列表"""
         tt_cfg = self.config.get("ticktick_config", {})
@@ -369,6 +405,7 @@ class TickTickSyncWorker(QObject):
         finally:
             await client.close()
 
+    @pyqtSlot(str, str, int)
     def sync_habit_checkin(self, habit_id: str, stamp: str, status: int = 0):
         """同步打卡到远端 (stamp 格式: YYYYMMDD, status: 0=完成 2=失败)"""
         tt_cfg = self.config.get("ticktick_config", {})

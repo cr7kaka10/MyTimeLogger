@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QFrame, QStackedWidget, QGridLayout,
     QGraphicsOpacityEffect, QMessageBox
 )
-from PyQt6.QtCore import Qt, QSettings, QPropertyAnimation, QEasingCurve, QPoint, QTimer
+from PyQt6.QtCore import Qt, QSettings, QPropertyAnimation, QEasingCurve, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
 from database import StudyLogger
@@ -234,6 +234,9 @@ class HabitWeeklyView(QWidget):
 
 class HabitTrackerWindow(QWidget):
     """习惯打卡主窗口 - 滴答清单同步版"""
+    request_habit_checkin = pyqtSignal(str, str, int)
+    request_sync = pyqtSignal()
+
     def __init__(self, config, sync_worker=None, parent=None):
         super().__init__(parent)
         self.config = config
@@ -243,6 +246,11 @@ class HabitTrackerWindow(QWidget):
         self.habit_cards = {}
         self._cached_habits = []
         self._cached_checkins = {}  # {habit_id: {stamp: status}}
+
+        if self.sync_worker:
+            self.request_habit_checkin.connect(self.sync_worker.sync_habit_checkin)
+            self.request_sync.connect(self.sync_worker.refresh)
+            self.sync_worker.habits_ready.connect(self._on_habits_ready)
 
         self.setWindowTitle("习惯打卡")
         self.setFixedSize(520, 560)
@@ -412,40 +420,18 @@ class HabitTrackerWindow(QWidget):
         return icon_res
 
     def _refresh(self):
-        """从滴答清单拉取习惯和打卡数据"""
+        """请求后台从滴答清单拉取最新习惯和打卡数据"""
         if not self.sync_worker:
             self.empty_label.setText("未配置滴答清单同步 ❌")
             self.empty_label.show()
             return
+            
+        self.request_sync.emit()
 
-        # 拉取习惯列表
-        habits = self.sync_worker.fetch_remote_habits()
-        # 过滤掉已归档的 (status != 0 或有 archivedTime)
-        habits = [h for h in habits if h.get('status', 0) == 0]
-        # 按 sortOrder 排序
-        habits.sort(key=lambda h: h.get('sortOrder', 0))
+    def _on_habits_ready(self, habits, checkins_map):
+        """收到后台拉取的数据后更新本地缓存和界面"""
         self._cached_habits = habits
-
-        # 拉取打卡记录
-        today = datetime.now()
-        today_stamp = today.strftime('%Y%m%d')
-        start_of_week = today - timedelta(days=today.weekday())
-        week_start_stamp = start_of_week.strftime('%Y%m%d')
-
-        habit_ids = [h['id'] for h in habits]
-        checkins_raw = self.sync_worker.fetch_habit_checkins(habit_ids, week_start_stamp, today_stamp) if habit_ids else []
-
-        # 构建 {habit_id: {stamp: status}} 映射
-        self._cached_checkins = {}
-        for block in checkins_raw:
-            hid = block.get('habitId', '')
-            if hid not in self._cached_checkins:
-                self._cached_checkins[hid] = {}
-            for ci in block.get('checkins', []):
-                stamp = str(ci.get('stamp', ''))
-                status = ci.get('status', -1)
-                self._cached_checkins[hid][stamp] = status
-
+        self._cached_checkins = checkins_map
         self._update_ui_from_cache()
 
     def _update_ui_from_cache(self):
@@ -504,7 +490,8 @@ class HabitTrackerWindow(QWidget):
         if not self.sync_worker:
             return
 
-        self.sync_worker.sync_habit_checkin(habit_id, stamp, new_status)
+        # 异步发送请求，不阻塞UI
+        self.request_habit_checkin.emit(habit_id, stamp, new_status)
 
         # 本地积分处理
         if new_status == 0:
