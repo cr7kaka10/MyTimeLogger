@@ -494,14 +494,6 @@ class HabitTrackerWindow(QWidget):
 
         header_layout.addWidget(add_btn)
 
-        shop_btn = QPushButton("🏪")
-        shop_btn.setFixedSize(30, 30)
-        shop_btn.setToolTip("奖励商店")
-        shop_btn.setStyleSheet(f"QPushButton {{ background: transparent; font-size: 18px; border: none; }} QPushButton:hover {{ background: rgba(235,203,139,0.15); border-radius: 6px; }}")
-        shop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        shop_btn.clicked.connect(self._open_shop)
-        header_layout.addWidget(shop_btn)
-
         header_layout.addWidget(close_btn)
         layout.addWidget(header)
 
@@ -726,16 +718,6 @@ class HabitTrackerWindow(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             self.db.remove_habit(habit['id'])
             self._refresh()
-
-    def _open_shop(self):
-        """打开奖励商店"""
-        from reward_shop import RewardShopWindow
-        if not hasattr(self, '_shop_window') or self._shop_window is None:
-            self._shop_window = RewardShopWindow(self.config)
-        if self._shop_window.isVisible():
-            self._shop_window.hide()
-        else:
-            self._shop_window.show()
 
     # ======================== 窗口交互 ========================
     def mousePressEvent(self, e):

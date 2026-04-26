@@ -188,8 +188,18 @@ class ActivityPanel(QWidget):
         if self.main_window and hasattr(self.main_window, "toggle_habit_tracker"):
             habit_btn.clicked.connect(self.main_window.toggle_habit_tracker)
 
+        shop_btn = QPushButton("🎁 奖励")
+        shop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        shop_btn.setStyleSheet("""
+            QPushButton { color: #EBCB8B; background: transparent; font-size: 12px; border: none; padding: 0 5px; font-weight: bold; }
+            QPushButton:hover { color: #D9B44A; background: rgba(235, 203, 139, 0.1); border-radius: 4px; }
+        """)
+        if self.main_window and hasattr(self.main_window, "toggle_reward_shop"):
+            shop_btn.clicked.connect(self.main_window.toggle_reward_shop)
+
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(shop_btn)
         title_layout.addWidget(habit_btn)
         title_layout.addWidget(checklist_btn)
         title_layout.addWidget(refresh_btn)

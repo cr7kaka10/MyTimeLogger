@@ -415,6 +415,8 @@ class MyTimeLoggerGUI(QWidget):
         activity_panel_action.triggered.connect(self.toggle_activity_panel)
         habit_action = QAction("✅ 习惯打卡", self)
         habit_action.triggered.connect(self.toggle_habit_tracker)
+        shop_action = QAction("🎁 奖励商店", self)
+        shop_action.triggered.connect(self.toggle_reward_shop)
         stat_action = QAction("📊 查看统计 (网页版)", self)
         stat_action.triggered.connect(lambda: self.generate_statistics_html(open_browser=True))
         quit_action = QAction("❌ 退 出", self)
@@ -432,6 +434,7 @@ class MyTimeLoggerGUI(QWidget):
         menu.addAction(activity_panel_action)
         menu.addAction(checklist_action)
         menu.addAction(habit_action)
+        menu.addAction(shop_action)
         menu.addAction(stat_action)
         menu.addSeparator()
         menu.addAction(quit_action)
@@ -858,6 +861,21 @@ class MyTimeLoggerGUI(QWidget):
     def toggle_habit_tracker(self):
         """切换习惯打卡窗口显隐"""
         win = self._ensure_habit_window()
+        if win.isVisible():
+            win.hide()
+        else:
+            win.show()
+
+    def _ensure_reward_shop_window(self):
+        """确保奖励商店窗口已创建并返回"""
+        if getattr(self, '_reward_shop_window', None) is None:
+            from reward_shop import RewardShopWindow
+            self._reward_shop_window = RewardShopWindow(config=self.config)
+        return self._reward_shop_window
+
+    def toggle_reward_shop(self):
+        """切换奖励商店窗口显隐"""
+        win = self._ensure_reward_shop_window()
         if win.isVisible():
             win.hide()
         else:
