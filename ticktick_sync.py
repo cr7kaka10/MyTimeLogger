@@ -387,3 +387,22 @@ class TickTickSyncWorker(QObject):
             logger.info(f"[习惯] 打卡同步成功 habit={habit_id} stamp={stamp} status={status}")
         finally:
             await client.close()
+
+    def fetch_habit_checkins(self, habit_ids: list, from_stamp: str, to_stamp: str) -> list:
+        """同步获取远端习惯打卡记录"""
+        tt_cfg = self.config.get("ticktick_config", {})
+        token = tt_cfg.get("access_token")
+        if not token or not habit_ids:
+            return []
+        try:
+            return self._run(self._do_fetch_checkins(token, habit_ids, from_stamp, to_stamp))
+        except Exception as e:
+            logger.error(f"获取远端打卡记录失败: {e}")
+            return []
+
+    async def _do_fetch_checkins(self, token, habit_ids, from_stamp, to_stamp):
+        client = OfficialTickTickClient(token, self._host)
+        try:
+            return await client.get_habit_checkins(habit_ids, from_stamp, to_stamp)
+        finally:
+            await client.close()

@@ -855,7 +855,13 @@ class MyTimeLoggerGUI(QWidget):
         """确保习惯打卡窗口已创建并返回"""
         if self._habit_tracker_window is None:
             from habit_tracker import HabitTrackerWindow
-            self._habit_tracker_window = HabitTrackerWindow(config=self.config)
+            # 获取 sync_worker（从日清单共享）
+            checklist = self._ensure_checklist_window()
+            sync_worker = getattr(checklist, 'sync_worker', None)
+            self._habit_tracker_window = HabitTrackerWindow(
+                config=self.config,
+                sync_worker=sync_worker
+            )
         return self._habit_tracker_window
 
     def toggle_habit_tracker(self):
