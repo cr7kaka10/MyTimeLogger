@@ -92,6 +92,9 @@ class ActivityPanel(QWidget):
         self.logic = logic
         self.category_manager = category_manager
         self.main_window = main_window
+        self.buttons = []
+        self._drag_pos = None
+        self._db = None  # 延迟初始化
         
         self.setWindowFlags(
             Qt.WindowType.Tool | 
@@ -100,9 +103,6 @@ class ActivityPanel(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("ActivityPanel")
-
-        self.buttons = []
-        self._drag_pos = None
 
         self._build_ui()
         
@@ -411,9 +411,11 @@ class ActivityPanel(QWidget):
                 timer_text = f"⏱ {m:02d}:{s:02d}"
             
             cycle_text = f"🎯 {cycle_mins:02d}:{cycle_secs:02d}"
-            self.status_label.setText(f"{status_text}     {timer_text}     {cycle_text}")
+            coin_text = self._coin_text()
+            self.status_label.setText(f"{status_text}     {timer_text}     {cycle_text}     {coin_text}")
         elif self.logic.is_paused:
-            self.status_label.setText(f"⏸️ 已暂停     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
+            coin_text = self._coin_text()
+            self.status_label.setText(f"⏸️ 已暂停     🎯 {cycle_mins:02d}:{cycle_secs:02d}     {coin_text}")
         elif self.logic.current_state == "long_breaking":
             if self.logic.timer.isActive():
                 remaining_ms = self.logic.timer.remainingTime()
@@ -429,7 +431,18 @@ class ActivityPanel(QWidget):
             else:
                 self.status_label.setText("☕ 短暂休息")
         else:
-            self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
+            coin_text = self._coin_text()
+            self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}     {coin_text}")
+
+    def _coin_text(self):
+        """获取金币余额文本"""
+        try:
+            if self._db is None:
+                from database import StudyLogger
+                self._db = StudyLogger({})
+            return f"💰 {self._db.get_balance()}🪙"
+        except Exception:
+            return ""
 
     def _update_summary(self):
         """计算今日各分组的时间汇总"""

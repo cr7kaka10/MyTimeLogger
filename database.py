@@ -349,6 +349,15 @@ class StudyLogger:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # 自定义奖励配置表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reward_config (
+                    item_type TEXT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    coins REAL NOT NULL DEFAULT 1.0,
+                    PRIMARY KEY (item_type, item_id)
+                )
+            ''')
                 
             conn.commit()
             conn.close()
@@ -620,6 +629,39 @@ class StudyLogger:
             return True
         except Exception as e:
             logging.error(f"写入积分流水失败: {e}")
+            return False
+
+    # ======================== 自定义奖励配置 ========================
+
+    def get_item_reward(self, item_type: str, item_id: str, default: float = 1.0) -> float:
+        """获取指定任务/习惯的奖励金币数，不存在则返回默认值"""
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT coins FROM reward_config WHERE item_type = ? AND item_id = ?",
+                           (item_type, item_id))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else default
+        except Exception:
+            return default
+
+    def set_item_reward(self, item_type: str, item_id: str, coins: float):
+        """设置指定任务/习惯的奖励金币数"""
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO reward_config (item_type, item_id, coins) VALUES (?, ?, ?)",
+                (item_type, item_id, coins)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"设置奖励配置失败: {e}")
             return False
 
     def get_ledger_history(self, limit=30):

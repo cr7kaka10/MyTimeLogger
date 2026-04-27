@@ -98,6 +98,12 @@ class TaskItemWidget(QFrame):
 
         # 移除项目组信息（如收件箱），保持界面简洁
 
+        # 奖励金币显示
+        coins = self.task_data.get('reward_coins', 1.0)
+        self.coin_label = QLabel(f"🪙{coins:.0f}")
+        self.coin_label.setStyleSheet(f"QLabel {{ font-size: 10px; padding: 1px 4px; border-radius: 4px; background: rgba(235,203,139,0.15); color: #D08770; }}")
+        row2.addWidget(self.coin_label)
+
         for tag in self.task_data.get("tags", []):
             tag_label = QLabel(f"🏷 {tag}")
             tag_label.setStyleSheet(f"QLabel {{ font-size: 10px; padding: 1px 6px; border-radius: 4px; background: #E5E9F0; color: {TEXT_SECONDARY}; }}")
@@ -187,8 +193,25 @@ class TaskItemWidget(QFrame):
             # 利用 lambda 捕获 val
             action.triggered.connect(lambda _, v=val: self.priority_changed.emit(self.task_data, v))
             menu.addAction(action)
+
+        menu.addSeparator()
+        # 设置奖励
+        reward_action = QAction(f"🪙 设置奖励 (当前: {self.task_data.get('reward_coins', 1.0):.0f})", self)
+        reward_action.triggered.connect(self._set_reward)
+        menu.addAction(reward_action)
             
         menu.exec(event.globalPos())
+
+    def _set_reward(self):
+        from PyQt6.QtWidgets import QInputDialog
+        from database import StudyLogger
+        current = self.task_data.get('reward_coins', 1.0)
+        val, ok = QInputDialog.getDouble(self, "设置奖励", f"完成此任务奖励金币数:", current, 0, 100, 1)
+        if ok:
+            db = StudyLogger({})
+            db.set_item_reward('task', self.task_data['id'], val)
+            self.task_data['reward_coins'] = val
+            self.coin_label.setText(f"🪙{val:.0f}")
 
 class FocusSwitchDialog(QDialog):
     """切换专注对话框（亮色版）"""
@@ -320,9 +343,15 @@ class DailyChecklistWindow(QWidget):
         QTimer.singleShot(0, self.sync_worker.refresh)
 
     def _on_tasks_ready(self, tasks):
+        # 注入每个任务的自定义奖励值
+        from database import StudyLogger
+        db = StudyLogger(self.config)
+        for t in tasks:
+            t['reward_coins'] = db.get_item_reward('task', t['id'], 1.0)
         self._render_tasks(tasks)
         from datetime import datetime
-        self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办")
+        balance = db.get_balance()
+        self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办  |  💰 {balance}🪙")
 
     def _on_sync_error(self, msg): self.status_bar.setText(f"❌ {msg}")
 
@@ -426,7 +455,7 @@ class DailyChecklistWindow(QWidget):
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
-            coins = db.get_task_coins(priority)
+            coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 1.0))
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
             logger.info(f"任务完成积分入账: +{coins} ({title})")
         except Exception as e:

@@ -67,11 +67,12 @@ class HabitCard(QFrame):
         self.title_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
         info_layout.addWidget(self.title_label)
 
-        # 频率/目标
+        # 频率/目标 + 奖励
         goal = self.habit_data.get('goal', 1)
         unit = self.habit_data.get('unit', '次')
         total = self.habit_data.get('totalCheckIns', 0)
-        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次"
+        reward_coins = self.habit_data.get('reward_coins', 1.0)
+        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{reward_coins:.0f}"
         self.freq_label = QLabel(freq_text)
         self.freq_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; background: transparent; border: none;")
         info_layout.addWidget(self.freq_label)
@@ -112,6 +113,39 @@ class HabitCard(QFrame):
     def set_checked(self, checked: bool):
         self.is_checked = checked
         self._update_style()
+
+    def contextMenuEvent(self, event):
+        """ 右键菜单设置奖励"""
+        from PyQt6.QtWidgets import QMenu, QInputDialog
+        from PyQt6.QtGui import QAction
+        from database import StudyLogger
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu { background-color: white; border: 1px solid #D8DEE9; border-radius: 6px; padding: 4px; }
+            QMenu::item { padding: 6px 24px; color: #2E3440; font-size: 13px; }
+            QMenu::item:selected { background-color: rgba(163, 190, 140, 0.1); color: #A3BE8C; border-radius: 4px; }
+        """)
+        current = self.habit_data.get('reward_coins', 1.0)
+        action = QAction(f"🪙 设置奖励 (当前: {current:.0f})", self)
+        action.triggered.connect(self._set_reward)
+        menu.addAction(action)
+        menu.exec(event.globalPos())
+
+    def _set_reward(self):
+        from PyQt6.QtWidgets import QInputDialog
+        from database import StudyLogger
+        current = self.habit_data.get('reward_coins', 1.0)
+        val, ok = QInputDialog.getDouble(self, "设置奖励", f"完成打卡奖励金币数:", current, 0, 100, 1)
+        if ok:
+            db = StudyLogger({})
+            db.set_item_reward('habit', self.habit_data['id'], val)
+            self.habit_data['reward_coins'] = val
+            # 更新显示
+            goal = self.habit_data.get('goal', 1)
+            unit = self.habit_data.get('unit', '次')
+            total = self.habit_data.get('totalCheckIns', 0)
+            self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{val:.0f}")
 
 
 class HabitWeeklyView(QWidget):
@@ -474,6 +508,7 @@ class HabitTrackerWindow(QWidget):
             # 转换 icon
             habit_display = dict(habit)
             habit_display['icon'] = self._parse_icon(habit)
+            habit_display['reward_coins'] = self.db.get_item_reward('habit', hid, 1.0)
 
             card = HabitCard(habit_display, is_checked)
             card.check_btn.clicked.connect(lambda _, h_id=hid, checked=is_checked: self._on_checkin(h_id, today_stamp, checked))
@@ -494,12 +529,13 @@ class HabitTrackerWindow(QWidget):
         self.request_habit_checkin.emit(habit_id, stamp, new_status)
 
         # 本地积分处理
+        reward = self.db.get_item_reward('habit', habit_id, 1.0)
         if new_status == 0:
-            coins = 1  # 完成打卡奖励
+            coins = reward
             self.db.add_ledger_entry(coins, f"习惯打卡完成")
             self._show_coin_toast(coins)
         elif new_status == 2:
-            coins = -1  # 取消打卡扣回
+            coins = -reward
             self.db.add_ledger_entry(coins, f"取消习惯打卡")
             self._show_coin_toast(coins)
 
