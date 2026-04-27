@@ -183,6 +183,9 @@ class TickTickSyncWorker(QObject):
             result = []
             today_cst = datetime.now(CST).date()
 
+            previous_map = getattr(self, '_raw_task_map', {})
+            self._raw_task_map = {}
+
             for data in tasks_data:
                 p_id = data.get("project", {}).get("id")
                 p_name = self._project_map.get(p_id, "收集箱")
@@ -200,6 +203,21 @@ class TickTickSyncWorker(QObject):
                         task_id = t["id"]
                         self._raw_task_map[task_id] = t  # 缓存原始全量数据
                         result.append(self._task_to_dict(t, p_name))
+
+            # 检查是否有原本应该在（今天活跃），但现在突然消失的任务
+            if previous_map:
+                current_ids = set(self._raw_task_map.keys())
+                missing_ids = set(previous_map.keys()) - current_ids
+                for tid in missing_ids:
+                    # 如果本地已经标记完成，忽略
+                    if tid in self._locally_completed:
+                        continue
+                    t_cache = previous_map[tid]
+                    task_name = t_cache.get("title", "未知任务")
+                    coins = self.db_logger.get_item_reward('task', tid, 1.0)
+                    # 写入 external_rewards（防重复逻辑在 SQL 层）
+                    self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
+
             return result
         finally:
             await client.close()
@@ -377,10 +395,20 @@ class TickTickSyncWorker(QObject):
                 hid = block.get('habitId', '')
                 if hid not in checkins_map:
                     checkins_map[hid] = {}
+                
+                # 获取习惯名称和奖励金币
+                habit_name = next((h.get('name', '未知习惯') for h in habits if h['id'] == hid), '未知习惯')
+                coins = self.db_logger.get_item_reward('habit', hid, 1.0)
+                
                 for ci in block.get('checkins', []):
                     stamp = str(ci.get('stamp', ''))
                     status = ci.get('status', -1)
                     checkins_map[hid][stamp] = status
+                    
+                    if status == 0:
+                        # 写入 external_rewards（防重复逻辑在 SQL 层，如果本地点击过打卡，早已存为 status=1）
+                        ext_id = f"habit_{hid}_{stamp}"
+                        self.db_logger.add_external_reward(ext_id, 'habit', habit_name, coins, status=0)
                     
             self.habits_ready.emit(habits, checkins_map)
         except Exception as e:

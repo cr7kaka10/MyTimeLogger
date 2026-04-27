@@ -314,6 +314,12 @@ class DailyChecklistWindow(QWidget):
         header_layout.addWidget(title_label), header_layout.addStretch()
 
         btn_style = f"QPushButton {{ color: {TEXT_SECONDARY}; background: transparent; font-size: 16px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {SAPPHIRE_BLUE}; }}"
+        
+        self.claim_btn = QPushButton("🎁 待领取(0)")
+        self.claim_btn.setStyleSheet("QPushButton { color: #D08770; background: rgba(208, 135, 112, 0.1); font-size: 13px; border: none; border-radius: 6px; padding: 4px 8px; font-weight: bold; } QPushButton:hover { background: rgba(208, 135, 112, 0.2); }")
+        self.claim_btn.clicked.connect(self._on_claim_clicked)
+        self.claim_btn.hide()
+        
         self.refresh_btn = QPushButton("🔄")
         self.refresh_btn.setFixedSize(30,30), self.refresh_btn.clicked.connect(self._do_refresh), self.refresh_btn.setStyleSheet(btn_style)
         close_btn = QPushButton("×")
@@ -352,6 +358,71 @@ class DailyChecklistWindow(QWidget):
         from datetime import datetime
         balance = db.get_balance()
         self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办  |  💰 {balance}🪙")
+        
+        # 检查外部待领取奖励
+        unclaimed = db.get_unclaimed_rewards()
+        if unclaimed:
+            self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
+            self.claim_btn.show()
+        else:
+            self.claim_btn.hide()
+
+    def _on_claim_clicked(self):
+        from database import StudyLogger
+        from PyQt6.QtWidgets import QDialog, QListWidget, QListWidgetItem
+        db = StudyLogger(self.config)
+        unclaimed = db.get_unclaimed_rewards()
+        if not unclaimed:
+            return
+            
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🎁 外部奖励领取")
+        dialog.setMinimumSize(350, 400)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background: #FFFFFF; }}
+            QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-family: 'Microsoft YaHei'; }}
+            QListWidget {{ background: #F8F9FB; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; }}
+            QListWidget::item {{ padding: 10px; border-bottom: 1px solid #F0F2F5; }}
+            QPushButton {{ background: #D08770; color: white; border: none; border-radius: 6px; padding: 10px; font-weight: bold; font-size: 14px; }}
+            QPushButton:hover {{ background: #BF616A; }}
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel(f"<b>有 {len(unclaimed)} 个在外部完成的项目</b>"))
+        
+        list_widget = QListWidget()
+        total_coins = 0.0
+        for item in unclaimed:
+            type_icon = "✅" if item['item_type'] == 'habit' else "📋"
+            list_item = QListWidgetItem(f"{type_icon} {item['item_name']}")
+            total_coins += item['coins']
+            
+            # 使用自定义 Widget 来右对齐金币
+            widget = QWidget()
+            row = QHBoxLayout(widget)
+            row.setContentsMargins(10, 5, 10, 5)
+            row.addWidget(QLabel(f"{type_icon} {item['item_name']}"), 1)
+            coin_lbl = QLabel(f"🪙{item['coins']:.0f}")
+            coin_lbl.setStyleSheet("color: #D08770; font-weight: bold;")
+            row.addWidget(coin_lbl)
+            
+            list_item.setSizeHint(widget.sizeHint())
+            list_widget.addItem(list_item)
+            list_widget.setItemWidget(list_item, widget)
+            
+        layout.addWidget(list_widget)
+        
+        claim_btn = QPushButton(f"一键领取全部 🪙{total_coins:.0f}")
+        claim_btn.clicked.connect(dialog.accept)
+        layout.addWidget(claim_btn)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            ids = [i['id'] for i in unclaimed]
+            claimed_coins = db.claim_rewards(ids)
+            if claimed_coins > 0:
+                db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+                self._do_refresh()
 
     def _on_sync_error(self, msg): self.status_bar.setText(f"❌ {msg}")
 
@@ -451,11 +522,12 @@ class DailyChecklistWindow(QWidget):
         title = task_data.get("title", "")
         priority = task_data.get("priority", 0)
         
-        # 积分入账
+        # 积分入账及本地标记（防止被判定为外部完成）
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
             coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 1.0))
+            db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
             logger.info(f"任务完成积分入账: +{coins} ({title})")
         except Exception as e:

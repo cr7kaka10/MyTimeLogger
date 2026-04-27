@@ -358,6 +358,17 @@ class StudyLogger:
                     PRIMARY KEY (item_type, item_id)
                 )
             ''')
+            # 外部系统静默打卡奖励表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS external_rewards (
+                    id TEXT PRIMARY KEY,
+                    item_type TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    coins REAL NOT NULL DEFAULT 0,
+                    status INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
                 
             conn.commit()
             conn.close()
@@ -663,6 +674,73 @@ class StudyLogger:
         except Exception as e:
             logging.error(f"设置奖励配置失败: {e}")
             return False
+
+    def add_external_reward(self, ext_id: str, item_type: str, item_name: str, coins: float, status: int = 0):
+        """添加外部完成奖励记录 (status=0待领取, status=1已本地领取/完成)"""
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            # 使用 INSERT OR IGNORE 防重复。如果是本地先完成插入的status=1，后面后台扫描到也不会被覆盖
+            cursor.execute(
+                "INSERT OR IGNORE INTO external_rewards (id, item_type, item_name, coins, status) VALUES (?, ?, ?, ?, ?)",
+                (ext_id, item_type, item_name, coins, status)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"添加外部奖励失败: {e}")
+            return False
+
+    def remove_external_reward(self, ext_id: str):
+        """移除外部奖励记录（用于取消打卡时）"""
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM external_rewards WHERE id = ?", (ext_id,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def get_unclaimed_rewards(self) -> list:
+        """获取所有待领取的外部奖励"""
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM external_rewards WHERE status = 0 ORDER BY created_at DESC")
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return rows
+        except Exception:
+            return []
+
+    def claim_rewards(self, ext_ids: list) -> float:
+        """将指定的奖励标记为已领取，返回领取的总金币数"""
+        if not ext_ids: return 0.0
+        total_coins = 0.0
+        try:
+            self._migrate_habits_table()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            # 先计算总金额
+            placeholders = ','.join(['?'] * len(ext_ids))
+            cursor.execute(f"SELECT SUM(coins) FROM external_rewards WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
+            row = cursor.fetchone()
+            total_coins = float(row[0] or 0)
+            
+            if total_coins > 0:
+                cursor.execute(f"UPDATE external_rewards SET status = 1 WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
+                conn.commit()
+            conn.close()
+            return total_coins
+        except Exception as e:
+            logging.error(f"领取外部奖励失败: {e}")
+            return 0.0
 
     def get_ledger_history(self, limit=30):
         """获取最近 N 条积分流水"""

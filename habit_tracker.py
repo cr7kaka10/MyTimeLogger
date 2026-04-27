@@ -530,13 +530,18 @@ class HabitTrackerWindow(QWidget):
 
         # 本地积分处理
         reward = self.db.get_item_reward('habit', habit_id, 1.0)
+        habit_name = next((h.get('name', '未知习惯') for h in self._cached_habits if h['id'] == habit_id), '未知习惯')
+        ext_id = f"habit_{habit_id}_{stamp}"
+        
         if new_status == 0:
             coins = reward
-            self.db.add_ledger_entry(coins, f"习惯打卡完成")
+            self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
+            self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
             self._show_coin_toast(coins)
         elif new_status == 2:
             coins = -reward
-            self.db.add_ledger_entry(coins, f"取消习惯打卡")
+            self.db.remove_external_reward(ext_id)
+            self.db.add_ledger_entry(coins, 'habit_uncheck', None, f"取消习惯打卡: {habit_name}")
             self._show_coin_toast(coins)
 
         # 本地更新状态并刷新UI，不要马上调API去拉回旧数据
