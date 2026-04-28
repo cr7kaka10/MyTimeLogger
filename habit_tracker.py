@@ -433,7 +433,12 @@ class HabitTrackerWindow(QWidget):
         
         status_layout.addStretch()
 
-
+        self.claim_btn = QPushButton("🎁 待领取")
+        self.claim_btn.setStyleSheet(f"QPushButton {{ color: #D08770; background: transparent; font-size: 11px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {GREEN_ACCENT}; }}")
+        self.claim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.claim_btn.clicked.connect(self._on_claim_clicked)
+        self.claim_btn.hide()
+        status_layout.addWidget(self.claim_btn)
 
         layout.addWidget(status_container)
 
@@ -508,6 +513,27 @@ class HabitTrackerWindow(QWidget):
         balance = self.db.get_balance()
         sync_time = datetime.now(CST).strftime('%H:%M')
         self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}  |  {sync_time} 已同步")
+
+        unclaimed = self.db.get_unclaimed_rewards()
+        if unclaimed:
+            total_coins = sum(r.get('coins', 0) for r in unclaimed)
+            self.claim_btn.setText(f"🎁 待领取({total_coins:g}🪙)")
+            self.claim_btn.show()
+        else:
+            self.claim_btn.hide()
+
+    def _on_claim_clicked(self):
+        unclaimed = self.db.get_unclaimed_rewards()
+        if not unclaimed:
+            return
+        ids = [i['id'] for i in unclaimed]
+        claimed_coins = self.db.claim_rewards(ids)
+        if claimed_coins > 0:
+            self.db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            self._show_coin_toast(claimed_coins)
+            self._update_ui_from_cache()
+            from particle_effect import start_coin_explosion
+            start_coin_explosion(self, self.claim_btn, len(ids))
 
 
 

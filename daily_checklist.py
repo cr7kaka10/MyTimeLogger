@@ -333,10 +333,28 @@ class DailyChecklistWindow(QWidget):
         self.task_layout.setSpacing(10), self.task_layout.addStretch()
         self.scroll.setWidget(self.container), layout.addWidget(self.scroll)
 
+        # 底部状态栏（container 布局，确保 claim_btn 有父控件）
+        status_container = QWidget()
+        status_container.setFixedHeight(30)
+        status_container.setStyleSheet("border-top: 1px solid #F0F2F5;")
+        status_layout = QHBoxLayout(status_container)
+        status_layout.setContentsMargins(16, 0, 16, 0)
+        status_layout.setSpacing(8)
+
         self.status_bar = QLabel("⏱ 等待同步...")
-        self.status_bar.setFixedHeight(30)
-        self.status_bar.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; padding: 0 16px; border-top: 1px solid #F0F2F5;")
-        layout.addWidget(self.status_bar)
+        self.status_bar.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none;")
+        status_layout.addWidget(self.status_bar)
+
+        status_layout.addStretch()
+
+        self.claim_btn = QPushButton("🎁 待领取")
+        self.claim_btn.setStyleSheet(f"QPushButton {{ color: #D08770; background: transparent; font-size: 11px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {SAPPHIRE_BLUE}; }}")
+        self.claim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.claim_btn.clicked.connect(self._on_claim_clicked)
+        self.claim_btn.hide()
+        status_layout.addWidget(self.claim_btn)
+
+        layout.addWidget(status_container)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0,0,0,0), outer.addWidget(self.bg)
@@ -355,6 +373,33 @@ class DailyChecklistWindow(QWidget):
         from datetime import datetime
         balance = db.get_balance()
         self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办  |  💰 {balance}🪙")
+        self._refresh_claim_button(db)
+
+    def _refresh_claim_button(self, db=None):
+        if db is None:
+            from database import StudyLogger
+            db = StudyLogger(self.config)
+        unclaimed = db.get_unclaimed_rewards()
+        if unclaimed:
+            total_coins = sum(r.get('coins', 0) for r in unclaimed)
+            self.claim_btn.setText(f"🎁 待领取({total_coins:g}🪙)")
+            self.claim_btn.show()
+        else:
+            self.claim_btn.hide()
+
+    def _on_claim_clicked(self):
+        from database import StudyLogger
+        db = StudyLogger(self.config)
+        unclaimed = db.get_unclaimed_rewards()
+        if not unclaimed:
+            return
+        ids = [i['id'] for i in unclaimed]
+        claimed_coins = db.claim_rewards(ids)
+        if claimed_coins > 0:
+            db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            self._do_refresh()
+            from particle_effect import start_coin_explosion
+            start_coin_explosion(self, self.claim_btn, len(ids))
 
 
 

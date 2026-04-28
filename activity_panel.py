@@ -450,7 +450,8 @@ class ActivityPanel(QWidget):
             
             unclaimed = self._db.get_unclaimed_rewards()
             if unclaimed:
-                self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
+                total_coins = sum(r.get('coins', 0) for r in unclaimed)
+                self.claim_btn.setText(f"🎁 待领取({total_coins:g}🪙)")
                 self.claim_btn.show()
             else:
                 self.claim_btn.hide()
