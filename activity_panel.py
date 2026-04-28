@@ -474,7 +474,7 @@ class ActivityPanel(QWidget):
         if claimed_coins > 0:
             self._db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
             self._show_coin_toast(claimed_coins)
-            self._update_display()
+            self._on_timer_tick()
             from particle_effect import start_coin_explosion
             start_coin_explosion(self, self.claim_btn, len(ids))
 
