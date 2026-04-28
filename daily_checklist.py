@@ -100,7 +100,7 @@ class TaskItemWidget(QFrame):
 
         # 奖励金币显示
         coins = self.task_data.get('reward_coins', 1.0)
-        self.coin_label = QLabel(f"🪙{coins:.0f}")
+        self.coin_label = QLabel(f"🪙{coins:g}")
         self.coin_label.setStyleSheet(f"QLabel {{ font-size: 10px; padding: 1px 4px; border-radius: 4px; background: rgba(235,203,139,0.15); color: #D08770; }}")
         row2.addWidget(self.coin_label)
 
@@ -196,7 +196,7 @@ class TaskItemWidget(QFrame):
 
         menu.addSeparator()
         # 设置奖励
-        reward_action = QAction(f"🪙 设置奖励 (当前: {self.task_data.get('reward_coins', 1.0):.0f})", self)
+        reward_action = QAction(f"🪙 设置奖励 (当前: {self.task_data.get('reward_coins', 1.0):g})", self)
         reward_action.triggered.connect(self._set_reward)
         menu.addAction(reward_action)
             
@@ -211,7 +211,7 @@ class TaskItemWidget(QFrame):
             db = StudyLogger({})
             db.set_item_reward('task', self.task_data['id'], val)
             self.task_data['reward_coins'] = val
-            self.coin_label.setText(f"🪙{val:.0f}")
+            self.coin_label.setText(f"🪙{val:g}")
 
 class FocusSwitchDialog(QDialog):
     """切换专注对话框（亮色版）"""
@@ -403,7 +403,7 @@ class DailyChecklistWindow(QWidget):
             row = QHBoxLayout(widget)
             row.setContentsMargins(10, 5, 10, 5)
             row.addWidget(QLabel(f"{type_icon} {item['item_name']}"), 1)
-            coin_lbl = QLabel(f"🪙{item['coins']:.0f}")
+            coin_lbl = QLabel(f"🪙{item['coins']:g}")
             coin_lbl.setStyleSheet("color: #D08770; font-weight: bold;")
             row.addWidget(coin_lbl)
             
@@ -413,7 +413,7 @@ class DailyChecklistWindow(QWidget):
             
         layout.addWidget(list_widget)
         
-        claim_btn = QPushButton(f"一键领取全部 🪙{total_coins:.0f}")
+        claim_btn = QPushButton(f"一键领取全部 🪙{total_coins:g}")
         claim_btn.clicked.connect(dialog.accept)
         layout.addWidget(claim_btn)
         

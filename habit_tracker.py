@@ -72,7 +72,7 @@ class HabitCard(QFrame):
         unit = self.habit_data.get('unit', '次')
         total = self.habit_data.get('totalCheckIns', 0)
         reward_coins = self.habit_data.get('reward_coins', 1.0)
-        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{reward_coins:.0f}"
+        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{reward_coins:g}"
         self.freq_label = QLabel(freq_text)
         self.freq_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; background: transparent; border: none;")
         info_layout.addWidget(self.freq_label)
@@ -127,7 +127,7 @@ class HabitCard(QFrame):
             QMenu::item:selected { background-color: rgba(163, 190, 140, 0.1); color: #A3BE8C; border-radius: 4px; }
         """)
         current = self.habit_data.get('reward_coins', 1.0)
-        action = QAction(f"🪙 设置奖励 (当前: {current:.0f})", self)
+        action = QAction(f"🪙 设置奖励 (当前: {current:g})", self)
         action.triggered.connect(self._set_reward)
         menu.addAction(action)
         menu.exec(event.globalPos())
@@ -145,7 +145,7 @@ class HabitCard(QFrame):
             goal = self.habit_data.get('goal', 1)
             unit = self.habit_data.get('unit', '次')
             total = self.habit_data.get('totalCheckIns', 0)
-            self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{val:.0f}")
+            self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{val:g}")
 
 
 class HabitWeeklyView(QWidget):
