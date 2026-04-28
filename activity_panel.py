@@ -231,7 +231,8 @@ class ActivityPanel(QWidget):
         self.claim_btn.hide()
         bottom_layout.addWidget(self.claim_btn)
 
-        self.start_btn = QPushButton("\uf04b")        self.start_btn.setFixedSize(24, 24)
+        self.start_btn = QPushButton("\uf04b")
+        self.start_btn.setFixedSize(24, 24)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_play_pause_clicked)
         self.start_btn.setStyleSheet("""
