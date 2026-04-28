@@ -287,7 +287,6 @@ class DailyChecklistWindow(QWidget):
         self.sync_worker = TickTickSyncWorker(self.config, self.category_manager)
         self.sync_worker.moveToThread(self.sync_thread)
         self.sync_worker.tasks_ready.connect(self._on_tasks_ready)
-        self.sync_worker.habits_ready.connect(self._refresh_claim_button)
         self.sync_worker.sync_error.connect(self._on_sync_error)
         self.sync_worker.task_completed_ok.connect(self._on_task_completed_ok)
         self.sync_worker.task_complete_failed.connect(self._on_task_complete_failed)
@@ -316,10 +315,7 @@ class DailyChecklistWindow(QWidget):
 
         btn_style = f"QPushButton {{ color: {TEXT_SECONDARY}; background: transparent; font-size: 16px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {SAPPHIRE_BLUE}; }}"
         
-        self.claim_btn = QPushButton("🎁 待领取(0)")
-        self.claim_btn.setStyleSheet("QPushButton { color: #D08770; background: rgba(208, 135, 112, 0.1); font-size: 13px; border: none; border-radius: 6px; padding: 4px 8px; font-weight: bold; } QPushButton:hover { background: rgba(208, 135, 112, 0.2); }")
-        self.claim_btn.clicked.connect(self._on_claim_clicked)
-        self.claim_btn.hide()
+
         
         self.refresh_btn = QPushButton("🔄")
         self.refresh_btn.setFixedSize(30,30), self.refresh_btn.clicked.connect(self._do_refresh), self.refresh_btn.setStyleSheet(btn_style)
@@ -359,72 +355,9 @@ class DailyChecklistWindow(QWidget):
         from datetime import datetime
         balance = db.get_balance()
         self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办  |  💰 {balance}🪙")
-        self._refresh_claim_button()
 
-    def _refresh_claim_button(self, *_args):
-        from database import StudyLogger
-        db = StudyLogger(self.config)
-        unclaimed = db.get_unclaimed_rewards()
-        if unclaimed:
-            self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
-            self.claim_btn.show()
-        else:
-            self.claim_btn.hide()
 
-    def _on_claim_clicked(self):
-        from database import StudyLogger
-        db = StudyLogger(self.config)
-        unclaimed = db.get_unclaimed_rewards()
-        if not unclaimed:
-            return
 
-        ids = [i['id'] for i in unclaimed]
-        claimed_coins = db.claim_rewards(ids)
-        if claimed_coins > 0:
-            db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
-            self._do_refresh()
-            self._show_coin_toast(claimed_coins)
-            from particle_effect import start_coin_explosion
-            start_coin_explosion(self, self.claim_btn, len(ids))
-
-    def _show_coin_toast(self, coins):
-        """积分变动 toast 动画"""
-        sign = '+' if coins > 0 else ''
-        color = "#D08770" if coins > 0 else "#BF616A"
-        toast = QLabel(f"{sign}{coins}🪙", self)
-        toast.setStyleSheet(f"color: {color}; font-size: 24px; font-weight: bold; background: transparent;")
-        toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        toast.setFixedSize(160, 40)
-        toast.move(self.width() // 2 - 80, self.height() // 2)
-        toast.show()
-
-        effect = QGraphicsOpacityEffect(toast)
-        toast.setGraphicsEffect(effect)
-
-        anim = QPropertyAnimation(effect, b"opacity", toast)
-        anim.setDuration(1200)
-        anim.setStartValue(1.0)
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        
-        move_anim = QPropertyAnimation(toast, b"pos", toast)
-        move_anim.setDuration(1200)
-        move_anim.setStartValue(toast.pos())
-        move_anim.setEndValue(toast.pos() - QPoint(0, 80))
-        move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        
-        if not hasattr(self, '_anims'):
-            self._anims = []
-        self._anims.extend([anim, move_anim])
-        
-        def on_finished():
-            toast.deleteLater()
-            if anim in getattr(self, '_anims', []): self._anims.remove(anim)
-            if move_anim in getattr(self, '_anims', []): self._anims.remove(move_anim)
-
-        anim.finished.connect(on_finished)
-        anim.start()
-        move_anim.start()
 
     def _on_sync_error(self, msg): self.status_bar.setText(f"❌ {msg}")
 
