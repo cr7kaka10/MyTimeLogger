@@ -420,10 +420,27 @@ class HabitTrackerWindow(QWidget):
         layout.addWidget(self.stack)
 
         # 底部状态栏
+        status_container = QWidget()
+        status_container.setFixedHeight(30)
+        status_container.setStyleSheet(f"border-top: 1px solid #F0F2F5;")
+        status_layout = QHBoxLayout(status_container)
+        status_layout.setContentsMargins(16, 0, 16, 0)
+        status_layout.setSpacing(8)
+
         self.status_bar = QLabel("📊 今日进度: 0/0")
-        self.status_bar.setFixedHeight(30)
-        self.status_bar.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; padding: 0 16px; border-top: 1px solid #F0F2F5;")
-        layout.addWidget(self.status_bar)
+        self.status_bar.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none;")
+        status_layout.addWidget(self.status_bar)
+        
+        status_layout.addStretch()
+
+        self.claim_btn = QPushButton("🎁 待领取(0)")
+        self.claim_btn.setStyleSheet(f"QPushButton {{ color: #D08770; background: transparent; font-size: 11px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {GREEN_ACCENT}; }}")
+        self.claim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.claim_btn.clicked.connect(self._on_claim_clicked)
+        self.claim_btn.hide()
+        status_layout.addWidget(self.claim_btn)
+
+        layout.addWidget(status_container)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -495,12 +512,29 @@ class HabitTrackerWindow(QWidget):
 
         # 更新状态栏
         total = len(todays_habits)
-        done = sum(1 for h in todays_habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 0)
+        done = sum(1 for h in todays_habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 2)
         balance = self.db.get_balance()
         sync_time = datetime.now(CST).strftime('%H:%M')
         unclaimed = self.db.get_unclaimed_rewards()
-        reward_hint = f"  |  🎁 待领取 {len(unclaimed)}" if unclaimed else ""
-        self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}{reward_hint}  |  {sync_time} 已同步")
+        self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}  |  {sync_time} 已同步")
+
+        if unclaimed:
+            self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
+            self.claim_btn.show()
+        else:
+            self.claim_btn.hide()
+
+    def _on_claim_clicked(self):
+        unclaimed = self.db.get_unclaimed_rewards()
+        if not unclaimed:
+            return
+
+        ids = [i['id'] for i in unclaimed]
+        claimed_coins = self.db.claim_rewards(ids)
+        if claimed_coins > 0:
+            self.db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            self._show_coin_toast(claimed_coins)
+            self._update_ui_from_cache()
 
     def _filter_habits_for_today(self, habits):
         weekday = datetime.now(CST).weekday()

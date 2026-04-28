@@ -216,16 +216,22 @@ class ActivityPanel(QWidget):
         # 底部状态栏及控制按钮
         bottom_layout = QHBoxLayout()
         bottom_layout.setContentsMargins(10, 5, 10, 5)
-        
+
         self.status_label = QLabel("当前: 无 ⏱ 00:00")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.status_label.setStyleSheet("color: #5E81AC; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-size: 13px; font-weight: bold; background: transparent; border: none;")
         bottom_layout.addWidget(self.status_label)
-        
+
         bottom_layout.addStretch()
-        
-        self.start_btn = QPushButton("\uf04b")
-        self.start_btn.setFixedSize(24, 24)
+
+        self.claim_btn = QPushButton("🎁 待领取(0)")
+        self.claim_btn.setStyleSheet(f"QPushButton {{ color: #D08770; background: transparent; font-size: 12px; border: none; font-weight: bold; padding-right: 10px; }} QPushButton:hover {{ color: #A3BE8C; }}")
+        self.claim_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.claim_btn.clicked.connect(self._on_claim_clicked)
+        self.claim_btn.hide()
+        bottom_layout.addWidget(self.claim_btn)
+
+        self.start_btn = QPushButton("\uf04b")        self.start_btn.setFixedSize(24, 24)
         self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_btn.clicked.connect(self._on_play_pause_clicked)
         self.start_btn.setStyleSheet("""
@@ -435,14 +441,80 @@ class ActivityPanel(QWidget):
             self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}     {coin_text}")
 
     def _coin_text(self):
-        """获取金币余额文本"""
+        """获取金币余额文本及更新待领取按钮"""
         try:
-            if self._db is None:
+            if getattr(self, '_db', None) is None:
                 from database import StudyLogger
                 self._db = StudyLogger({})
+            
+            unclaimed = self._db.get_unclaimed_rewards()
+            if unclaimed:
+                self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
+                self.claim_btn.show()
+            else:
+                self.claim_btn.hide()
+            
             return f"💰 {self._db.get_balance()}🪙"
-        except Exception:
+        except Exception as e:
+            print(f"Error in _coin_text: {e}")
             return ""
+
+    def _on_claim_clicked(self):
+        if getattr(self, '_db', None) is None:
+            from database import StudyLogger
+            self._db = StudyLogger({})
+        
+        unclaimed = self._db.get_unclaimed_rewards()
+        if not unclaimed:
+            return
+
+        ids = [i['id'] for i in unclaimed]
+        claimed_coins = self._db.claim_rewards(ids)
+        if claimed_coins > 0:
+            self._db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            self._show_coin_toast(claimed_coins)
+            self._update_display()
+
+    def _show_coin_toast(self, coins):
+        """积分变动 toast 动画"""
+        from PyQt6.QtWidgets import QLabel, QGraphicsOpacityEffect
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QPoint
+        sign = '+' if coins > 0 else ''
+        color = "#D08770" if coins > 0 else "#BF616A"
+        toast = QLabel(f"{sign}{coins}🪙", self)
+        toast.setStyleSheet(f"color: {color}; font-size: 24px; font-weight: bold; background: transparent;")
+        toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toast.setFixedSize(160, 40)
+        toast.move(self.width() // 2 - 80, self.height() // 2 - 20)
+        toast.show()
+
+        effect = QGraphicsOpacityEffect(toast)
+        toast.setGraphicsEffect(effect)
+
+        anim = QPropertyAnimation(effect, b"opacity", toast)
+        anim.setDuration(1200)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        move_anim = QPropertyAnimation(toast, b"pos", toast)
+        move_anim.setDuration(1200)
+        move_anim.setStartValue(toast.pos())
+        move_anim.setEndValue(toast.pos() - QPoint(0, 60))
+        move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        if not hasattr(self, '_anims'):
+            self._anims = []
+        self._anims.extend([anim, move_anim])
+        
+        def on_finished():
+            toast.deleteLater()
+            if anim in getattr(self, '_anims', []): self._anims.remove(anim)
+            if move_anim in getattr(self, '_anims', []): self._anims.remove(move_anim)
+
+        anim.finished.connect(on_finished)
+        anim.start()
+        move_anim.start()
 
     def _update_summary(self):
         """计算今日各分组的时间汇总"""

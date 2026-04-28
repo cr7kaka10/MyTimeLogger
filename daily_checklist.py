@@ -10,9 +10,9 @@ from datetime import date
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QCheckBox, QPushButton, QFrame, QDialog, QListWidget, QListWidgetItem
+    QCheckBox, QPushButton, QFrame, QDialog, QListWidget, QListWidgetItem, QGraphicsOpacityEffect
 )
-from PyQt6.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QTimer, QSettings, QThread, pyqtSignal, QSize, QPropertyAnimation, QEasingCurve, QPoint
 from PyQt6.QtGui import QFont, QColor
 
 from ticktick_sync import TickTickSyncWorker
@@ -373,20 +373,56 @@ class DailyChecklistWindow(QWidget):
 
     def _on_claim_clicked(self):
         from database import StudyLogger
-        from claim_reward_dialog import ClaimRewardDialog
-        from PyQt6.QtWidgets import QDialog
         db = StudyLogger(self.config)
         unclaimed = db.get_unclaimed_rewards()
         if not unclaimed:
             return
 
-        dialog = ClaimRewardDialog(unclaimed, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            ids = [i['id'] for i in unclaimed]
-            claimed_coins = db.claim_rewards(ids)
-            if claimed_coins > 0:
-                db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
-                self._do_refresh()
+        ids = [i['id'] for i in unclaimed]
+        claimed_coins = db.claim_rewards(ids)
+        if claimed_coins > 0:
+            db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            self._do_refresh()
+            self._show_coin_toast(claimed_coins)
+
+    def _show_coin_toast(self, coins):
+        """积分变动 toast 动画"""
+        sign = '+' if coins > 0 else ''
+        color = "#D08770" if coins > 0 else "#BF616A"
+        toast = QLabel(f"{sign}{coins}🪙", self)
+        toast.setStyleSheet(f"color: {color}; font-size: 24px; font-weight: bold; background: transparent;")
+        toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        toast.setFixedSize(160, 40)
+        toast.move(self.width() // 2 - 80, self.height() // 2)
+        toast.show()
+
+        effect = QGraphicsOpacityEffect(toast)
+        toast.setGraphicsEffect(effect)
+
+        anim = QPropertyAnimation(effect, b"opacity", toast)
+        anim.setDuration(1200)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        move_anim = QPropertyAnimation(toast, b"pos", toast)
+        move_anim.setDuration(1200)
+        move_anim.setStartValue(toast.pos())
+        move_anim.setEndValue(toast.pos() - QPoint(0, 80))
+        move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        if not hasattr(self, '_anims'):
+            self._anims = []
+        self._anims.extend([anim, move_anim])
+        
+        def on_finished():
+            toast.deleteLater()
+            if anim in getattr(self, '_anims', []): self._anims.remove(anim)
+            if move_anim in getattr(self, '_anims', []): self._anims.remove(move_anim)
+
+        anim.finished.connect(on_finished)
+        anim.start()
+        move_anim.start()
 
     def _on_sync_error(self, msg): self.status_bar.setText(f"❌ {msg}")
 
