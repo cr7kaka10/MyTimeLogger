@@ -818,14 +818,19 @@ class MyTimeLoggerGUI(QWidget):
         统一切换 UI 模式：Mini 栏 ↔ 大面板 (完全互斥)
         """
         full_win = self._ensure_activity_panel_window()
+        self.is_mini_mode = to_mini  # 先设标志，再操作窗口
         if to_mini:
             full_win.hide()
-            self.show()
-            self.is_mini_mode = True
+            super().show()  # 绕过守卫，直接显示
         else:
             self.hide()
             full_win.show()
-            self.is_mini_mode = False
+
+    def show(self):
+        """重写 show：大面板模式下拦截，防止 mini 条意外弹出"""
+        if not self.is_mini_mode:
+            return
+        super().show()
 
     def _on_expand_clicked(self):
         """切换为大面板模式"""
