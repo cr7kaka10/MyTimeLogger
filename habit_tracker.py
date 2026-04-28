@@ -488,12 +488,9 @@ class HabitTrackerWindow(QWidget):
 
     def _on_habits_ready(self, habits, checkins_map):
         """收到后台拉取的数据后更新本地缓存和界面"""
-        previous_checkins = self._cached_checkins
-        today_stamp = datetime.now(CST).strftime('%Y%m%d')
         self._cached_habits = habits
         self._cached_checkins = checkins_map
         self._update_ui_from_cache()
-        self._notify_external_checkins(habits, previous_checkins, checkins_map, today_stamp)
 
     def _on_habit_sync_error(self, msg):
         self.status_bar.setText(f"❌ {msg}")
@@ -684,46 +681,7 @@ class HabitTrackerWindow(QWidget):
         move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         move_anim.start()
 
-    def _show_sync_toast(self, text):
-        """显示来自滴答云端同步的轻提示"""
-        toast = QLabel(text, self)
-        toast.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: bold; "
-            f"background: rgba(255, 255, 255, 0.96); border: 1px solid {GREEN_ACCENT}; border-radius: 10px; padding: 6px 10px;"
-        )
-        toast.adjustSize()
-        toast.move(max(16, self.width() - toast.width() - 16), 58)
-        toast.show()
 
-        effect = QGraphicsOpacityEffect(toast)
-        toast.setGraphicsEffect(effect)
-
-        anim = QPropertyAnimation(effect, b"opacity", toast)
-        anim.setDuration(1800)
-        anim.setStartValue(0.0)
-        anim.setKeyValueAt(0.15, 1.0)
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(toast.deleteLater)
-        anim.start()
-
-    def _notify_external_checkins(self, habits, previous_checkins, checkins_map, today_stamp):
-        habit_name_map = {h['id']: h.get('name', '未知习惯') for h in habits}
-        new_remote_checkins = []
-
-        for habit_id, stamps in checkins_map.items():
-            current_status = stamps.get(today_stamp)
-            previous_status = previous_checkins.get(habit_id, {}).get(today_stamp)
-            if current_status == 2 and previous_status != 2:
-                new_remote_checkins.append(habit_name_map.get(habit_id, '未知习惯'))
-
-        if not new_remote_checkins or not previous_checkins:
-            return
-
-        if len(new_remote_checkins) == 1:
-            self._show_sync_toast(f"滴答已同步打卡: {new_remote_checkins[0]}")
-        else:
-            self._show_sync_toast(f"滴答已同步 {len(new_remote_checkins)} 个习惯打卡")
 
     # ======================== 窗口交互 ========================
     def mousePressEvent(self, e):
