@@ -535,6 +535,8 @@ class HabitTrackerWindow(QWidget):
             self.db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
             self._show_coin_toast(claimed_coins)
             self._update_ui_from_cache()
+            from particle_effect import start_coin_explosion
+            start_coin_explosion(self, self.claim_btn, len(ids))
 
     def _filter_habits_for_today(self, habits):
         weekday = datetime.now(CST).weekday()

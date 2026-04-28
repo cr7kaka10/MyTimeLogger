@@ -384,6 +384,8 @@ class DailyChecklistWindow(QWidget):
             db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
             self._do_refresh()
             self._show_coin_toast(claimed_coins)
+            from particle_effect import start_coin_explosion
+            start_coin_explosion(self, self.claim_btn, len(ids))
 
     def _show_coin_toast(self, coins):
         """积分变动 toast 动画"""
