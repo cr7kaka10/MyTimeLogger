@@ -43,6 +43,13 @@ class OfficialTickTickClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_completed_tasks(self, project_id: str) -> list:
+        """拉取项目中已完成的任务（status=2）"""
+        resp = await self.client.get(f"{self.base_url}/project/{project_id}/data", params={"status": 2})
+        if resp.status_code != 200:
+            return []
+        return resp.json().get("tasks", [])
+
     async def complete_task(self, project_id: str, task_id: str):
         url = f"{self.base_url}/project/{project_id}/task/{task_id}/complete"
         resp = await self.client.post(url)
@@ -212,18 +219,29 @@ class TickTickSyncWorker(QObject):
                         result.append(self._task_to_dict(t, p_name))
 
             # 检查是否有原本应该在（今天活跃），但现在突然消失的任务
+            # 关键：只有真正完成（出现在已完成列表）的任务才发奖励，推迟/修改 due date 的不算！
             if previous_map:
                 current_ids = set(self._raw_task_map.keys())
-                missing_ids = set(previous_map.keys()) - current_ids
-                for tid in missing_ids:
-                    # 如果本地已经标记完成，忽略
-                    if tid in self._locally_completed:
-                        continue
-                    t_cache = previous_map[tid]
-                    task_name = t_cache.get("title", "未知任务")
-                    coins = self.db_logger.get_item_reward('task', tid, 0.1)
-                    # 写入 external_rewards（防重复逻辑在 SQL 层）
-                    self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
+                missing_ids = set(previous_map.keys()) - current_ids - self._locally_completed
+                
+                if missing_ids:
+                    # 从每个项目拉取今日已完成任务，取任务 ID 集合
+                    completed_data = await asyncio.gather(*[
+                        client.get_completed_tasks(p_id) for p_id in self._project_map
+                    ])
+                    completed_ids = set()
+                    for task_list in completed_data:
+                        for t in task_list:
+                            completed_ids.add(t["id"])
+                    
+                    # 只处理真正完成了的（消失 AND 出现在完成列表）
+                    truly_completed_ids = missing_ids & completed_ids
+                    for tid in truly_completed_ids:
+                        t_cache = previous_map[tid]
+                        task_name = t_cache.get("title", "未知任务")
+                        coins = self.db_logger.get_item_reward('task', tid, 0.1)
+                        self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
+                        logger.info(f"[外部完成] 任务 '{task_name}' 加入待领取 ({coins}🪙)")
 
             return result
         finally:

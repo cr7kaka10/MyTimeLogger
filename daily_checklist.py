@@ -369,54 +369,14 @@ class DailyChecklistWindow(QWidget):
 
     def _on_claim_clicked(self):
         from database import StudyLogger
-        from PyQt6.QtWidgets import QDialog, QListWidget, QListWidgetItem
+        from claim_reward_dialog import ClaimRewardDialog
+        from PyQt6.QtWidgets import QDialog
         db = StudyLogger(self.config)
         unclaimed = db.get_unclaimed_rewards()
         if not unclaimed:
             return
-            
-        dialog = QDialog(self)
-        dialog.setWindowTitle("🎁 外部奖励领取")
-        dialog.setMinimumSize(350, 400)
-        dialog.setStyleSheet(f"""
-            QDialog {{ background: #FFFFFF; }}
-            QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-family: 'Microsoft YaHei'; }}
-            QListWidget {{ background: #F8F9FB; color: {TEXT_PRIMARY}; border: 1px solid {BORDER_COLOR}; border-radius: 6px; }}
-            QListWidget::item {{ padding: 10px; border-bottom: 1px solid #F0F2F5; }}
-            QPushButton {{ background: #D08770; color: white; border: none; border-radius: 6px; padding: 10px; font-weight: bold; font-size: 14px; }}
-            QPushButton:hover {{ background: #BF616A; }}
-        """)
-        
-        layout = QVBoxLayout(dialog)
-        layout.setSpacing(10)
-        layout.addWidget(QLabel(f"<b>有 {len(unclaimed)} 个在外部完成的项目</b>"))
-        
-        list_widget = QListWidget()
-        total_coins = 0.0
-        for item in unclaimed:
-            type_icon = "✅" if item['item_type'] == 'habit' else "📋"
-            list_item = QListWidgetItem(f"{type_icon} {item['item_name']}")
-            total_coins += item['coins']
-            
-            # 使用自定义 Widget 来右对齐金币
-            widget = QWidget()
-            row = QHBoxLayout(widget)
-            row.setContentsMargins(10, 5, 10, 5)
-            row.addWidget(QLabel(f"{type_icon} {item['item_name']}"), 1)
-            coin_lbl = QLabel(f"🪙{item['coins']:g}")
-            coin_lbl.setStyleSheet("color: #D08770; font-weight: bold;")
-            row.addWidget(coin_lbl)
-            
-            list_item.setSizeHint(widget.sizeHint())
-            list_widget.addItem(list_item)
-            list_widget.setItemWidget(list_item, widget)
-            
-        layout.addWidget(list_widget)
-        
-        claim_btn = QPushButton(f"一键领取全部 🪙{total_coins:g}")
-        claim_btn.clicked.connect(dialog.accept)
-        layout.addWidget(claim_btn)
-        
+
+        dialog = ClaimRewardDialog(unclaimed, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             ids = [i['id'] for i in unclaimed]
             claimed_coins = db.claim_rewards(ids)
