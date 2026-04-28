@@ -489,7 +489,7 @@ class TickTickSyncWorker(QObject):
                     status = ci.get('status', -1)
                     checkins_map[hid][stamp] = status
                     
-                    if status == 0:
+                    if status == 2:
                         # 写入 external_rewards（防重复逻辑在 SQL 层，如果本地点击过打卡，早已存为 status=1）
                         ext_id = f"habit_{hid}_{stamp}"
                         self.db_logger.add_external_reward(ext_id, 'habit', habit_name, coins, status=0)

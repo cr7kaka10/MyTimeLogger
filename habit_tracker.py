@@ -236,7 +236,7 @@ class HabitWeeklyView(QWidget):
 
                 btn = QPushButton()
                 btn.setFixedSize(28, 28)
-                if status == 0:  # 已完成
+                if status == 2:  # 已完成
                     btn.setText("✓")
                     btn.setStyleSheet(f"QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 14px; font-size: 14px; font-weight: bold; }}")
                 else:
@@ -256,7 +256,7 @@ class HabitWeeklyView(QWidget):
 
     def _on_checkin(self, hid, stamp, current_status):
         """周视图打卡/取消"""
-        new_status = 2 if current_status == 0 else 0  # toggle
+        new_status = 0 if current_status == 2 else 2  # toggle
         self.parent_window._do_remote_checkin(hid, stamp, new_status)
 
     def _parse_icon(self, habit):
@@ -572,7 +572,7 @@ class HabitTrackerWindow(QWidget):
 
         for habit in habits:
             hid = habit['id']
-            is_checked = self._cached_checkins.get(hid, {}).get(today_stamp) == 0
+            is_checked = self._cached_checkins.get(hid, {}).get(today_stamp) == 2
 
             habit_display = dict(habit)
             habit_display['icon'] = self._parse_icon(habit)
@@ -585,7 +585,7 @@ class HabitTrackerWindow(QWidget):
 
     def _on_checkin(self, habit_id, stamp, currently_checked):
         """日视图打卡/取消打卡"""
-        new_status = 2 if currently_checked else 0  # 0=完成, 2=取消
+        new_status = 0 if currently_checked else 2  # 2=完成, 0=取消
         self._do_remote_checkin(habit_id, stamp, new_status)
 
     def _do_remote_checkin(self, habit_id, stamp, new_status):
@@ -601,12 +601,12 @@ class HabitTrackerWindow(QWidget):
         habit_name = next((h.get('name', '未知习惯') for h in self._cached_habits if h['id'] == habit_id), '未知习惯')
         ext_id = f"habit_{habit_id}_{stamp}"
         
-        if new_status == 0:
+        if new_status == 2:
             coins = reward
             self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
             self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
             self._show_coin_toast(coins)
-        elif new_status == 2:
+        elif new_status == 0:
             coins = -reward
             self.db.remove_external_reward(ext_id)
             self.db.add_ledger_entry(coins, 'habit_uncheck', None, f"取消习惯打卡: {habit_name}")
@@ -678,7 +678,7 @@ class HabitTrackerWindow(QWidget):
         for habit_id, stamps in checkins_map.items():
             current_status = stamps.get(today_stamp)
             previous_status = previous_checkins.get(habit_id, {}).get(today_stamp)
-            if current_status == 0 and previous_status != 0:
+            if current_status == 2 and previous_status != 2:
                 new_remote_checkins.append(habit_name_map.get(habit_id, '未知习惯'))
 
         if not new_remote_checkins or not previous_checkins:
