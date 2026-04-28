@@ -120,9 +120,7 @@ class MyTimeLoggerGUI(QWidget):
         self._build_end_break_button()
         self.generate_statistics_html()
         self.logic.reset_cycle()
-        
-        # 启动即开启大面板模式
-        QTimer.singleShot(300, self._on_expand_clicked)
+
 
     # ======================== 通知与对话框 ========================
 

@@ -78,5 +78,5 @@ if __name__ == "__main__":
         sys.exit(1)
 
     window.setWindowTitle("MyTimeLogger v0.98")
-    window.show()
+    window.switch_ui_mode(to_mini=False)
     sys.exit(app.exec())
