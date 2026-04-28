@@ -107,7 +107,14 @@ class TickTickSyncWorker(QObject):
         
         self._project_map = {}
         self._cached_tasks = []
+        
+        # 初始化读取本地数据库缓存的未完成任务
         self._raw_task_map = {}   # task_id -> 原始 API 返回的全量数据
+        try:
+            for t in self.db_logger.get_all_active_tasks():
+                self._raw_task_map[t["id"]] = t
+        except: pass
+        
         self._locally_completed: Set[str] = set()  # 本地已完成但 API 延迟未清除的 task_id
         self._client = None
         self._loop = None
@@ -214,7 +221,7 @@ class TickTickSyncWorker(QObject):
                         continue
                     t_cache = previous_map[tid]
                     task_name = t_cache.get("title", "未知任务")
-                    coins = self.db_logger.get_item_reward('task', tid, 1.0)
+                    coins = self.db_logger.get_item_reward('task', tid, 0.1)
                     # 写入 external_rewards（防重复逻辑在 SQL 层）
                     self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
 
@@ -398,7 +405,7 @@ class TickTickSyncWorker(QObject):
                 
                 # 获取习惯名称和奖励金币
                 habit_name = next((h.get('name', '未知习惯') for h in habits if h['id'] == hid), '未知习惯')
-                coins = self.db_logger.get_item_reward('habit', hid, 1.0)
+                coins = self.db_logger.get_item_reward('habit', hid, 0.1)
                 
                 for ci in block.get('checkins', []):
                     stamp = str(ci.get('stamp', ''))

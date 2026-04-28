@@ -505,10 +505,9 @@ class HabitTrackerWindow(QWidget):
             hid = habit['id']
             is_checked = self._cached_checkins.get(hid, {}).get(today_stamp) == 0
 
-            # 转换 icon
             habit_display = dict(habit)
             habit_display['icon'] = self._parse_icon(habit)
-            habit_display['reward_coins'] = self.db.get_item_reward('habit', hid, 1.0)
+            habit_display['reward_coins'] = self.db.get_item_reward('habit', hid, 0.1)
 
             card = HabitCard(habit_display, is_checked)
             card.check_btn.clicked.connect(lambda _, h_id=hid, checked=is_checked: self._on_checkin(h_id, today_stamp, checked))
@@ -529,7 +528,7 @@ class HabitTrackerWindow(QWidget):
         self.request_habit_checkin.emit(habit_id, stamp, new_status)
 
         # 本地积分处理
-        reward = self.db.get_item_reward('habit', habit_id, 1.0)
+        reward = self.db.get_item_reward('habit', habit_id, 0.1)
         habit_name = next((h.get('name', '未知习惯') for h in self._cached_habits if h['id'] == habit_id), '未知习惯')
         ext_id = f"habit_{habit_id}_{stamp}"
         

@@ -353,7 +353,7 @@ class DailyChecklistWindow(QWidget):
         from database import StudyLogger
         db = StudyLogger(self.config)
         for t in tasks:
-            t['reward_coins'] = db.get_item_reward('task', t['id'], 1.0)
+            t['reward_coins'] = db.get_item_reward('task', t['id'], 0.1)
         self._render_tasks(tasks)
         from datetime import datetime
         balance = db.get_balance()
@@ -526,7 +526,7 @@ class DailyChecklistWindow(QWidget):
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
-            coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 1.0))
+            coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 0.1))
             db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
             logger.info(f"任务完成积分入账: +{coins} ({title})")

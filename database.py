@@ -269,6 +269,25 @@ class StudyLogger:
             except Exception as e:
                 logging.error(f"数据迁移失败: {e}")
 
+    def get_all_active_tasks(self):
+        """获取本地缓存的所有未完成任务，用于启动时比对丢失任务"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT raw_json FROM tasks WHERE status = 0")
+            rows = cursor.fetchall()
+            conn.close()
+            result = []
+            for r in rows:
+                try:
+                    result.append(json.loads(r['raw_json']))
+                except: pass
+            return result
+        except Exception as e:
+            logging.error(f"读取本地活跃任务失败: {e}")
+            return []
+
     def get_all_sessions(self):
         try:
             conn = self._get_connection()
@@ -354,7 +373,7 @@ class StudyLogger:
                 CREATE TABLE IF NOT EXISTS reward_config (
                     item_type TEXT NOT NULL,
                     item_id TEXT NOT NULL,
-                    coins REAL NOT NULL DEFAULT 1.0,
+                    coins REAL NOT NULL DEFAULT 0.1,
                     PRIMARY KEY (item_type, item_id)
                 )
             ''')
@@ -644,8 +663,8 @@ class StudyLogger:
 
     # ======================== 自定义奖励配置 ========================
 
-    def get_item_reward(self, item_type: str, item_id: str, default: float = 1.0) -> float:
-        """获取指定任务/习惯的奖励金币数，不存在则返回默认值"""
+    def get_item_reward(self, item_type: str, item_id: str, default: float = 0.1) -> float:
+        """获取指定任务/习惯的奖励金币数，没有配置则返回默认值 0.1"""
         try:
             self._migrate_habits_table()
             conn = self._get_connection()
