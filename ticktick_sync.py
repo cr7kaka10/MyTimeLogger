@@ -11,8 +11,9 @@ import asyncio
 import logging
 import httpx
 import json
+from collections import Counter
 from datetime import datetime, timezone, timedelta
-from typing import Set
+from typing import Optional, Set
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
@@ -104,6 +105,7 @@ class TickTickSyncWorker(QObject):
     
     # 习惯信号
     habits_ready = pyqtSignal(list, dict)  # habits_list, checkins_map
+    habits_sync_error = pyqtSignal(str)
 
     def __init__(self, config, category_manager=None):
         super().__init__()
@@ -125,6 +127,7 @@ class TickTickSyncWorker(QObject):
         self._locally_completed: Set[str] = set()  # 本地已完成但 API 延迟未清除的 task_id
         self._client = None
         self._loop = None
+        self._last_task_refresh_started_at: Optional[datetime] = None
 
     def _ensure_loop(self):
         if self._loop is None or self._loop.is_closed():
@@ -147,9 +150,12 @@ class TickTickSyncWorker(QObject):
         token = tt_cfg.get("access_token")
         if not token:
             self.sync_error.emit("未配置 TickTick access_token")
+            self.habits_sync_error.emit("未配置 TickTick access_token")
             return
+        previous_refresh_started_at = self._last_task_refresh_started_at
+        refresh_started_at = datetime.now(timezone.utc)
         try:
-            tasks = self._run(self._fetch_all_tasks(token))
+            tasks = self._run(self._fetch_all_tasks(token, previous_refresh_started_at))
             
             # 过滤掉本地已完成但 TickTick 端由于延迟还没清除的任务
             tasks = [t for t in tasks if t["id"] not in self._locally_completed]
@@ -159,13 +165,12 @@ class TickTickSyncWorker(QObject):
             
             self._cached_tasks = tasks
             self.tasks_ready.emit(list(tasks))
-            
-            # 同时拉取习惯和打卡数据
-            self._refresh_habits_internal(token)
-            
+            self._last_task_refresh_started_at = refresh_started_at
         except Exception as e:
             logger.error(f"TickTick 同步失败: {e}")
             self.sync_error.emit(f"同步失败: {e}")
+        finally:
+            self._refresh_habits_internal(token)
 
     def _persist_and_link_tasks(self, tasks: list):
         """将获取到的任务映射 ID 并存入数据库"""
@@ -185,7 +190,7 @@ class TickTickSyncWorker(QObject):
             # 写入本地数据库
             self.db_logger.upsert_task(t)
 
-    async def _fetch_all_tasks(self, token: str):
+    async def _fetch_all_tasks(self, token: str, refresh_started_at: Optional[datetime] = None):
         client = OfficialTickTickClient(token, self._host)
         try:
             projects = await client.get_projects()
@@ -225,20 +230,27 @@ class TickTickSyncWorker(QObject):
                 missing_ids = set(previous_map.keys()) - current_ids - self._locally_completed
                 
                 if missing_ids:
-                    # 从每个项目拉取今日已完成任务，取任务 ID 集合
+                    logger.info(f"[外部完成检测] 候选消失任务: {sorted(missing_ids)}")
                     completed_data = await asyncio.gather(*[
                         client.get_completed_tasks(p_id) for p_id in self._project_map
                     ])
-                    completed_ids = set()
+                    completed_by_id = {}
                     for task_list in completed_data:
                         for t in task_list:
-                            completed_ids.add(t["id"])
+                            completed_by_id[t["id"]] = t
                     
-                    # 只处理真正完成了的（消失 AND 出现在完成列表）
-                    truly_completed_ids = missing_ids & completed_ids
-                    for tid in truly_completed_ids:
+                    for tid in missing_ids:
                         t_cache = previous_map[tid]
-                        task_name = t_cache.get("title", "未知任务")
+                        completed_task = completed_by_id.get(tid)
+                        if not completed_task:
+                            logger.info(f"[外部完成检测] 任务 {tid} 仅因不再属于今日清单而消失，跳过奖励")
+                            continue
+
+                        if not self._should_grant_external_reward(t_cache, completed_task, refresh_started_at):
+                            logger.info(f"[外部完成检测] 任务 {tid} 命中已完成列表，但未通过完成时间校验，跳过奖励")
+                            continue
+
+                        task_name = t_cache.get("title", completed_task.get("title", "未知任务"))
                         coins = self.db_logger.get_item_reward('task', tid, 0.1)
                         self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
                         logger.info(f"[外部完成] 任务 '{task_name}' 加入待领取 ({coins}🪙)")
@@ -294,6 +306,50 @@ class TickTickSyncWorker(QObject):
             "is_overdue": is_overdue,
             "is_completed": False,
         }
+
+    def _parse_api_datetime(self, value: str) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            normalized = value.replace("Z", "+00:00")
+            if normalized.endswith("+0000"):
+                normalized = normalized[:-5] + "+00:00"
+            return datetime.fromisoformat(normalized)
+        except Exception:
+            logger.warning(f"无法解析 TickTick 时间字段: {value}")
+            return None
+
+    def _extract_due_datetime(self, task: dict) -> Optional[datetime]:
+        due_value = task.get("dueDate", "")
+        if not due_value:
+            return None
+        return self._parse_api_datetime(due_value)
+
+    def _should_grant_external_reward(self, previous_task: dict, completed_task: dict, refresh_started_at: Optional[datetime]) -> bool:
+        if completed_task.get("status") not in (2, "2", None):
+            return False
+
+        completed_at = self._parse_api_datetime(completed_task.get("completedTime", ""))
+        if completed_at is None:
+            logger.info(f"[外部完成检测] 任务 {completed_task.get('id')} 缺少 completedTime，按已完成任务兜底发奖励")
+        else:
+            if refresh_started_at and completed_at < refresh_started_at:
+                logger.info(
+                    f"[外部完成检测] 任务 {completed_task.get('id')} completedTime={completed_at.isoformat()} "
+                    f"早于上次成功刷新时间，视为历史完成"
+                )
+                return False
+
+        previous_due = self._extract_due_datetime(previous_task)
+        completed_due = self._extract_due_datetime(completed_task)
+        if previous_due and completed_due and previous_due != completed_due:
+            logger.info(
+                f"[外部完成检测] 任务 {completed_task.get('id')} 截止时间发生变化 "
+                f"({previous_due.isoformat()} -> {completed_due.isoformat()})，疑似延期/改期，跳过奖励"
+            )
+            return False
+
+        return True
 
     @pyqtSlot(str, str)
     def complete_task(self, task_id, project_id):
@@ -403,17 +459,20 @@ class TickTickSyncWorker(QObject):
     def _refresh_habits_internal(self, token):
         try:
             habits = self._run(self._do_fetch_habits(token))
-            habits = [h for h in habits if h.get('status', 0) == 0]
+            self._log_habit_status_distribution(habits)
+            habits = [h for h in habits if self._is_visible_habit(h)]
             habits.sort(key=lambda h: h.get('sortOrder', 0))
             
             from datetime import datetime, timedelta
-            today = datetime.now()
-            today_stamp = today.strftime('%Y%m%d')
-            start_of_week = today - timedelta(days=today.weekday())
+            # 使用 CST 时区确保日期计算与任务同步一致
+            now_cst = datetime.now(CST)
+            # to 参数通常是不包含结束日期的，为了获取今天的打卡记录，需传明天的日期
+            tomorrow_stamp = (now_cst + timedelta(days=1)).strftime('%Y%m%d')
+            start_of_week = now_cst - timedelta(days=now_cst.weekday())
             week_start_stamp = start_of_week.strftime('%Y%m%d')
 
             habit_ids = [h['id'] for h in habits]
-            checkins_raw = self._run(self._do_fetch_checkins(token, habit_ids, week_start_stamp, today_stamp)) if habit_ids else []
+            checkins_raw = self._run(self._do_fetch_checkins(token, habit_ids, week_start_stamp, tomorrow_stamp)) if habit_ids else []
             
             checkins_map = {}
             for block in checkins_raw:
@@ -438,6 +497,18 @@ class TickTickSyncWorker(QObject):
             self.habits_ready.emit(habits, checkins_map)
         except Exception as e:
             logger.error(f"后台拉取习惯数据失败: {e}")
+            self.habits_sync_error.emit(f"习惯同步失败: {e}")
+
+    def _log_habit_status_distribution(self, habits: list):
+        status_counter = Counter(h.get("status", "missing") for h in habits)
+        logger.info(f"[习惯同步] status 分布: {dict(status_counter)}")
+
+    def _is_visible_habit(self, habit: dict) -> bool:
+        status = habit.get("status", 0)
+        if status in {0, 1}:
+            return True
+        logger.info(f"[习惯同步] 跳过非活跃习惯 {habit.get('id')} status={status} name={habit.get('name', '')}")
+        return False
 
     def fetch_remote_habits(self) -> list:
         """同步获取远端习惯列表"""

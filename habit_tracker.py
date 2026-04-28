@@ -7,7 +7,10 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# 时区定义
+CST = timezone(timedelta(hours=8)) 
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
@@ -188,7 +191,7 @@ class HabitWeeklyView(QWidget):
             self.grid.addWidget(lbl, 0, 0)
             return
 
-        today = datetime.now().date()
+        today = datetime.now(CST).date()
         start_of_week = today - timedelta(days=today.weekday())
         dates = [start_of_week + timedelta(days=i) for i in range(7)]
         date_stamps = [d.strftime('%Y%m%d') for d in dates]
@@ -285,6 +288,8 @@ class HabitTrackerWindow(QWidget):
             self.request_habit_checkin.connect(self.sync_worker.sync_habit_checkin)
             self.request_sync.connect(self.sync_worker.refresh)
             self.sync_worker.habits_ready.connect(self._on_habits_ready)
+            if hasattr(self.sync_worker, "habits_sync_error"):
+                self.sync_worker.habits_sync_error.connect(self._on_habit_sync_error)
 
         self.setWindowTitle("习惯打卡")
         self.setFixedSize(520, 560)
@@ -367,7 +372,7 @@ class HabitTrackerWindow(QWidget):
         layout.addWidget(header)
 
         # ====== 今日日期 ======
-        self.date_bar = QLabel(datetime.now().strftime("📅 %Y年%m月%d日 %A"))
+        self.date_bar = QLabel(datetime.now(CST).strftime("📅 %Y年%m月%d日 %A"))
         self.date_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.date_bar.setFixedHeight(28)
         self.date_bar.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; background: #F8F9FB; border-top: 1px solid #F0F2F5; border-bottom: 1px solid #F0F2F5;")
@@ -438,9 +443,9 @@ class HabitTrackerWindow(QWidget):
         self._update_tab_style(idx)
         self.stack.setCurrentIndex(idx)
         if idx == 1:
-            self.date_bar.setText(f"📅 本周 ({datetime.now().strftime('%Y年%W周')})")
+            self.date_bar.setText(f"📅 本周 ({datetime.now(CST).strftime('%Y年%W周')})")
         else:
-            self.date_bar.setText(datetime.now().strftime("📅 %Y年%m月%d日 %A"))
+            self.date_bar.setText(datetime.now(CST).strftime("📅 %Y年%m月%d日 %A"))
         self._refresh()
 
     def _parse_icon(self, habit):
@@ -458,29 +463,93 @@ class HabitTrackerWindow(QWidget):
         if not self.sync_worker:
             self.empty_label.setText("未配置滴答清单同步 ❌")
             self.empty_label.show()
+            self.status_bar.setText("❌ 未配置滴答清单同步")
             return
-            
+
+        self.status_bar.setText("🔄 正在同步滴答习惯...")
         self.request_sync.emit()
 
     def _on_habits_ready(self, habits, checkins_map):
         """收到后台拉取的数据后更新本地缓存和界面"""
+        previous_checkins = self._cached_checkins
+        today_stamp = datetime.now(CST).strftime('%Y%m%d')
         self._cached_habits = habits
         self._cached_checkins = checkins_map
         self._update_ui_from_cache()
+        self._notify_external_checkins(habits, previous_checkins, checkins_map, today_stamp)
+
+    def _on_habit_sync_error(self, msg):
+        self.status_bar.setText(f"❌ {msg}")
+        if not self._cached_habits:
+            self.empty_label.setText(f"{msg}\n请稍后重试")
+            self.empty_label.show()
 
     def _update_ui_from_cache(self):
         """仅根据本地缓存重新渲染UI"""
-        today_stamp = datetime.now().strftime('%Y%m%d')
+        today_stamp = datetime.now(CST).strftime('%Y%m%d')
+        todays_habits = self._filter_habits_for_today(self._cached_habits)
         # 渲染日视图
-        self._render_daily(self._cached_habits, today_stamp)
+        self._render_daily(todays_habits, today_stamp)
         # 渲染周视图
         self.weekly_view_widget.refresh(self._cached_habits, self._cached_checkins)
 
         # 更新状态栏
-        total = len(self._cached_habits)
-        done = sum(1 for h in self._cached_habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 0)
+        total = len(todays_habits)
+        done = sum(1 for h in todays_habits if self._cached_checkins.get(h['id'], {}).get(today_stamp) == 0)
         balance = self.db.get_balance()
-        self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}")
+        sync_time = datetime.now(CST).strftime('%H:%M')
+        unclaimed = self.db.get_unclaimed_rewards()
+        reward_hint = f"  |  🎁 待领取 {len(unclaimed)}" if unclaimed else ""
+        self.status_bar.setText(f"📊 今日: {done}/{total}  |  💰 {balance}{COIN_ICON}{reward_hint}  |  {sync_time} 已同步")
+
+    def _filter_habits_for_today(self, habits):
+        weekday = datetime.now(CST).weekday()
+        today_habits = [h for h in habits if self._habit_matches_today(h, weekday)]
+        if today_habits:
+            return today_habits
+        if any(self._habit_has_schedule_info(h) for h in habits):
+            return []
+        return habits
+
+    def _habit_has_schedule_info(self, habit) -> bool:
+        return bool(
+            habit.get("targetDays")
+            or habit.get("repeatFlag")
+            or habit.get("repeatRule")
+            or habit.get("frequency")
+            or habit.get("repeatType")
+        )
+
+    def _habit_matches_today(self, habit, weekday: int) -> bool:
+        weekday_keys = {
+            0: {"1", "mon", "monday", "mo"},
+            1: {"2", "tue", "tuesday", "tu"},
+            2: {"3", "wed", "wednesday", "we"},
+            3: {"4", "thu", "thursday", "th"},
+            4: {"5", "fri", "friday", "fr"},
+            5: {"6", "sat", "saturday", "sa"},
+            6: {"0", "7", "sun", "sunday", "su"},
+        }
+
+        target_days = habit.get("targetDays")
+        if isinstance(target_days, list) and target_days:
+            normalized_days = {str(day).strip().lower() for day in target_days}
+            return bool(normalized_days & weekday_keys[weekday])
+
+        repeat_flag = str(habit.get("repeatFlag") or habit.get("repeatRule") or "").upper()
+        if "FREQ=DAILY" in repeat_flag:
+            return True
+        if "BYDAY=" in repeat_flag:
+            day_map = {0: "MO", 1: "TU", 2: "WE", 3: "TH", 4: "FR", 5: "SA", 6: "SU"}
+            return day_map[weekday] in repeat_flag
+
+        frequency = str(habit.get("frequency") or habit.get("repeatType") or "").lower()
+        if frequency in {"daily", "everyday", "day"}:
+            return True
+        if frequency in {"weekly", "week"}:
+            return True
+
+        return True
 
     def _render_daily(self, habits, today_stamp):
         """渲染日视图的习惯卡片"""
@@ -578,6 +647,47 @@ class HabitTrackerWindow(QWidget):
         move_anim.setEndValue(toast.pos() - QPoint(0, 50))
         move_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         move_anim.start()
+
+    def _show_sync_toast(self, text):
+        """显示来自滴答云端同步的轻提示"""
+        toast = QLabel(text, self)
+        toast.setStyleSheet(
+            f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: bold; "
+            f"background: rgba(255, 255, 255, 0.96); border: 1px solid {GREEN_ACCENT}; border-radius: 10px; padding: 6px 10px;"
+        )
+        toast.adjustSize()
+        toast.move(max(16, self.width() - toast.width() - 16), 58)
+        toast.show()
+
+        effect = QGraphicsOpacityEffect(toast)
+        toast.setGraphicsEffect(effect)
+
+        anim = QPropertyAnimation(effect, b"opacity", toast)
+        anim.setDuration(1800)
+        anim.setStartValue(0.0)
+        anim.setKeyValueAt(0.15, 1.0)
+        anim.setEndValue(0.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(toast.deleteLater)
+        anim.start()
+
+    def _notify_external_checkins(self, habits, previous_checkins, checkins_map, today_stamp):
+        habit_name_map = {h['id']: h.get('name', '未知习惯') for h in habits}
+        new_remote_checkins = []
+
+        for habit_id, stamps in checkins_map.items():
+            current_status = stamps.get(today_stamp)
+            previous_status = previous_checkins.get(habit_id, {}).get(today_stamp)
+            if current_status == 0 and previous_status != 0:
+                new_remote_checkins.append(habit_name_map.get(habit_id, '未知习惯'))
+
+        if not new_remote_checkins or not previous_checkins:
+            return
+
+        if len(new_remote_checkins) == 1:
+            self._show_sync_toast(f"滴答已同步打卡: {new_remote_checkins[0]}")
+        else:
+            self._show_sync_toast(f"滴答已同步 {len(new_remote_checkins)} 个习惯打卡")
 
     # ======================== 窗口交互 ========================
     def mousePressEvent(self, e):

@@ -287,6 +287,7 @@ class DailyChecklistWindow(QWidget):
         self.sync_worker = TickTickSyncWorker(self.config, self.category_manager)
         self.sync_worker.moveToThread(self.sync_thread)
         self.sync_worker.tasks_ready.connect(self._on_tasks_ready)
+        self.sync_worker.habits_ready.connect(self._refresh_claim_button)
         self.sync_worker.sync_error.connect(self._on_sync_error)
         self.sync_worker.task_completed_ok.connect(self._on_task_completed_ok)
         self.sync_worker.task_complete_failed.connect(self._on_task_complete_failed)
@@ -358,8 +359,11 @@ class DailyChecklistWindow(QWidget):
         from datetime import datetime
         balance = db.get_balance()
         self.status_bar.setText(f"⏱ {datetime.now().strftime('%H:%M')} 已同步 · {len(tasks)} 条待办  |  💰 {balance}🪙")
-        
-        # 检查外部待领取奖励
+        self._refresh_claim_button()
+
+    def _refresh_claim_button(self, *_args):
+        from database import StudyLogger
+        db = StudyLogger(self.config)
         unclaimed = db.get_unclaimed_rewards()
         if unclaimed:
             self.claim_btn.setText(f"🎁 待领取({len(unclaimed)})")
