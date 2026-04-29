@@ -44,13 +44,6 @@ class OfficialTickTickClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def get_completed_tasks(self, project_id: str) -> list:
-        """拉取项目中已完成的任务（status=2）"""
-        resp = await self.client.get(f"{self.base_url}/project/{project_id}/data", params={"status": 2})
-        if resp.status_code != 200:
-            return []
-        return resp.json().get("tasks", [])
-
     async def complete_task(self, project_id: str, task_id: str):
         url = f"{self.base_url}/project/{project_id}/task/{task_id}/complete"
         resp = await self.client.post(url)
@@ -231,30 +224,13 @@ class TickTickSyncWorker(QObject):
                 
                 if missing_ids:
                     logger.info(f"[外部完成检测] 候选消失任务: {sorted(missing_ids)}")
-                    completed_data = await asyncio.gather(*[
-                        client.get_completed_tasks(p_id) for p_id in self._project_map
-                    ])
-                    completed_by_id = {}
-                    for task_list in completed_data:
-                        for t in task_list:
-                            completed_by_id[t["id"]] = t
-                    
+
                     for tid in missing_ids:
                         t_cache = previous_map[tid]
-                        completed_task = completed_by_id.get(tid)
-                        if not completed_task:
-                            logger.info(f"[外部完成检测] 任务 {tid} 仅因不再属于今日清单而消失，跳过奖励")
-                            continue
-
-                        if not self._should_grant_external_reward(t_cache, completed_task, refresh_started_at):
-                            logger.info(f"[外部完成检测] 任务 {tid} 命中已完成列表，但未通过完成时间校验，跳过奖励")
-                            continue
-
-                        task_name = t_cache.get("title", completed_task.get("title", "未知任务"))
+                        task_name = t_cache.get("title", "未知任务")
                         coins = self.db_logger.get_item_reward('task', tid, 0.1)
                         self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
                         logger.info(f"[外部完成] 任务 '{task_name}' 加入待领取 ({coins}🪙)")
-
             return result
         finally:
             await client.close()
@@ -306,50 +282,6 @@ class TickTickSyncWorker(QObject):
             "is_overdue": is_overdue,
             "is_completed": False,
         }
-
-    def _parse_api_datetime(self, value: str) -> Optional[datetime]:
-        if not value:
-            return None
-        try:
-            normalized = value.replace("Z", "+00:00")
-            if normalized.endswith("+0000"):
-                normalized = normalized[:-5] + "+00:00"
-            return datetime.fromisoformat(normalized)
-        except Exception:
-            logger.warning(f"无法解析 TickTick 时间字段: {value}")
-            return None
-
-    def _extract_due_datetime(self, task: dict) -> Optional[datetime]:
-        due_value = task.get("dueDate", "")
-        if not due_value:
-            return None
-        return self._parse_api_datetime(due_value)
-
-    def _should_grant_external_reward(self, previous_task: dict, completed_task: dict, refresh_started_at: Optional[datetime]) -> bool:
-        if completed_task.get("status") not in (2, "2", None):
-            return False
-
-        completed_at = self._parse_api_datetime(completed_task.get("completedTime", ""))
-        if completed_at is None:
-            logger.info(f"[外部完成检测] 任务 {completed_task.get('id')} 缺少 completedTime，按已完成任务兜底发奖励")
-        else:
-            if refresh_started_at and completed_at < refresh_started_at:
-                logger.info(
-                    f"[外部完成检测] 任务 {completed_task.get('id')} completedTime={completed_at.isoformat()} "
-                    f"早于上次成功刷新时间，视为历史完成"
-                )
-                return False
-
-        previous_due = self._extract_due_datetime(previous_task)
-        completed_due = self._extract_due_datetime(completed_task)
-        if previous_due and completed_due and previous_due != completed_due:
-            logger.info(
-                f"[外部完成检测] 任务 {completed_task.get('id')} 截止时间发生变化 "
-                f"({previous_due.isoformat()} -> {completed_due.isoformat()})，疑似延期/改期，跳过奖励"
-            )
-            return False
-
-        return True
 
     @pyqtSlot(str, str)
     def complete_task(self, task_id, project_id):
