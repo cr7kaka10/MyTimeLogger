@@ -160,7 +160,8 @@ class ActivityPanel(QWidget):
         """)
         close_btn.clicked.connect(self.hide)
 
-        checklist_btn = QPushButton("📋 清单")        checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        checklist_btn = QPushButton("📋 清单")
+        checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         checklist_btn.setStyleSheet("""
             QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
             QPushButton:hover { color: #81A1C1; }
