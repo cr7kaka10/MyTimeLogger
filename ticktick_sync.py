@@ -217,20 +217,15 @@ class TickTickSyncWorker(QObject):
                         result.append(self._task_to_dict(t, p_name))
 
             # 检查是否有原本应该在（今天活跃），但现在突然消失的任务
-            # 关键：只有真正完成（出现在已完成列表）的任务才发奖励，推迟/修改 due date 的不算！
+            # 滴答清单 OpenAPI v1 无法区分已完成和被删除的任务。
+            # 为了防止“删除任务刷金币”的漏洞，彻底废除了“外部完成”的任务奖励机制。
+            # 只有在本地客户端主动点击✅才能获得金币，消失的任务直接从本地忽略。
             if previous_map:
                 current_ids = set(self._raw_task_map.keys())
                 missing_ids = set(previous_map.keys()) - current_ids - self._locally_completed
-                
                 if missing_ids:
-                    logger.info(f"[外部完成检测] 候选消失任务: {sorted(missing_ids)}")
+                    logger.info(f"[任务同步] 检测到 {len(missing_ids)} 个任务从活动清单中消失（可能被完成/删除/推迟），已从本地移除且不发放金币奖励。")
 
-                    for tid in missing_ids:
-                        t_cache = previous_map[tid]
-                        task_name = t_cache.get("title", "未知任务")
-                        coins = self.db_logger.get_item_reward('task', tid, 0.1)
-                        self.db_logger.add_external_reward(f"task_{tid}", 'task', task_name, coins, status=0)
-                        logger.info(f"[外部完成] 任务 '{task_name}' 加入待领取 ({coins}🪙)")
             return result
         finally:
             await client.close()
