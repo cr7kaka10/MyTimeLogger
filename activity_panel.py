@@ -151,16 +151,6 @@ class ActivityPanel(QWidget):
         """)
         refresh_btn.clicked.connect(self.refresh_categories)
 
-        self.shrink_btn = QPushButton()
-        self.shrink_btn.setIcon(QIcon("document/shrink.svg"))
-        self.shrink_btn.setFixedSize(24, 24)
-        self.shrink_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.shrink_btn.setStyleSheet("""
-            QPushButton { background: transparent; border: none; }
-            QPushButton:hover { background-color: rgba(255, 255, 255, 0.3); border-radius: 4px; }
-        """)
-        self.shrink_btn.clicked.connect(self._on_shrink_clicked)
-
         close_btn = QPushButton("×")
         close_btn.setFixedSize(24, 24)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -168,10 +158,9 @@ class ActivityPanel(QWidget):
             QPushButton { color: #4C566A; background: transparent; font-size: 16px; border: none; font-weight: bold; }
             QPushButton:hover { color: #BF616A; }
         """)
-        close_btn.clicked.connect(self._on_shrink_clicked)
-        
-        checklist_btn = QPushButton("📋 清单")
-        checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(self.hide)
+
+        checklist_btn = QPushButton("📋 清单")        checklist_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         checklist_btn.setStyleSheet("""
             QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
             QPushButton:hover { color: #81A1C1; }
@@ -204,7 +193,6 @@ class ActivityPanel(QWidget):
         title_layout.addWidget(checklist_btn)
         title_layout.addWidget(refresh_btn)
         title_layout.addWidget(manage_btn)
-        title_layout.addWidget(self.shrink_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
 
@@ -254,13 +242,6 @@ class ActivityPanel(QWidget):
         
         bg_layout.addLayout(bottom_layout)
         self._update_btn_visibility()
-
-    def _on_shrink_clicked(self):
-        """返回 Mini 模式"""
-        if self.main_window and hasattr(self.main_window, "switch_ui_mode"):
-            self.main_window.switch_ui_mode(to_mini=True)
-        else:
-            self.hide()
 
     def _open_category_manager(self):
         """打开分类管理弹窗"""
