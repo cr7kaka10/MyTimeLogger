@@ -394,9 +394,13 @@ class DailyChecklistWindow(QWidget):
         if not unclaimed:
             return
         ids = [i['id'] for i in unclaimed]
+        names = [i.get('item_name', '未知项') for i in unclaimed]
         claimed_coins = db.claim_rewards(ids)
         if claimed_coins > 0:
-            db.add_ledger_entry(claimed_coins, 'external_claim', None, f"领取外部奖励: 共{len(ids)}项")
+            desc = "领取外部奖励: " + ", ".join(names)
+            if len(desc) > 100:
+                desc = desc[:97] + "..."
+            db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._do_refresh()
             from particle_effect import start_coin_explosion
             start_coin_explosion(self, self.claim_btn, len(ids))

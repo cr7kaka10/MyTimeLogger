@@ -73,11 +73,24 @@ class RewardAddDialog(QDialog):
 
         self.desc_input = QLineEdit()
         self.desc_input.setPlaceholderText("描述（选填）")
+        
+        from PyQt6.QtWidgets import QComboBox
+        self.task_combo = QComboBox()
+        self.task_combo.addItem("无（普通金币商品）", None)
+        try:
+            from database import StudyLogger
+            db = StudyLogger({})
+            tasks = db.get_all_active_tasks()
+            for t in tasks:
+                self.task_combo.addItem(t.get('title', '未知任务'), t.get('id'))
+        except Exception:
+            pass
 
         form.addRow("名称:", self.name_input)
         form.addRow("图标:", icon_row)
         form.addRow(f"价格({COIN_ICON}):", self.price_input)
         form.addRow("描述:", self.desc_input)
+        form.addRow("解锁任务:", self.task_combo)
         layout.addLayout(form)
 
         btn_row = QHBoxLayout()
@@ -103,19 +116,33 @@ class RewardAddDialog(QDialog):
         if not self.name_input.text().strip():
             QMessageBox.warning(self, "提示", "请输入奖励名称")
             return
-        try:
-            float(self.price_input.text().strip())
-        except ValueError:
-            QMessageBox.warning(self, "提示", "价格必须是数字")
-            return
+        
+        task_id = self.task_combo.currentData()
+        if not task_id:
+            try:
+                float(self.price_input.text().strip())
+            except ValueError:
+                QMessageBox.warning(self, "提示", "非任务解锁型商品，价格必须是有效数字")
+                return
+                
         self.accept()
 
     def get_data(self):
+        task_id = self.task_combo.currentData()
+        task_title = self.task_combo.currentText() if task_id else None
+        
+        price_val = 0.0
+        if not task_id:
+            try: price_val = float(self.price_input.text().strip())
+            except: pass
+            
         return {
             'title': self.name_input.text().strip(),
             'icon': self.selected_icon,
-            'price': float(self.price_input.text().strip()),
-            'description': self.desc_input.text().strip()
+            'price': price_val,
+            'description': self.desc_input.text().strip(),
+            'unlock_task_id': task_id,
+            'unlock_task_title': task_title
         }
 
 
@@ -150,17 +177,25 @@ class RewardCard(QFrame):
         info.addWidget(desc_lbl)
         layout.addLayout(info, 1)
 
-        price = self.reward_data.get('price', 0)
-        price_lbl = QLabel(f"{price}{COIN_ICON}")
-        price_lbl.setStyleSheet(f"color: {GOLD_HOVER}; font-size: 14px; font-weight: bold;")
+        unlock_task_id = self.reward_data.get('unlock_task_id')
+        unlock_task_title = self.reward_data.get('unlock_task_title')
+
+        if unlock_task_id:
+            price_lbl = QLabel("任务专属")
+            price_lbl.setStyleSheet(f"color: {GREEN_HOVER}; font-size: 11px; font-weight: bold; background: rgba(163, 190, 140, 0.15); border-radius: 4px; padding: 2px 6px;")
+        else:
+            price = self.reward_data.get('price', 0)
+            price_lbl = QLabel(f"{price}{COIN_ICON}")
+            price_lbl.setStyleSheet(f"color: {GOLD_HOVER}; font-size: 14px; font-weight: bold;")
+        
         layout.addWidget(price_lbl)
 
-        self.buy_btn = QPushButton("兑换")
+        self.buy_btn = QPushButton("解锁" if unlock_task_id else "兑换")
         self.buy_btn.setFixedSize(52, 28)
         self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.buy_btn.setStyleSheet(f"""
-            QPushButton {{ background: {GOLD_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
-            QPushButton:hover {{ background: {GOLD_HOVER}; }}
+            QPushButton {{ background: {GREEN_ACCENT if unlock_task_id else GOLD_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
+            QPushButton:hover {{ background: {GREEN_HOVER if unlock_task_id else GOLD_HOVER}; }}
         """)
         layout.addWidget(self.buy_btn)
 
@@ -337,9 +372,14 @@ class RewardShopWindow(QWidget):
                 self.history_layout.addWidget(row)
 
     def _on_buy(self, reward):
+        is_task_unlock = bool(reward.get('unlock_task_id'))
+        if is_task_unlock:
+            msg_text = f"确定要解锁「{reward['title']}」吗？\n（需要已完成任务：{reward.get('unlock_task_title', '指定任务')}）"
+        else:
+            msg_text = f"确定要花费 {reward['price']}{COIN_ICON} 兑换「{reward['title']}」吗？"
+            
         reply = QMessageBox.question(
-            self, "确认兑换",
-            f"确定要花费 {reward['price']}{COIN_ICON} 兑换「{reward['title']}」吗？",
+            self, "确认兑换", msg_text,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -359,7 +399,9 @@ class RewardShopWindow(QWidget):
                 title=data['title'],
                 icon=data['icon'],
                 price=data['price'],
-                description=data['description']
+                description=data['description'],
+                unlock_task_id=data.get('unlock_task_id'),
+                unlock_task_title=data.get('unlock_task_title')
             )
             self._refresh()
 

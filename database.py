@@ -368,6 +368,11 @@ class StudyLogger:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            cursor.execute("PRAGMA table_info(rewards)")
+            reward_cols = [c[1] for c in cursor.fetchall()]
+            if 'unlock_task_id' not in reward_cols:
+                cursor.execute("ALTER TABLE rewards ADD COLUMN unlock_task_id TEXT DEFAULT NULL")
+                cursor.execute("ALTER TABLE rewards ADD COLUMN unlock_task_title TEXT DEFAULT NULL")
             # 自定义奖励配置表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS reward_config (
@@ -789,13 +794,16 @@ class StudyLogger:
         except Exception:
             return []
 
-    def add_reward(self, title, icon='🎁', price=10, description=''):
+    def add_reward(self, title, icon='🎁', price=10, description='', unlock_task_id=None, unlock_task_title=None):
         """新增奖励商品"""
         try:
+            self._migrate_habits_table()
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO rewards (title, icon, price, description) VALUES (?, ?, ?, ?)",
-                           (title, icon, price, description))
+            cursor.execute(
+                "INSERT INTO rewards (title, icon, price, description, unlock_task_id, unlock_task_title) VALUES (?, ?, ?, ?, ?, ?)",
+                (title, icon, price, description, unlock_task_id, unlock_task_title)
+            )
             conn.commit()
             conn.close()
             return True
@@ -815,6 +823,28 @@ class StudyLogger:
         except Exception:
             return False
 
+    def is_task_completed(self, ticktick_id: str) -> bool:
+        """检查指定任务是否已完成（本地或外部记录）"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            # 检查本地 tasks 表
+            cursor.execute("SELECT status FROM tasks WHERE ticktick_id = ?", (ticktick_id,))
+            row = cursor.fetchone()
+            if row and row[0] == 2:
+                conn.close()
+                return True
+            # 检查外部完成记录
+            ext_id = f"task_{ticktick_id}"
+            cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (ext_id,))
+            if cursor.fetchone():
+                conn.close()
+                return True
+            conn.close()
+            return False
+        except Exception:
+            return False
+
     def buy_reward(self, reward_id):
         """购买奖励：检查余额→扣款→写流水，返回 (success, message)"""
         try:
@@ -828,6 +858,25 @@ class StudyLogger:
                 return False, '奖励不存在'
             price = reward['price']
             title = reward['title']
+            
+            # 兼容旧表可能没有这些字段
+            unlock_task_id = reward['unlock_task_id'] if 'unlock_task_id' in reward.keys() else None
+            unlock_task_title = reward['unlock_task_title'] if 'unlock_task_title' in reward.keys() else None
+
+            if unlock_task_id:
+                # 这是一个任务解锁型奖励
+                conn.close() # is_task_completed 会开新连接
+                if not self.is_task_completed(unlock_task_id):
+                    return False, f'需要先完成任务「{unlock_task_title or "未知任务"}」才能兑换此奖励！'
+                
+                # 如果已完成任务，兑换成功，但不扣积分，记录0金币的流水
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description) VALUES (?, 'reward_unlock', ?, ?)",
+                               (0, reward_id, f'任务解锁兑换: {title}'))
+                conn.commit()
+                conn.close()
+                return True, f'成功兑换「{title}」！'
             
             cursor.execute("SELECT SUM(amount) FROM reward_ledger")
             balance = cursor.fetchone()[0] or 0
