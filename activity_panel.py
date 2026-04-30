@@ -189,11 +189,21 @@ class ActivityPanel(QWidget):
         if self.main_window and hasattr(self.main_window, "toggle_reward_shop"):
             shop_btn.clicked.connect(self.main_window.toggle_reward_shop)
 
+        sleep_btn = QPushButton("🌙 睡眠")
+        sleep_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sleep_btn.setStyleSheet("""
+            QPushButton { color: #81A1C1; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
+            QPushButton:hover { color: #5E81AC; }
+        """)
+        if self.main_window and hasattr(self.main_window, "toggle_sleep_statistics"):
+            sleep_btn.clicked.connect(self.main_window.toggle_sleep_statistics)
+
         title_layout.addWidget(title_label)
         title_layout.addStretch()
         title_layout.addWidget(goals_btn)
         title_layout.addWidget(shop_btn)
         title_layout.addWidget(habit_btn)
+        title_layout.addWidget(sleep_btn)
         title_layout.addWidget(checklist_btn)
         title_layout.addSpacing(5)
         title_layout.addWidget(refresh_btn)

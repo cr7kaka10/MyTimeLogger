@@ -55,6 +55,11 @@ DEFAULT_CONFIG = {
         "username": "",
         "password": "",
         "sync_interval": 300
+    },
+    "ai_model_config": {               # AI 模型配置 (用于睡眠分析等)
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "",
+        "model_name": "qwen-vl-max"
     }
 }
 

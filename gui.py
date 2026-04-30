@@ -67,6 +67,7 @@ class MyTimeLoggerGUI(QWidget):
         self._checklist_window = None  # 日清单窗口（首次访问时创建）
         self._activity_panel_window = None  # 活动面板窗口
         self._habit_tracker_window = None  # 习惯打卡窗口
+        self._sleep_statistics_window = None # 睡眠统计窗口
         self.category_manager = CategoryManager()
 
         # 软件启动后延迟 100 毫秒，自动在后台同步今日清单（不打开窗口）
@@ -819,6 +820,26 @@ class MyTimeLoggerGUI(QWidget):
         """启动时后台静默同步（不打开窗口）"""
         win = self._ensure_checklist_window()
         win.start_background_sync()
+
+    def toggle_sleep_statistics(self):
+        """打开/关闭睡眠统计窗口"""
+        if self._sleep_statistics_window is None:
+            from sleep_statistics import SleepStatisticsWindow
+            self._sleep_statistics_window = SleepStatisticsWindow(self.config, self)
+            # 居中显示
+            screen = QApplication.primaryScreen().geometry()
+            self._sleep_statistics_window.move(
+                (screen.width() - self._sleep_statistics_window.width()) // 2,
+                (screen.height() - self._sleep_statistics_window.height()) // 2
+            )
+        
+        if self._sleep_statistics_window.isVisible():
+            self._sleep_statistics_window.hide()
+        else:
+            self._sleep_statistics_window.load_data()
+            self._sleep_statistics_window.show()
+            self._sleep_statistics_window.raise_()
+            self._sleep_statistics_window.activateWindow()
 
     def toggle_daily_checklist(self):
         """切换日清单窗口显隐"""

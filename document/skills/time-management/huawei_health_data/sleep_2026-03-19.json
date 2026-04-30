@@ -1,0 +1,28 @@
+{
+  "date": "2026-03-19",
+  "sleep_start": "01:42",
+  "sleep_end": "08:43",
+  "sleep_duration": 23100,
+  "sleep_duration_min": 385.0,
+  "deep_sleep": 8880,
+  "light_sleep": 10980,
+  "rem_sleep": 3240,
+  "awake_time": 2160,
+  "awake_count": 3,
+  "sleep_score": 80,
+  "fall_asleep_time": 0,
+  "wake_up_time": 0,
+  "sleep_cycles": 4.28,
+  "analysis": {
+    "summary": "",
+    "suggestions": [],
+    "issues": []
+  },
+  "raw_text": "3月19日 周四\n夜间睡眠 6小时25分钟\n入睡01:42 醒来08:43\n深睡 2小时28分钟\n浅睡 3小时3分钟\n快速眼动 54分钟\n清醒次数 3次\n睡眠评分 80分\n深睡比例 38%\n浅睡比例 48%\n快速眼动比例 14%\n深睡连续性 77分\n呼吸质量 98分\n睡眠心率 48-75次/分钟\n血氧饱和度 95-99%",
+  "deep_sleep_ratio": 38,
+  "light_sleep_ratio": 48,
+  "rem_sleep_ratio": 0,
+  "deep_sleep_continuity": 77,
+  "breath_quality": 98,
+  "saved_at": "2026-03-20T17:21:37.863882"
+}
