@@ -393,6 +393,20 @@ class StudyLogger:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # 目标挑战表 (类似 aTimeLogger Pro Goals)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS goals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    category_id INTEGER,  -- 关联的时间分类ID
+                    metric TEXT NOT NULL,  -- 'duration'(时长) 或 'count'(次数)
+                    target_value REAL NOT NULL, -- 目标值（分钟或次数）
+                    period TEXT NOT NULL,  -- 'daily', 'weekly', 'monthly'
+                    reward_coins REAL DEFAULT 0,
+                    is_active INTEGER DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
                 
             conn.commit()
             conn.close()
@@ -898,6 +912,109 @@ class StudyLogger:
         except Exception as e:
             logging.error(f"购买奖励失败: {e}")
             return False, str(e)
+
+    # ======================== 目标挑战系统 (Goals) ========================
+
+    def add_goal(self, title, category_id, metric, target_value, period, reward_coins):
+        """添加新目标"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            placeholder = "%s" if self.db_type == "mysql" else "?"
+            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins) VALUES ({','.join([placeholder]*6)})"
+            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"添加目标失败: {e}")
+            return False
+
+    def remove_goal(self, goal_id):
+        """下架/删除目标"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE goals SET is_active = 0 WHERE id = ?", (goal_id,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def get_all_goals(self):
+        """获取所有激活的目标"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM goals WHERE is_active = 1 ORDER BY created_at DESC")
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return rows
+        except Exception:
+            return []
+
+    def get_goal_progress(self, goal_dict):
+        """计算目标的当前进度"""
+        from datetime import date, timedelta
+        import calendar
+
+        metric = goal_dict['metric']
+        period = goal_dict['period']
+        cat_id = goal_dict['category_id']
+        
+        # 计算起止日期
+        today = date.today()
+        start_date = today
+        end_date = today
+
+        if period == 'daily':
+            start_date = today
+            end_date = today
+        elif period == 'weekly':
+            # 周一为起点
+            start_date = today - timedelta(days=today.weekday())
+            end_date = start_date + timedelta(days=6)
+        elif period == 'monthly':
+            start_date = today.replace(day=1)
+            _, last_day = calendar.monthrange(today.year, today.month)
+            end_date = today.replace(day=last_day)
+        
+        start_str = start_date.strftime('%Y-%m-%d')
+        end_str = end_date.strftime('%Y-%m-%d')
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            if metric == 'duration':
+                # 计算累计时长
+                cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date BETWEEN ? AND ?",
+                               (cat_id, start_str, end_str))
+                val = cursor.fetchone()[0] or 0.0
+            else:
+                # 计算累计次数
+                cursor.execute("SELECT COUNT(*) FROM study_sessions WHERE category_id = ? AND date BETWEEN ? AND ?",
+                               (cat_id, start_str, end_str))
+                val = cursor.fetchone()[0] or 0
+                
+            # 检查是否已领取
+            period_tag = start_str.replace('-', '')
+            if period == 'weekly':
+                period_tag = f"{start_date.year}W{start_date.isocalendar()[1]}"
+            elif period == 'monthly':
+                period_tag = start_date.strftime('%Y%m')
+                
+            claim_id = f"goal_{goal_dict['id']}_{period_tag}"
+            cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (claim_id,))
+            is_claimed = cursor.fetchone() is not None
+            
+            conn.close()
+            return val, is_claimed, claim_id
+        except Exception as e:
+            logging.error(f"计算目标进度失败: {e}")
+            return 0, False, ""
 
     def get_task_coins(self, priority):
         """根据任务优先级返回积分收益"""

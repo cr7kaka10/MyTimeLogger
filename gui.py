@@ -413,6 +413,8 @@ class MyTimeLoggerGUI(QWidget):
         activity_panel_action.triggered.connect(self.toggle_activity_panel)
         habit_action = QAction("✅ 习惯打卡", self)
         habit_action.triggered.connect(self.toggle_habit_tracker)
+        goals_action = QAction("🎯 目标挑战", self)
+        goals_action.triggered.connect(self.toggle_goals_panel)
         shop_action = QAction("🎁 奖励商店", self)
         shop_action.triggered.connect(self.toggle_reward_shop)
         stat_action = QAction("📊 查看统计 (网页版)", self)
@@ -432,6 +434,7 @@ class MyTimeLoggerGUI(QWidget):
         menu.addAction(activity_panel_action)
         menu.addAction(checklist_action)
         menu.addAction(habit_action)
+        menu.addAction(goals_action)
         menu.addAction(shop_action)
         menu.addAction(stat_action)
         menu.addSeparator()
@@ -887,6 +890,25 @@ class MyTimeLoggerGUI(QWidget):
         if win.isVisible():
             win.hide()
         else:
+            win.show()
+
+    def _ensure_goals_window(self):
+        """确保目标挑战窗口已创建并返回"""
+        if getattr(self, '_goals_window', None) is None:
+            from goals_panel import GoalsWindow
+            self._goals_window = GoalsWindow(
+                db=self.logic.local_logger,
+                category_manager=self.category_manager
+            )
+        return self._goals_window
+
+    def toggle_goals_panel(self):
+        """切换目标挑战窗口显隐"""
+        win = self._ensure_goals_window()
+        if win.isVisible():
+            win.hide()
+        else:
+            win.refresh()
             win.show()
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
