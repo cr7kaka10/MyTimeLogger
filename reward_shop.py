@@ -181,22 +181,41 @@ class RewardCard(QFrame):
         unlock_task_title = self.reward_data.get('unlock_task_title')
 
         if unlock_task_id:
+            from database import StudyLogger
+            db = StudyLogger({})
+            is_completed = db.is_task_completed(unlock_task_id)
+            
             price_lbl = QLabel("任务专属")
             price_lbl.setStyleSheet(f"color: {GREEN_HOVER}; font-size: 11px; font-weight: bold; background: rgba(163, 190, 140, 0.15); border-radius: 4px; padding: 2px 6px;")
+            
+            self.buy_btn = QPushButton("解锁")
+            self.buy_btn.setFixedSize(52, 28)
+            if is_completed:
+                self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                self.buy_btn.setStyleSheet(f"""
+                    QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
+                    QPushButton:hover {{ background: {GREEN_HOVER}; }}
+                """)
+            else:
+                self.buy_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
+                self.buy_btn.setEnabled(False)
+                self.buy_btn.setStyleSheet(f"""
+                    QPushButton {{ background: #CBD2D9; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
+                """)
         else:
             price = self.reward_data.get('price', 0)
             price_lbl = QLabel(f"{price}{COIN_ICON}")
             price_lbl.setStyleSheet(f"color: {GOLD_HOVER}; font-size: 14px; font-weight: bold;")
+            
+            self.buy_btn = QPushButton("兑换")
+            self.buy_btn.setFixedSize(52, 28)
+            self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.buy_btn.setStyleSheet(f"""
+                QPushButton {{ background: {GOLD_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
+                QPushButton:hover {{ background: {GOLD_HOVER}; }}
+            """)
         
         layout.addWidget(price_lbl)
-
-        self.buy_btn = QPushButton("解锁" if unlock_task_id else "兑换")
-        self.buy_btn.setFixedSize(52, 28)
-        self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.buy_btn.setStyleSheet(f"""
-            QPushButton {{ background: {GREEN_ACCENT if unlock_task_id else GOLD_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
-            QPushButton:hover {{ background: {GREEN_HOVER if unlock_task_id else GOLD_HOVER}; }}
-        """)
         layout.addWidget(self.buy_btn)
 
         self.setStyleSheet(f"""

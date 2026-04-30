@@ -172,8 +172,6 @@ class HabitCard(QFrame):
                 unlock_task_id=data.get('unlock_task_id'),
                 unlock_task_title=data.get('unlock_task_title')
             )
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(self, "成功", f"已添加专属奖励「{data['title']}」至商店！")
 
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog
