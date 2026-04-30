@@ -295,6 +295,9 @@ class HabitWeeklyView(QWidget):
                 if status == 2:  # 已完成
                     btn.setText("✓")
                     btn.setStyleSheet(f"QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 14px; font-size: 14px; font-weight: bold; }}")
+                elif status == -1: # 失败
+                    btn.setText("×")
+                    btn.setStyleSheet(f"QPushButton {{ background: {RED_ACCENT}; color: white; border: none; border-radius: 14px; font-size: 14px; font-weight: bold; }}")
                 else:
                     if is_future:
                         btn.setStyleSheet("QPushButton { background: transparent; border: 2px dashed #E5E9F0; border-radius: 14px; }")
@@ -305,6 +308,9 @@ class HabitWeeklyView(QWidget):
                 if not is_future:
                     btn.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn.clicked.connect(lambda checked, hid=h_id, s=stamp, st=status: self._on_checkin(hid, s, st))
+                    # 右键菜单支持补打/标记失败
+                    btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                    btn.customContextMenuRequested.connect(lambda pos, hid=h_id, s=stamp, st=status: self._show_context_menu(pos, hid, s, st))
 
                 self.grid.addWidget(btn, r + 1, c + 1, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -312,8 +318,26 @@ class HabitWeeklyView(QWidget):
 
     def _on_checkin(self, hid, stamp, current_status):
         """周视图打卡/取消"""
-        new_status = 0 if current_status == 2 else 2  # toggle
+        new_status = 0 if current_status in (2, -1) else 2  # toggle (默认切换到成功)
         self.parent_window._do_remote_checkin(hid, stamp, new_status)
+
+    def _show_context_menu(self, pos, hid, stamp, current_status):
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(f"QMenu {{ background: white; border: 1px solid {BORDER_COLOR}; }} QMenu::item:selected {{ background: {GREEN_ACCENT}; color: white; }}")
+        
+        success_act = menu.addAction("✓ 标记为成功")
+        fail_act = menu.addAction("× 标记为失败")
+        undo_act = menu.addAction("○ 恢复未打卡")
+        
+        # 使用 QCursor.pos() 确保在鼠标点击位置弹出
+        action = menu.exec(self.sender().mapToGlobal(pos))
+        if action == success_act:
+            self.parent_window._do_remote_checkin(hid, stamp, 2)
+        elif action == fail_act:
+            self.parent_window._do_remote_checkin(hid, stamp, -1)
+        elif action == undo_act:
+            self.parent_window._do_remote_checkin(hid, stamp, 0)
 
     def _parse_icon(self, habit):
         icon_res = habit.get('iconRes', '')
