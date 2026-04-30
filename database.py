@@ -631,8 +631,9 @@ class StudyLogger:
                         # 超时惩罚扣分
                         diff = diff or 'easy'
                         penalty = self.DIFFICULTY_MAP.get(diff, self.DIFFICULTY_MAP['easy'])['penalty']
-                        cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description) VALUES (?, 'habit_miss', ?, ?)",
-                                       (-penalty, hid, f'超时未打卡: {title}'))
+                        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'habit_miss', ?, ?, ?)",
+                                       (-penalty, hid, f'超时未打卡: {title}', now_str))
             conn.commit()
             conn.close()
         except Exception as e:
@@ -657,8 +658,9 @@ class StudyLogger:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description) VALUES (?, ?, ?, ?)",
-                           (amount, source_type, source_id, description))
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, ?, ?, ?, ?)",
+                           (amount, source_type, source_id, description, now_str))
             conn.commit()
             conn.close()
             return True
@@ -870,10 +872,11 @@ class StudyLogger:
                     return False, f'需要先完成任务「{unlock_task_title or "未知任务"}」才能兑换此奖励！'
                 
                 # 如果已完成任务，兑换成功，但不扣积分，记录0金币的流水
+                now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 conn = self._get_connection()
                 cursor = conn.cursor()
-                cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description) VALUES (?, 'reward_unlock', ?, ?)",
-                               (0, reward_id, f'任务解锁兑换: {title}'))
+                cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'reward_unlock', ?, ?, ?)",
+                               (0, reward_id, f'任务解锁兑换: {title}', now_str))
                 conn.commit()
                 conn.close()
                 return True, f'成功兑换「{title}」！'
@@ -884,8 +887,9 @@ class StudyLogger:
                 conn.close()
                 return False, f'余额不足（需要 {price}🪙，当前 {round(balance,1)}🪙）'
             
-            cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description) VALUES (?, 'reward_buy', ?, ?)",
-                           (-price, reward_id, f'购买奖励: {title}'))
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'reward_buy', ?, ?, ?)",
+                           (-price, reward_id, f'购买奖励: {title}', now_str))
             conn.commit()
             conn.close()
             return True, f'成功兑换「{title}」！'

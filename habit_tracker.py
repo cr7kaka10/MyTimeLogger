@@ -133,7 +133,47 @@ class HabitCard(QFrame):
         action = QAction(f"🪙 设置奖励 (当前: {current:g})", self)
         action.triggered.connect(self._set_reward)
         menu.addAction(action)
+        
+        exclusive_action = QAction("🎁 设为专属奖励", self)
+        exclusive_action.triggered.connect(self._set_exclusive_reward)
+        menu.addAction(exclusive_action)
+        
         menu.exec(event.globalPos())
+
+    def _set_exclusive_reward(self):
+        from reward_shop import RewardAddDialog
+        # pass task_data into RewardAddDialog or a custom dialog to lock the task
+        dialog = RewardAddDialog(self)
+        dialog.setWindowTitle("添加习惯专属奖励")
+        
+        # Pre-select the habit in the combo box and disable it
+        idx = dialog.task_combo.findData(self.habit_data['id'])
+        if idx >= 0:
+            dialog.task_combo.setCurrentIndex(idx)
+        else:
+            # Add it temporarily if not active
+            dialog.task_combo.addItem(self.habit_data.get('name', '未知习惯'), self.habit_data['id'])
+            dialog.task_combo.setCurrentIndex(dialog.task_combo.count() - 1)
+        dialog.task_combo.setEnabled(False)
+        
+        # Default price is 0
+        dialog.price_input.setText("0")
+        dialog.price_input.setEnabled(False)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            from database import StudyLogger
+            db = StudyLogger({})
+            db.add_reward(
+                title=data['title'],
+                icon=data['icon'],
+                price=data['price'],
+                description=data['description'],
+                unlock_task_id=data.get('unlock_task_id'),
+                unlock_task_title=data.get('unlock_task_title')
+            )
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "成功", f"已添加专属奖励「{data['title']}」至商店！")
 
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog

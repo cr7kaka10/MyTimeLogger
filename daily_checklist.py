@@ -195,12 +195,50 @@ class TaskItemWidget(QFrame):
             menu.addAction(action)
 
         menu.addSeparator()
-        # 设置奖励
         reward_action = QAction(f"🪙 设置奖励 (当前: {self.task_data.get('reward_coins', 1.0):g})", self)
         reward_action.triggered.connect(self._set_reward)
         menu.addAction(reward_action)
+        
+        exclusive_action = QAction("🎁 设为专属奖励", self)
+        exclusive_action.triggered.connect(self._set_exclusive_reward)
+        menu.addAction(exclusive_action)
             
         menu.exec(event.globalPos())
+
+    def _set_exclusive_reward(self):
+        from reward_shop import RewardAddDialog
+        # pass task_data into RewardAddDialog or a custom dialog to lock the task
+        dialog = RewardAddDialog(self)
+        dialog.setWindowTitle("添加任务专属奖励")
+        
+        # Pre-select the task in the combo box and disable it
+        idx = dialog.task_combo.findData(self.task_data['id'])
+        if idx >= 0:
+            dialog.task_combo.setCurrentIndex(idx)
+        else:
+            # Add it temporarily if not active
+            dialog.task_combo.addItem(self.task_data['title'], self.task_data['id'])
+            dialog.task_combo.setCurrentIndex(dialog.task_combo.count() - 1)
+        dialog.task_combo.setEnabled(False)
+        
+        # Default price is 0
+        dialog.price_input.setText("0")
+        dialog.price_input.setEnabled(False)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            from database import StudyLogger
+            db = StudyLogger({})
+            db.add_reward(
+                title=data['title'],
+                icon=data['icon'],
+                price=data['price'],
+                description=data['description'],
+                unlock_task_id=data.get('unlock_task_id'),
+                unlock_task_title=data.get('unlock_task_title')
+            )
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "成功", f"已添加专属奖励「{data['title']}」至商店！")
 
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog
