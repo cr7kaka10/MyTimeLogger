@@ -833,15 +833,17 @@ class StudyLogger:
             # 检查本地 tasks 表
             cursor.execute("SELECT status FROM tasks WHERE ticktick_id = ?", (ticktick_id,))
             row = cursor.fetchone()
-            if row and row[0] == 2:
+            if row:
                 conn.close()
-                return True
-            # 检查外部完成记录
-            ext_id = f"task_{ticktick_id}"
-            cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (ext_id,))
+                # 如果任务存在于本地表中，必须是完成状态 (2)
+                return row[0] == 2
+                
+            # 如果本地不存在，则检查外部领取记录（包括任务和习惯）
+            cursor.execute("SELECT 1 FROM external_rewards WHERE id = ? OR id = ?", (f"task_{ticktick_id}", f"habit_{ticktick_id}"))
             if cursor.fetchone():
                 conn.close()
                 return True
+                
             conn.close()
             return False
         except Exception:
