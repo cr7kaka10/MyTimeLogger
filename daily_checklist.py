@@ -65,13 +65,10 @@ class TaskItemWidget(QFrame):
         self.checkbox = QCheckBox()
         self.checkbox.setFixedSize(22, 22)
         self.checkbox.setStyleSheet(self._checkbox_style())
+        # 注意：这里我们保留 checkbox 逻辑，它触发 complete_clicked
         self.checkbox.stateChanged.connect(self._on_check_changed)
 
-        self.title_label = QLabel(self.task_data["title"])
-        self.title_label.setWordWrap(True)
-        self.title_label.setStyleSheet(f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-weight: 500; }}")
-
-        # 失败按钮 (打x)
+        # 失败按钮 (打x) - 放在播放按钮后面
         self.fail_btn = QPushButton("×")
         self.fail_btn.setFixedSize(24, 24)
         self.fail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -82,7 +79,7 @@ class TaskItemWidget(QFrame):
         """)
         self.fail_btn.clicked.connect(lambda: self.fail_clicked.emit(self.task_data))
 
-        # 播放/暂停按钮（1:1 复刻主面板 start_btn）
+        # 播放/暂停按钮
         self.play_btn = QPushButton("\uf04b") 
         self.play_btn.setFixedSize(24, 24) 
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -91,8 +88,8 @@ class TaskItemWidget(QFrame):
 
         row1.addWidget(self.checkbox)
         row1.addWidget(self.title_label, 1)
-        row1.addWidget(self.fail_btn)
         row1.addWidget(self.play_btn)
+        row1.addWidget(self.fail_btn)
         layout.addLayout(row1)
 
         # 第二行
@@ -112,8 +109,8 @@ class TaskItemWidget(QFrame):
         # 移除项目组信息（如收件箱），保持界面简洁
 
         # 奖励金币显示
-        coins = self.task_data.get('reward_coins', 1.0)
-        self.coin_label = QLabel(f"🪙{coins:g}")
+        reward_cfg = self.task_data.get('reward_cfg', {'reward': 0.1, 'penalty': 0.1})
+        self.coin_label = QLabel(f"🪙奖:{reward_cfg['reward']:g} ❌惩:{reward_cfg['penalty']:g}")
         self.coin_label.setStyleSheet(f"QLabel {{ font-size: 10px; padding: 1px 4px; border-radius: 4px; background: rgba(235,203,139,0.15); color: #D08770; }}")
         row2.addWidget(self.coin_label)
 
@@ -254,13 +251,16 @@ class TaskItemWidget(QFrame):
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog
         from database import StudyLogger
-        current = self.task_data.get('reward_coins', 1.0)
-        val, ok = QInputDialog.getDouble(self, "设置奖励", f"完成此任务奖励金币数:", current, 0, 100, 1)
+        db = StudyLogger({})
+        cfg = db.get_item_reward('task', self.task_data['id'], 0.1)
+        
+        val, ok = QInputDialog.getDouble(self, "设置奖励", "完成此任务奖励金币:", cfg['reward'], 0, 100, 1)
         if ok:
-            db = StudyLogger({})
-            db.set_item_reward('task', self.task_data['id'], val)
-            self.task_data['reward_coins'] = val
-            self.coin_label.setText(f"🪙{val:g}")
+            penalty, ok2 = QInputDialog.getDouble(self, "设置惩罚", "记为失败惩罚金币:", cfg['penalty'], 0, 100, 1)
+            if ok2:
+                db.set_item_reward('task', self.task_data['id'], val, penalty)
+                self.task_data['reward_cfg'] = {'reward': val, 'penalty': penalty}
+                self.coin_label.setText(f"🪙奖:{val:g} ❌惩:{penalty:g}")
 
 class FocusSwitchDialog(QDialog):
     """切换专注对话框（亮色版）"""
@@ -413,11 +413,10 @@ class DailyChecklistWindow(QWidget):
         QTimer.singleShot(0, self.sync_worker.refresh)
 
     def _on_tasks_ready(self, tasks):
-        # 注入每个任务的自定义奖励值
         from database import StudyLogger
         db = StudyLogger(self.config)
         for t in tasks:
-            t['reward_coins'] = db.get_item_reward('task', t['id'], 0.1)
+            t['reward_cfg'] = db.get_item_reward('task', t['id'], 0.1)
         self._render_tasks(tasks)
         from datetime import datetime
         balance = db.get_balance()
@@ -559,7 +558,8 @@ class DailyChecklistWindow(QWidget):
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
-            coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 0.1))
+            reward_cfg = task_data.get('reward_cfg', db.get_item_reward('task', tid, 0.1))
+            coins = reward_cfg['reward']
             db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
             
@@ -578,8 +578,8 @@ class DailyChecklistWindow(QWidget):
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
-            reward = task_data.get('reward_coins', 0.1)
-            penalty = reward * 0.5 # 惩罚 50%
+            reward_cfg = task_data.get('reward_cfg', db.get_item_reward('task', tid, 0.1))
+            penalty = reward_cfg['penalty']
             db.add_ledger_entry(-penalty, 'task_fail', None, f'任务失败: {title}')
             
             from particle_effect import show_failure_effect

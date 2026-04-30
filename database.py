@@ -429,6 +429,14 @@ class StudyLogger:
                 cursor.execute("ALTER TABLE goals ADD COLUMN reward_id INTEGER DEFAULT NULL")
             if 'operator' not in cols:
                 cursor.execute("ALTER TABLE goals ADD COLUMN operator TEXT DEFAULT '>='")
+            if 'penalty_coins' not in cols:
+                cursor.execute("ALTER TABLE goals ADD COLUMN penalty_coins REAL DEFAULT 0")
+
+            # 再次检查 reward_config
+            cursor.execute("PRAGMA table_info(reward_config)")
+            rc_cols = [c[1] for c in cursor.fetchall()]
+            if 'penalty' not in rc_cols:
+                cursor.execute("ALTER TABLE reward_config ADD COLUMN penalty REAL DEFAULT NULL")
                 
             # 兼容 MySQL
             if self.db_type == "mysql":
@@ -724,29 +732,34 @@ class StudyLogger:
 
     # ======================== 自定义奖励配置 ========================
 
-    def get_item_reward(self, item_type: str, item_id: str, default: float = 0.1) -> float:
-        """获取指定任务/习惯的奖励金币数，没有配置则返回默认值 0.1"""
+    def get_item_reward(self, item_type: str, item_id: str, default: float = 0.1) -> dict:
+        """获取指定任务/习惯的奖励配置，返回 {'reward': x, 'penalty': y}"""
         try:
             self._migrate_habits_table()
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT coins FROM reward_config WHERE item_type = ? AND item_id = ?",
+            cursor.execute("SELECT coins, penalty FROM reward_config WHERE item_type = ? AND item_id = ?",
                            (item_type, item_id))
             row = cursor.fetchone()
             conn.close()
-            return row[0] if row else default
+            if row:
+                return {
+                    'reward': row[0],
+                    'penalty': row[1] if row[1] is not None else row[0] # 默认惩罚=奖励
+                }
+            return {'reward': default, 'penalty': default}
         except Exception:
-            return default
+            return {'reward': default, 'penalty': default}
 
-    def set_item_reward(self, item_type: str, item_id: str, coins: float):
-        """设置指定任务/习惯的奖励金币数"""
+    def set_item_reward(self, item_type: str, item_id: str, coins: float, penalty: float = None):
+        """设置指定任务/习惯的奖励和惩罚金币数"""
         try:
             self._migrate_habits_table()
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT OR REPLACE INTO reward_config (item_type, item_id, coins) VALUES (?, ?, ?)",
-                (item_type, item_id, coins)
+                "INSERT OR REPLACE INTO reward_config (item_type, item_id, coins, penalty) VALUES (?, ?, ?, ?)",
+                (item_type, item_id, coins, penalty if penalty is not None else coins)
             )
             conn.commit()
             conn.close()
@@ -968,14 +981,15 @@ class StudyLogger:
 
     # ======================== 目标挑战系统 (Goals) ========================
 
-    def add_goal(self, title, category_id, metric, target_value, period, reward_coins, reward_id=None, operator='>='):
+    def add_goal(self, title, category_id, metric, target_value, period, reward_coins, reward_id=None, operator='>=', penalty_coins=None):
         """添加新目标"""
         try:
+            if penalty_coins is None: penalty_coins = reward_coins
             conn = self._get_connection()
             cursor = conn.cursor()
             placeholder = "%s" if self.db_type == "mysql" else "?"
-            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins, reward_id, operator) VALUES ({','.join([placeholder]*8)})"
-            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins, reward_id, operator))
+            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins) VALUES ({','.join([placeholder]*9)})"
+            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins))
             conn.commit()
             conn.close()
             return True

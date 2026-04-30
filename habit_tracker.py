@@ -75,7 +75,7 @@ class HabitCard(QFrame):
         unit = self.habit_data.get('unit', '次')
         total = self.habit_data.get('totalCheckIns', 0)
         reward_coins = self.habit_data.get('reward_coins', 1.0)
-        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{reward_coins:g}"
+        freq_text = f"目标: {int(goal)}{unit} · 累计打卡 {total} 次\n🪙奖励: {reward_coins:g} · ❌惩罚: {self.habit_data.get('penalty_coins', reward_coins):g}"
         self.freq_label = QLabel(freq_text)
         self.freq_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; background: transparent; border: none;")
         info_layout.addWidget(self.freq_label)
@@ -85,18 +85,18 @@ class HabitCard(QFrame):
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(6)
 
-        # 失败按钮
-        self.fail_btn = QPushButton("×")
-        self.fail_btn.setFixedSize(28, 28)
-        self.fail_btn.setToolTip("记为失败 (扣除惩罚分)")
-        
-        # 打卡按钮
+        # 打卡按钮 (前)
         self.check_btn = QPushButton("○")
         self.check_btn.setFixedSize(28, 28)
         self.check_btn.setToolTip("打卡成功 (获取奖励分)")
         
-        btn_layout.addWidget(self.fail_btn)
+        # 失败按钮 (后)
+        self.fail_btn = QPushButton("×")
+        self.fail_btn.setFixedSize(28, 28)
+        self.fail_btn.setToolTip("记为失败 (扣除惩罚分)")
+        
         btn_layout.addWidget(self.check_btn)
+        btn_layout.addWidget(self.fail_btn)
         layout.addLayout(btn_layout)
 
     def _update_style(self):
@@ -190,17 +190,21 @@ class HabitCard(QFrame):
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog
         from database import StudyLogger
-        current = self.habit_data.get('reward_coins', 1.0)
-        val, ok = QInputDialog.getDouble(self, "设置奖励", f"完成打卡奖励金币数:", current, 0, 100, 1)
+        db = StudyLogger({})
+        cfg = db.get_item_reward('habit', self.habit_data['id'], 1.0)
+        
+        val, ok = QInputDialog.getDouble(self, "设置奖励", "打卡成功奖励金币:", cfg['reward'], 0, 1000, 1)
         if ok:
-            db = StudyLogger({})
-            db.set_item_reward('habit', self.habit_data['id'], val)
-            self.habit_data['reward_coins'] = val
-            # 更新显示
-            goal = self.habit_data.get('goal', 1)
-            unit = self.habit_data.get('unit', '次')
-            total = self.habit_data.get('totalCheckIns', 0)
-            self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次 · 🪙{val:g}")
+            penalty, ok2 = QInputDialog.getDouble(self, "设置惩罚", "判定失败惩罚金币:", cfg['penalty'], 0, 1000, 1)
+            if ok2:
+                db.set_item_reward('habit', self.habit_data['id'], val, penalty)
+                self.habit_data['reward_coins'] = val
+                self.habit_data['penalty_coins'] = penalty
+                # 局部刷新显示
+                goal = self.habit_data.get('goal', 1)
+                unit = self.habit_data.get('unit', '次')
+                total = self.habit_data.get('totalCheckIns', 0)
+                self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次\n🪙奖励: {val:g} · ❌惩罚: {penalty:g}")
 
 
 class HabitWeeklyView(QWidget):
@@ -668,7 +672,9 @@ class HabitTrackerWindow(QWidget):
 
             habit_display = dict(habit)
             habit_display['icon'] = self._parse_icon(habit)
-            habit_display['reward_coins'] = self.db.get_item_reward('habit', hid, 0.1)
+            reward_cfg = self.db.get_item_reward('habit', hid, 0.1)
+            habit_display['reward_coins'] = reward_cfg['reward']
+            habit_display['penalty_coins'] = reward_cfg['penalty']
 
             card = HabitCard(habit_display, status)
             card.check_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, 2))
@@ -685,18 +691,19 @@ class HabitTrackerWindow(QWidget):
         self._do_remote_checkin(habit_id, stamp, new_status)
 
     def _do_remote_checkin(self, habit_id, stamp, new_status):
-        """执行远端打卡并刷新"""
-        if not self.sync_worker:
-            return
-
-        # 异步发送请求，不阻塞UI
+        """执行打卡逻辑"""
+        if not self.sync_worker: return
         self.request_habit_checkin.emit(habit_id, stamp, new_status)
 
-        # 本地积分处理
-        reward = self.db.get_item_reward('habit', habit_id, 0.1)
-        habit_name = next((h.get('name', '未知习惯') for h in self._cached_habits if h['id'] == habit_id), '未知习惯')
+        habit_name = next((h.get('name', '未知习惯') for h in self._cached_habits if h['id'] == habit_id), "未知习惯")
+        reward_cfg = self.db.get_item_reward('habit', habit_id, 0.1)
+        reward = reward_cfg['reward']
+        penalty = reward_cfg['penalty']
         ext_id = f"habit_{habit_id}_{stamp}"
         
+        # 获取旧状态
+        old_status = self._cached_checkins.get(habit_id, {}).get(stamp, 0)
+
         if new_status == 2:
             coins = reward
             self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)

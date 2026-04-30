@@ -88,21 +88,25 @@ class GoalCard(QFrame):
             reward_item = next((r for r in all_rewards if r['id'] == reward_id), None)
             self.reward_info = QLabel(f"{reward_item['icon'] if reward_item else '🎁'} {reward_item['title'] if reward_item else '奖励'}")
         else:
-            color = RED_ACCENT if reward_coins < 0 else GOLD_ACCENT
-            prefix = "惩罚:" if reward_coins < 0 else "奖励:"
-            self.reward_info = QLabel(f"{prefix} {COIN_ICON} {abs(reward_coins)}")
-            self.reward_info.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: bold;")
+            reward = reward_coins
+            penalty = self.goal_data.get('penalty_coins', reward)
+            self.reward_info = QLabel(f"🪙奖: {reward:g} · ❌惩: {penalty:g}")
+            self.reward_info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: bold;")
         
         self.reward_info.setStyleSheet(f"font-size: 12px; font-weight: bold;")
         
         self.action_btn = QPushButton("领取")
         self.action_btn.setFixedSize(65, 26)
+        
+        self.fail_btn = QPushButton("放弃")
+        self.fail_btn.setFixedSize(65, 26)
 
         footer.addWidget(self.progress_info)
         footer.addStretch()
         footer.addWidget(self.reward_info)
         footer.addSpacing(5)
         footer.addWidget(self.action_btn)
+        footer.addWidget(self.fail_btn)
         layout.addLayout(footer)
 
         self.setStyleSheet(f"""
@@ -158,24 +162,39 @@ class GoalCard(QFrame):
         # 按钮状态
         try: self.action_btn.clicked.disconnect()
         except: pass
+        try: self.fail_btn.clicked.disconnect()
+        except: pass
 
         if is_claimed:
             self.action_btn.setText("已完成")
             self.action_btn.setEnabled(False)
             self.action_btn.setStyleSheet(f"background: {BORDER_COLOR}; color: #AAB0BC; border-radius: 4px; font-size: 11px;")
+            self.fail_btn.hide()
         elif is_met and claim_id:
-            # 只有在入库了（有claim_id）且达标时才能领取
             self.action_btn.setEnabled(True)
             self.action_btn.setText("领取" if self.goal_data['reward_coins'] >= 0 else "确认")
-            self.action_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.action_btn.setStyleSheet(f"background: {GREEN_ACCENT}; color: white; border-radius: 4px; font-weight: bold; font-size: 11px;")
             self.action_btn.clicked.connect(lambda: self._on_claim(claim_id))
+            self.fail_btn.hide()
         else:
             self.action_btn.setText("未达标" if operator == '>=' else "进行中")
-            if operator == '<=' and progress_val > target:
-                self.action_btn.setText("失败")
             self.action_btn.setEnabled(False)
             self.action_btn.setStyleSheet(f"background: #ECEFF4; color: {TEXT_SECONDARY}; border-radius: 4px; font-size: 11px;")
+            if operator == '<=' and progress_val > target:
+                self.fail_btn.show()
+                self.fail_btn.setText("放弃")
+                self.fail_btn.setStyleSheet(f"background: {RED_ACCENT}; color: white; border-radius: 4px; font-weight: bold; font-size: 11px;")
+                self.fail_btn.clicked.connect(lambda: self._on_fail(claim_id))
+            else:
+                self.fail_btn.hide()
+
+    def _on_fail(self, claim_id):
+        penalty = self.goal_data.get('penalty_coins', self.goal_data['reward_coins'])
+        title = self.goal_data['title']
+        self.db.add_ledger_entry(-abs(penalty), 'goal_fail', self.goal_data['id'], f"目标挑战失败: {title}")
+        from particle_effect import show_failure_effect
+        show_failure_effect(self)
+        self.claimed.emit()
 
     def _on_claim(self, claim_id):
         amount = self.goal_data['reward_coins']
@@ -277,9 +296,16 @@ class GoalAddDialog(QDialog):
         self.coin_input = QSpinBox()
         self.coin_input.setRange(-10000, 10000)
         self.coin_input.setValue(1)
-        self.coin_input.setMinimumWidth(120)
-        coin_layout.addWidget(QLabel("金币数量："))
+        self.coin_input.setMinimumWidth(100)
+        coin_layout.addWidget(QLabel("金币奖励："))
         coin_layout.addWidget(self.coin_input)
+        
+        self.penalty_input = QSpinBox()
+        self.penalty_input.setRange(0, 10000)
+        self.penalty_input.setValue(1)
+        self.penalty_input.setMinimumWidth(100)
+        coin_layout.addWidget(QLabel("金币惩罚："))
+        coin_layout.addWidget(self.penalty_input)
         coin_layout.addStretch()
         
         # 页面2：兑换项
@@ -319,6 +345,7 @@ class GoalAddDialog(QDialog):
             'target_value': self.val_input.value(),
             'period': self.period_combo.currentData(),
             'reward_coins': self.coin_input.value() if is_coin else 0,
+            'penalty_coins': self.penalty_input.value() if is_coin else 0,
             'reward_id': self.item_combo.currentData() if not is_coin else None,
             'operator': self.operator_combo.currentData()
         }
