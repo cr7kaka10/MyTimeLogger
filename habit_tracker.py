@@ -207,6 +207,14 @@ class HabitCard(QFrame):
                 self.freq_label.setText(f"目标: {int(goal)}{unit} · 累计打卡 {total} 次\n🪙奖励: {val:g} · ❌惩罚: {penalty:g}")
 
 
+class HabitWeeklyButton(QPushButton):
+    """支持右键点击的打卡按钮"""
+    rightClicked = pyqtSignal()
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self.rightClicked.emit()
+        super().mousePressEvent(event)
+
 class HabitWeeklyView(QWidget):
     """周打卡视图（网格）- 从滴答清单同步"""
     def __init__(self, parent_window):
@@ -290,7 +298,7 @@ class HabitWeeklyView(QWidget):
                 is_future = d_obj > today
                 status = habit_checkins.get(stamp, None)
 
-                btn = QPushButton()
+                btn = HabitWeeklyButton()
                 btn.setFixedSize(28, 28)
                 if status == 2:  # 已完成
                     btn.setText("✓")
@@ -307,37 +315,20 @@ class HabitWeeklyView(QWidget):
 
                 if not is_future:
                     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    btn.clicked.connect(lambda checked, hid=h_id, s=stamp, st=status: self._on_checkin(hid, s, st))
-                    # 右键菜单支持补打/标记失败
-                    btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-                    btn.customContextMenuRequested.connect(lambda pos, hid=h_id, s=stamp, st=status: self._show_context_menu(pos, hid, s, st))
+                    # 左键点击：成功/取消
+                    btn.clicked.connect(lambda checked, hid=h_id, s=stamp, st=status: self._on_weekly_click(hid, s, st, 2))
+                    # 右键点击：失败/取消
+                    btn.rightClicked.connect(lambda hid=h_id, s=stamp, st=status: self._on_weekly_click(hid, s, st, -1))
 
                 self.grid.addWidget(btn, r + 1, c + 1, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.grid.setRowStretch(len(habits) + 1, 1)
 
-    def _on_checkin(self, hid, stamp, current_status):
-        """周视图打卡/取消"""
-        new_status = 0 if current_status in (2, -1) else 2  # toggle (默认切换到成功)
-        self.parent_window._do_remote_checkin(hid, stamp, new_status)
-
-    def _show_context_menu(self, pos, hid, stamp, current_status):
-        from PyQt6.QtWidgets import QMenu
-        menu = QMenu(self)
-        menu.setStyleSheet(f"QMenu {{ background: white; border: 1px solid {BORDER_COLOR}; }} QMenu::item:selected {{ background: {GREEN_ACCENT}; color: white; }}")
-        
-        success_act = menu.addAction("✓ 标记为成功")
-        fail_act = menu.addAction("× 标记为失败")
-        undo_act = menu.addAction("○ 恢复未打卡")
-        
-        # 使用 QCursor.pos() 确保在鼠标点击位置弹出
-        action = menu.exec(self.sender().mapToGlobal(pos))
-        if action == success_act:
-            self.parent_window._do_remote_checkin(hid, stamp, 2)
-        elif action == fail_act:
-            self.parent_window._do_remote_checkin(hid, stamp, -1)
-        elif action == undo_act:
-            self.parent_window._do_remote_checkin(hid, stamp, 0)
+    def _on_weekly_click(self, hid, stamp, current_status, target_status):
+        """周视图点击逻辑"""
+        new_status = 0 if current_status == target_status else target_status
+        # 补打不显示动画
+        self.parent_window._do_remote_checkin(hid, stamp, new_status, show_effect=False)
 
     def _parse_icon(self, habit):
         icon_res = habit.get('iconRes', '')
@@ -714,7 +705,7 @@ class HabitTrackerWindow(QWidget):
             new_status = target_status
         self._do_remote_checkin(habit_id, stamp, new_status)
 
-    def _do_remote_checkin(self, habit_id, stamp, new_status):
+    def _do_remote_checkin(self, habit_id, stamp, new_status, show_effect=True):
         """执行打卡逻辑"""
         if not self.sync_worker: return
         self.request_habit_checkin.emit(habit_id, stamp, new_status)
@@ -733,15 +724,15 @@ class HabitTrackerWindow(QWidget):
             self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
             self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
             self._show_coin_toast(coins)
-            from particle_effect import show_success_effect
-            show_success_effect(self)
+            if show_effect:
+                from particle_effect import show_success_effect
+                show_success_effect(self)
         elif new_status == -1:
-            # 失败惩罚 (扣除 50% 奖励金币作为惩罚，或固定值)
-            penalty = reward * 0.5
             self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}")
             self._show_coin_toast(-penalty)
-            from particle_effect import show_failure_effect
-            show_failure_effect(self)
+            if show_effect:
+                from particle_effect import show_failure_effect
+                show_failure_effect(self)
         elif new_status == 0:
             # 取消操作，撤回之前的积分，不触发动画
             self.db.remove_external_reward(ext_id)
