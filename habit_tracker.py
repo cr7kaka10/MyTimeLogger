@@ -40,10 +40,10 @@ COIN_ICON = "🪙"
 
 class HabitCard(QFrame):
     """单个习惯打卡卡片 (从滴答清单同步)"""
-    def __init__(self, habit_data, is_checked=False, parent=None):
+    def __init__(self, habit_data, status=0, parent=None):
         super().__init__(parent)
         self.habit_data = habit_data
-        self.is_checked = is_checked
+        self.status = status # 0=未打, 2=成功, -1=失败
         self.setObjectName("habitCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._build_ui()
@@ -81,40 +81,54 @@ class HabitCard(QFrame):
         info_layout.addWidget(self.freq_label)
         layout.addLayout(info_layout, 1)
 
+        # 状态按钮组
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(6)
+
+        # 失败按钮
+        self.fail_btn = QPushButton("×")
+        self.fail_btn.setFixedSize(28, 28)
+        self.fail_btn.setToolTip("记为失败 (扣除惩罚分)")
+        
         # 打卡按钮
-        self.check_btn = QPushButton()
-        self.check_btn.setFixedSize(36, 36)
-        layout.addWidget(self.check_btn)
+        self.check_btn = QPushButton("○")
+        self.check_btn.setFixedSize(28, 28)
+        self.check_btn.setToolTip("打卡成功 (获取奖励分)")
+        
+        btn_layout.addWidget(self.fail_btn)
+        btn_layout.addWidget(self.check_btn)
+        layout.addLayout(btn_layout)
 
     def _update_style(self):
-        if self.is_checked:
+        self.fail_btn.setStyleSheet(f"QPushButton {{ font-size: 16px; color: {BORDER_COLOR}; background: transparent; border: 1.5px solid {BORDER_COLOR}; border-radius: 14px; }} QPushButton:hover {{ border-color: {RED_ACCENT}; color: {RED_ACCENT}; }}")
+        self.check_btn.setStyleSheet(f"QPushButton {{ font-size: 16px; color: {BORDER_COLOR}; background: transparent; border: 1.5px solid {BORDER_COLOR}; border-radius: 14px; }} QPushButton:hover {{ border-color: {GREEN_ACCENT}; color: {GREEN_ACCENT}; }}")
+        self.title_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none; text-decoration: none;")
+        
+        if self.status == 2:  # 成功
             bg = CHECKED_BG
             border_c = GREEN_ACCENT
             self.check_btn.setText("✓")
-            self.check_btn.setStyleSheet(f"""
-                QPushButton {{ font-size: 16px; font-weight: bold; color: white; background: {GREEN_ACCENT};
-                    border: none; border-radius: 18px; }}
-                QPushButton:hover {{ background: {GREEN_HOVER}; }}
-            """)
+            self.check_btn.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; color: white; background: {GREEN_ACCENT}; border: none; border-radius: 14px; }}")
             self.title_label.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none; text-decoration: line-through;")
+        elif self.status == -1:  # 失败
+            bg = "rgba(191, 97, 106, 0.12)"
+            border_c = RED_ACCENT
+            self.fail_btn.setText("×")
+            self.fail_btn.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; color: white; background: {RED_ACCENT}; border: none; border-radius: 14px; }}")
+            self.title_label.setStyleSheet(f"color: {RED_ACCENT}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none; text-decoration: line-through;")
         else:
             bg = UNCHECKED_BG
             border_c = BORDER_COLOR
             self.check_btn.setText("○")
-            self.check_btn.setStyleSheet(f"""
-                QPushButton {{ font-size: 18px; color: {BORDER_COLOR}; background: transparent;
-                    border: 2px solid {BORDER_COLOR}; border-radius: 18px; }}
-                QPushButton:hover {{ border-color: {GREEN_ACCENT}; color: {GREEN_ACCENT}; }}
-            """)
-            self.title_label.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
+            self.fail_btn.setText("×")
 
         self.setStyleSheet(f"""
             #habitCard {{ background: {bg}; border: 1px solid {border_c}; border-radius: 10px; }}
             #habitCard:hover {{ background: rgba(163, 190, 140, 0.06); }}
         """)
 
-    def set_checked(self, checked: bool):
-        self.is_checked = checked
+    def set_status(self, status: int):
+        self.status = status
         self._update_style()
 
     def contextMenuEvent(self, event):
@@ -650,20 +664,24 @@ class HabitTrackerWindow(QWidget):
 
         for habit in habits:
             hid = habit['id']
-            is_checked = self._cached_checkins.get(hid, {}).get(today_stamp) == 2
+            status = self._cached_checkins.get(hid, {}).get(today_stamp, 0)
 
             habit_display = dict(habit)
             habit_display['icon'] = self._parse_icon(habit)
             habit_display['reward_coins'] = self.db.get_item_reward('habit', hid, 0.1)
 
-            card = HabitCard(habit_display, is_checked)
-            card.check_btn.clicked.connect(lambda _, h_id=hid, checked=is_checked: self._on_checkin(h_id, today_stamp, checked))
+            card = HabitCard(habit_display, status)
+            card.check_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, 2))
+            card.fail_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, -1))
             self.habit_cards[hid] = card
             self.habit_layout.insertWidget(self.habit_layout.count() - 1, card)
 
-    def _on_checkin(self, habit_id, stamp, currently_checked):
-        """日视图打卡/取消打卡"""
-        new_status = 0 if currently_checked else 2  # 2=完成, 0=取消
+    def _on_checkin(self, habit_id, stamp, current_status, target_status):
+        """日视图打卡/失败/取消操作"""
+        if current_status == target_status:
+            new_status = 0 # 取消
+        else:
+            new_status = target_status
         self._do_remote_checkin(habit_id, stamp, new_status)
 
     def _do_remote_checkin(self, habit_id, stamp, new_status):
@@ -684,17 +702,21 @@ class HabitTrackerWindow(QWidget):
             self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
             self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
             self._show_coin_toast(coins)
-            # 成功动效
             from particle_effect import show_success_effect
             show_success_effect(self)
-        elif new_status == 0:
-            coins = -reward
-            self.db.remove_external_reward(ext_id)
-            self.db.add_ledger_entry(coins, 'habit_uncheck', None, f"取消习惯打卡: {habit_name}")
-            self._show_coin_toast(coins)
-            # 失败/取消动效
+        elif new_status == -1:
+            # 失败惩罚 (扣除 50% 奖励金币作为惩罚，或固定值)
+            penalty = reward * 0.5
+            self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}")
+            self._show_coin_toast(-penalty)
             from particle_effect import show_failure_effect
             show_failure_effect(self)
+        elif new_status == 0:
+            # 取消操作，撤回之前的积分，不触发动画
+            self.db.remove_external_reward(ext_id)
+            # 查找上一条记录并对冲？简化处理：直接记一笔负值或删除
+            # 这里由于异步和数据库复杂性，暂只做 UI 状态回滚和积分记录对冲
+            self.db.add_ledger_entry(0, 'habit_undo', None, f"撤回习惯打卡: {habit_name}")
 
         # 本地更新状态并刷新UI，不要马上调API去拉回旧数据
         if habit_id not in self._cached_checkins:

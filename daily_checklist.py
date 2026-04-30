@@ -40,6 +40,7 @@ class TaskItemWidget(QFrame):
 
     focus_clicked = pyqtSignal(dict)
     complete_clicked = pyqtSignal(dict)
+    fail_clicked = pyqtSignal(dict)
     priority_changed = pyqtSignal(dict, int)
 
     def __init__(self, task_data: dict, parent=None):
@@ -70,15 +71,27 @@ class TaskItemWidget(QFrame):
         self.title_label.setWordWrap(True)
         self.title_label.setStyleSheet(f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-weight: 500; }}")
 
+        # 失败按钮 (打x)
+        self.fail_btn = QPushButton("×")
+        self.fail_btn.setFixedSize(24, 24)
+        self.fail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.fail_btn.setToolTip("记为失败 (扣除惩罚分)")
+        self.fail_btn.setStyleSheet(f"""
+            QPushButton {{ color: {BORDER_COLOR}; background: transparent; border: 1.5px solid {BORDER_COLOR}; border-radius: 4px; font-size: 16px; font-weight: bold; }}
+            QPushButton:hover {{ color: #BF616A; border-color: #BF616A; }}
+        """)
+        self.fail_btn.clicked.connect(lambda: self.fail_clicked.emit(self.task_data))
+
         # 播放/暂停按钮（1:1 复刻主面板 start_btn）
         self.play_btn = QPushButton("\uf04b") 
-        self.play_btn.setFixedSize(24, 24) # 完美对齐 24x24
+        self.play_btn.setFixedSize(24, 24) 
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_btn.clicked.connect(lambda: self.focus_clicked.emit(self.task_data))
         self._update_play_btn_style()
 
         row1.addWidget(self.checkbox)
         row1.addWidget(self.title_label, 1)
+        row1.addWidget(self.fail_btn)
         row1.addWidget(self.play_btn)
         layout.addLayout(row1)
 
@@ -470,6 +483,7 @@ class DailyChecklistWindow(QWidget):
             w = TaskItemWidget(task)
             w.focus_clicked.connect(self._on_focus_clicked)
             w.complete_clicked.connect(self._on_complete_clicked)
+            w.fail_clicked.connect(self._on_fail_clicked)
             w.priority_changed.connect(self._on_priority_changed)
             is_active = (self.current_focus_task_id == task['id'])
             w.set_sync_state(is_active, self.logic.is_paused if self.logic else False)
@@ -541,29 +555,47 @@ class DailyChecklistWindow(QWidget):
     def _on_complete_clicked(self, task_data):
         tid = task_data["id"]
         title = task_data.get("title", "")
-        priority = task_data.get("priority", 0)
         
-        # 积分入账及本地标记（防止被判定为外部完成）
         try:
             from database import StudyLogger
             db = StudyLogger(self.config)
             coins = task_data.get('reward_coins', db.get_item_reward('task', tid, 0.1))
             db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
-            logger.info(f"任务完成积分入账: +{coins} ({title})")
             
-            # 增加成功动效
             from particle_effect import show_success_effect
             show_success_effect(self)
         except Exception as e:
             logger.error(f"任务积分入账失败: {e}")
         
+        self._remove_task_ui(tid)
+        self.sync_worker.complete_task(tid, task_data["project_id"])
+
+    def _on_fail_clicked(self, task_data):
+        tid = task_data["id"]
+        title = task_data.get("title", "")
+        
+        try:
+            from database import StudyLogger
+            db = StudyLogger(self.config)
+            reward = task_data.get('reward_coins', 0.1)
+            penalty = reward * 0.5 # 惩罚 50%
+            db.add_ledger_entry(-penalty, 'task_fail', None, f'任务失败: {title}')
+            
+            from particle_effect import show_failure_effect
+            show_failure_effect(self)
+        except Exception as e:
+            logger.error(f"任务惩罚入账失败: {e}")
+        
+        self._remove_task_ui(tid)
+        # 失败不同步到 TickTick 完成状态，直接从本地消失（或可选同步到某个特定列表）
+
+    def _remove_task_ui(self, tid):
         self.sync_worker.remove_from_cache(tid)
         if tid in self.task_widgets: self.task_widgets.pop(tid).deleteLater()
         if self.current_focus_task_id == tid:
             self.current_focus_task_id = None
             QTimer.singleShot(300, self._prompt_switch)
-        self.sync_worker.complete_task(tid, task_data["project_id"])
 
     def _on_task_completed_ok(self, task_id): logger.info(f"任务 {task_id} 已同步到 TickTick")
     def _on_task_complete_failed(self, task_id, error): self.status_bar.setText(f"❌ 同步失败: {error}")
