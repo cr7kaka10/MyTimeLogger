@@ -13,7 +13,7 @@ import httpx
 import json
 from collections import Counter
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
@@ -43,6 +43,14 @@ class OfficialTickTickClient:
         resp = await self.client.get(f"{self.base_url}/project/{project_id}/data")
         resp.raise_for_status()
         return resp.json()
+
+    async def get_task(self, project_id: str, task_id: str):
+        """查询单个任务详情，返回 None 表示查不到"""
+        url = f"{self.base_url}/project/{project_id}/task/{task_id}"
+        resp = await self.client.get(url)
+        if resp.status_code == 200 and resp.text.strip():
+            return resp.json()
+        return None
 
     async def complete_task(self, project_id: str, task_id: str):
         url = f"{self.base_url}/project/{project_id}/task/{task_id}/complete"
@@ -216,19 +224,42 @@ class TickTickSyncWorker(QObject):
                         self._raw_task_map[task_id] = t  # 缓存原始全量数据
                         result.append(self._task_to_dict(t, p_name))
 
-            # 检查是否有原本应该在（今天活跃），但现在突然消失的任务
-            # 滴答清单 OpenAPI v1 无法区分已完成和被删除的任务。
-            # 为了防止“删除任务刷金币”的漏洞，彻底废除了“外部完成”的任务奖励机制。
-            # 只有在本地客户端主动点击✅才能获得金币，消失的任务直接从本地忽略。
+            # 检查消失的任务，通过 API 二次确认是否真正完成
             if previous_map:
                 current_ids = set(self._raw_task_map.keys())
                 missing_ids = set(previous_map.keys()) - current_ids - self._locally_completed
                 if missing_ids:
-                    logger.info(f"[任务同步] 检测到 {len(missing_ids)} 个任务从活动清单中消失（可能被完成/删除/推迟），已从本地移除且不发放金币奖励。")
+                    logger.info(f"[任务同步] 检测到 {len(missing_ids)} 个任务消失，开始逐个二次确认...")
+                    await self._verify_missing_tasks(client, missing_ids, previous_map)
 
             return result
         finally:
             await client.close()
+
+    async def _verify_missing_tasks(self, client: OfficialTickTickClient, missing_ids: set, previous_map: dict):
+        """对消失的任务逐个调 API 二次确认，status=2 才发金币"""
+        for task_id in missing_ids:
+            old_task = previous_map.get(task_id, {})
+            # 兼容原始 API 格式 (projectId) 和本地转换格式 (project_id)
+            project_id = old_task.get("projectId") or old_task.get("project_id", "")
+            title = old_task.get("title", "未知任务")
+
+            if not project_id:
+                logger.info(f"[任务确认] 跳过 {task_id}，无 projectId 缓存")
+                continue
+
+            try:
+                task_detail = await client.get_task(project_id, task_id)
+                if task_detail and task_detail.get("status") == 2:
+                    # 确认是真正完成，写入 external_rewards 待领取
+                    coins = self.db_logger.get_item_reward('task', task_id, 0.1)
+                    ext_id = f"task_{task_id}"
+                    self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
+                    logger.info(f"[任务确认] ✅ 外部完成确认: {title} +{coins}🪙")
+                else:
+                    logger.info(f"[任务确认] ❌ 任务 {title} 非完成状态（可能被删除/推迟），不发金币")
+            except Exception as e:
+                logger.error(f"[任务确认] 查询任务 {task_id} 失败: {e}")
 
     def _task_to_dict(self, t, project_name) -> dict:
         today_cst = datetime.now(CST).date()
