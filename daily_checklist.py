@@ -68,6 +68,10 @@ class TaskItemWidget(QFrame):
         # 注意：这里我们保留 checkbox 逻辑，它触发 complete_clicked
         self.checkbox.stateChanged.connect(self._on_check_changed)
 
+        self.title_label = QLabel(self.task_data["title"])
+        self.title_label.setWordWrap(True)
+        self.title_label.setStyleSheet(f"QLabel {{ color: {TEXT_PRIMARY}; font-size: 14px; font-weight: 500; }}")
+
         # 失败按钮 (打x) - 放在播放按钮后面
         self.fail_btn = QPushButton("×")
         self.fail_btn.setFixedSize(24, 24)

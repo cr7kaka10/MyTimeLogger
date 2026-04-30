@@ -252,7 +252,8 @@ class TickTickSyncWorker(QObject):
                 task_detail = await client.get_task(project_id, task_id)
                 if task_detail and task_detail.get("status") == 2:
                     # 确认是真正完成，写入 external_rewards 待领取
-                    coins = self.db_logger.get_item_reward('task', task_id, 0.1)
+                    reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
+                    coins = reward_cfg['reward']
                     ext_id = f"task_{task_id}"
                     self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
                     # 同时更新本地任务状态为已完成，防止下次启动再次扫描
@@ -444,7 +445,8 @@ class TickTickSyncWorker(QObject):
                 
                 # 获取习惯名称和奖励金币
                 habit_name = next((h.get('name', '未知习惯') for h in habits if h['id'] == hid), '未知习惯')
-                coins = self.db_logger.get_item_reward('habit', hid, 0.1)
+                reward_cfg = self.db_logger.get_item_reward('habit', hid, 0.1)
+                coins = reward_cfg['reward']
                 
                 for ci in block.get('checkins', []):
                     stamp = str(ci.get('stamp', ''))
