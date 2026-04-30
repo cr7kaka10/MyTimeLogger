@@ -244,6 +244,19 @@ class StudyLogger:
         except Exception as e:
             logging.error(f"持久化任务失败: {e}")
 
+    def update_task_status(self, ticktick_id: str, status: int):
+        """仅更新任务的状态（例如用于标记已检查且失败的任务）"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE tasks SET status = ? WHERE ticktick_id = ?", (status, ticktick_id))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"更新任务状态失败: {e}")
+            return False
+
     def _migrate_from_json(self):
         json_path = resource_path("study_log.json")
         if os.path.exists(json_path):
@@ -403,10 +416,37 @@ class StudyLogger:
                     target_value REAL NOT NULL, -- 目标值（分钟或次数）
                     period TEXT NOT NULL,  -- 'daily', 'weekly', 'monthly'
                     reward_coins REAL DEFAULT 0,
+                    reward_id INTEGER DEFAULT NULL, -- 关联的兑换项ID
+                    operator TEXT DEFAULT '>=',      -- '>=' 或 '<='
                     is_active INTEGER DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT (datetime('now', 'localtime'))
                 )
             ''')
+            # 自动迁移 goals 表
+            cursor.execute("PRAGMA table_info(goals)")
+            cols = [c[1] for c in cursor.fetchall()]
+            if 'reward_id' not in cols:
+                cursor.execute("ALTER TABLE goals ADD COLUMN reward_id INTEGER DEFAULT NULL")
+            if 'operator' not in cols:
+                cursor.execute("ALTER TABLE goals ADD COLUMN operator TEXT DEFAULT '>='")
+                
+            # 兼容 MySQL
+            if self.db_type == "mysql":
+                 cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS goals (
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        category_id INT,
+                        metric VARCHAR(20) NOT NULL,
+                        target_value DECIMAL(10,2) NOT NULL,
+                        period VARCHAR(20) NOT NULL,
+                        reward_coins DECIMAL(10,2) DEFAULT 0,
+                        reward_id INT DEFAULT NULL,
+                        operator VARCHAR(10) DEFAULT '>=',
+                        is_active TINYINT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ''')
                 
             conn.commit()
             conn.close()
@@ -863,6 +903,19 @@ class StudyLogger:
         except Exception:
             return False
 
+    def get_all_rewards(self):
+        """获取所有激活的奖励项目"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM rewards WHERE is_active = 1 ORDER BY price ASC")
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return rows
+        except Exception:
+            return []
+
     def buy_reward(self, reward_id):
         """购买奖励：检查余额→扣款→写流水，返回 (success, message)"""
         try:
@@ -915,14 +968,14 @@ class StudyLogger:
 
     # ======================== 目标挑战系统 (Goals) ========================
 
-    def add_goal(self, title, category_id, metric, target_value, period, reward_coins):
+    def add_goal(self, title, category_id, metric, target_value, period, reward_coins, reward_id=None, operator='>='):
         """添加新目标"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             placeholder = "%s" if self.db_type == "mysql" else "?"
-            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins) VALUES ({','.join([placeholder]*6)})"
-            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins))
+            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins, reward_id, operator) VALUES ({','.join([placeholder]*8)})"
+            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins, reward_id, operator))
             conn.commit()
             conn.close()
             return True
@@ -955,7 +1008,7 @@ class StudyLogger:
         except Exception:
             return []
 
-    def get_goal_progress(self, goal_dict):
+    def get_goal_progress(self, goal_dict, active_session_info=None):
         """计算目标的当前进度"""
         from datetime import date, timedelta
         import calendar
@@ -983,11 +1036,59 @@ class StudyLogger:
         
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
+        operator = goal_dict.get('operator', '>=')
 
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             
+            if period == 'per_session':
+                # "每次" 逻辑：查找今日最近一次尚未领取的达标记录
+                # 首先找到今日该分类的所有 session id
+                cursor.execute("SELECT id, net_duration_minutes FROM study_sessions WHERE category_id = ? AND date = ? ORDER BY id DESC",
+                               (cat_id, today.strftime('%Y-%m-%d')))
+                sessions = cursor.fetchall()
+                
+                val = 0
+                claim_id = ""
+                is_claimed = False
+                
+                # 寻找最新一个符合条件的且未领取的 session
+                for s_id, s_dur in sessions:
+                    # 检查达标条件
+                    met = False
+                    if operator == '>=': met = (s_dur >= target)
+                    else: met = (s_dur <= target)
+                    
+                    if met:
+                        c_id = f"goal_{goal_dict['id']}_session_{s_id}"
+                        cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (c_id,))
+                        if cursor.fetchone():
+                            # 已领取，继续找下一个（或者如果这是最新的，就显示已完成）
+                            if not claim_id:
+                                claim_id = c_id
+                                is_claimed = True
+                                val = s_dur
+                            continue
+                        else:
+                            # 找到了一个符合条件且未领取的
+                            val = s_dur
+                            claim_id = c_id
+                            is_claimed = False
+                            break
+                
+                # 如果完全没找到 session，尝试使用当前计时器
+                if not sessions and active_session_info:
+                    a_cat_id = active_session_info.get('category_id')
+                    a_duration = active_session_info.get('duration_minutes', 0)
+                    if a_cat_id == cat_id:
+                        val = a_duration
+                        # 当前计时器无法领取，因为它还没入库
+                
+                conn.close()
+                return val, is_claimed, claim_id
+
+            # 以下为累计型逻辑 (daily/weekly/monthly)
             if metric == 'duration':
                 # 计算累计时长
                 cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date BETWEEN ? AND ?",
@@ -999,6 +1100,15 @@ class StudyLogger:
                                (cat_id, start_str, end_str))
                 val = cursor.fetchone()[0] or 0
                 
+            # 实时进度叠加：如果当前正在计时且分类匹配
+            if active_session_info:
+                a_cat_id = active_session_info.get('category_id')
+                a_duration = active_session_info.get('duration_minutes', 0)
+                if a_cat_id == cat_id:
+                    if metric == 'duration':
+                        val += a_duration
+                    # 次数通常在结束后结算，实时刷新不计次
+            
             # 检查是否已领取
             period_tag = start_str.replace('-', '')
             if period == 'weekly':

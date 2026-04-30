@@ -135,27 +135,29 @@ class ActivityPanel(QWidget):
         title_label = QLabel("📊 沉浸式学习")
         title_label.setStyleSheet("color: #3B4252; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none;")
         
-        manage_btn = QPushButton("⚙️ 管理")
-        manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        manage_btn.setStyleSheet("""
-            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; }
+        goals_btn = QPushButton("🎯 目标")
+        goals_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        goals_btn.setStyleSheet("""
+            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
             QPushButton:hover { color: #81A1C1; }
         """)
-        manage_btn.clicked.connect(self._open_category_manager)
+        if self.main_window and hasattr(self.main_window, "toggle_goals_panel"):
+            goals_btn.clicked.connect(self.main_window.toggle_goals_panel)
 
-        refresh_btn = QPushButton("🔄 刷新")
+        refresh_btn = QPushButton("🔄")
+        refresh_btn.setFixedSize(28, 28)
         refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_btn.setStyleSheet("""
-            QPushButton { color: #5E81AC; background: transparent; font-size: 12px; border: none; }
+            QPushButton { color: #5E81AC; background: transparent; font-size: 16px; border: none; }
             QPushButton:hover { color: #81A1C1; }
         """)
         refresh_btn.clicked.connect(self.refresh_categories)
 
         close_btn = QPushButton("×")
-        close_btn.setFixedSize(24, 24)
+        close_btn.setFixedSize(28, 28)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet("""
-            QPushButton { color: #4C566A; background: transparent; font-size: 16px; border: none; font-weight: bold; }
+            QPushButton { color: #4C566A; background: transparent; font-size: 20px; border: none; font-weight: bold; }
             QPushButton:hover { color: #BF616A; }
         """)
         close_btn.clicked.connect(self.hide)
@@ -189,11 +191,12 @@ class ActivityPanel(QWidget):
 
         title_layout.addWidget(title_label)
         title_layout.addStretch()
+        title_layout.addWidget(goals_btn)
         title_layout.addWidget(shop_btn)
         title_layout.addWidget(habit_btn)
         title_layout.addWidget(checklist_btn)
+        title_layout.addSpacing(5)
         title_layout.addWidget(refresh_btn)
-        title_layout.addWidget(manage_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
 
@@ -245,11 +248,14 @@ class ActivityPanel(QWidget):
         self._update_btn_visibility()
 
     def _open_category_manager(self):
-        """打开分类管理弹窗"""
-        dialog = CategoryManagerDialog(self.category_manager, self)
-        if dialog.exec():
-            # 用户修改了分类，刷新网格
-            self.refresh_categories()
+        """此功能已移至主程序右键设置"""
+        if self.main_window and hasattr(self.main_window, "_open_category_manager"):
+            self.main_window._open_category_manager()
+        else:
+            # 回退逻辑
+            dialog = CategoryManagerDialog(self.category_manager, self)
+            if dialog.exec():
+                self.refresh_categories()
 
     def _clear_layout(self, layout):
         if layout is not None:
@@ -462,8 +468,9 @@ class ActivityPanel(QWidget):
             self._db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._show_coin_toast(claimed_coins)
             self._on_timer_tick()
-            from particle_effect import start_coin_explosion
+            from particle_effect import start_coin_explosion, show_success_effect
             start_coin_explosion(self, self.claim_btn, len(ids))
+            show_success_effect(self)
 
     def _show_coin_toast(self, coins):
         """积分变动 toast 动画"""

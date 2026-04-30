@@ -438,8 +438,9 @@ class DailyChecklistWindow(QWidget):
                 desc = desc[:97] + "..."
             db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._do_refresh()
-            from particle_effect import start_coin_explosion
+            from particle_effect import start_coin_explosion, show_success_effect
             start_coin_explosion(self, self.claim_btn, len(ids))
+            show_success_effect(self)
 
 
 
@@ -550,6 +551,10 @@ class DailyChecklistWindow(QWidget):
             db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', None, f'任务完成: {title}')
             logger.info(f"任务完成积分入账: +{coins} ({title})")
+            
+            # 增加成功动效
+            from particle_effect import show_success_effect
+            show_success_effect(self)
         except Exception as e:
             logger.error(f"任务积分入账失败: {e}")
         

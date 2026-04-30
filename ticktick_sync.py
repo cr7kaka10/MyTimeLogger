@@ -255,9 +255,13 @@ class TickTickSyncWorker(QObject):
                     coins = self.db_logger.get_item_reward('task', task_id, 0.1)
                     ext_id = f"task_{task_id}"
                     self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
+                    # 同时更新本地任务状态为已完成，防止下次启动再次扫描
+                    self.db_logger.update_task_status(task_id, 2)
                     logger.info(f"[任务确认] ✅ 外部完成确认: {title} +{coins}🪙")
                 else:
                     logger.info(f"[任务确认] ❌ 任务 {title} 非完成状态（可能被删除/推迟），不发金币")
+                    # 更新本地状态为 4 (已忽略/验证失败)，避免下次启动重复检查
+                    self.db_logger.update_task_status(task_id, 4)
             except Exception as e:
                 logger.error(f"[任务确认] 查询任务 {task_id} 失败: {e}")
 

@@ -182,8 +182,16 @@ class MyTimeLoggerGUI(QWidget):
             summary = dialog.textValue()
             final_summary = summary.strip() if summary.strip() else "未填写总结"
             self.logic.commit_large_session(final_summary)
+            from particle_effect import show_success_effect, show_failure_effect
+            if is_success:
+                show_success_effect(self)
+            else:
+                show_failure_effect(self)
         else:
             self.logic.commit_large_session("未填写总结")
+            if not is_success:
+                from particle_effect import show_failure_effect
+                show_failure_effect(self)
 
     # ======================== 布局管理 ========================
 
@@ -384,10 +392,14 @@ class MyTimeLoggerGUI(QWidget):
         db_menu.addAction(sqlite_action)
         db_menu.addAction(mysql_action)
 
+        category_action = QAction("🔖 时间分类设置", self)
+        category_action.triggered.connect(self._open_category_manager)
+
         config_menu.addMenu(interval_menu)
         config_menu.addMenu(duration_menu)
         config_menu.addMenu(hotkey_menu)
         config_menu.addMenu(db_menu)
+        config_menu.addAction(category_action)
 
         opacity_menu = QMenu("💧 透明度", self)
         for val in [1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.01]:
@@ -413,7 +425,7 @@ class MyTimeLoggerGUI(QWidget):
         activity_panel_action.triggered.connect(self.toggle_activity_panel)
         habit_action = QAction("✅ 习惯打卡", self)
         habit_action.triggered.connect(self.toggle_habit_tracker)
-        goals_action = QAction("🎯 目标挑战", self)
+        goals_action = QAction("🎯 目标", self)
         goals_action.triggered.connect(self.toggle_goals_panel)
         shop_action = QAction("🎁 奖励商店", self)
         shop_action.triggered.connect(self.toggle_reward_shop)
@@ -898,7 +910,8 @@ class MyTimeLoggerGUI(QWidget):
             from goals_panel import GoalsWindow
             self._goals_window = GoalsWindow(
                 db=self.logic.local_logger,
-                category_manager=self.category_manager
+                category_manager=self.category_manager,
+                logic=self.logic
             )
         return self._goals_window
 
@@ -910,6 +923,19 @@ class MyTimeLoggerGUI(QWidget):
         else:
             win.refresh()
             win.show()
+            win.activateWindow()
+            win.raise_()
+
+    def _open_category_manager(self):
+        """从右键设置打开分类管理"""
+        from category_dialog import CategoryManagerDialog
+        dialog = CategoryManagerDialog(self.category_manager, self)
+        if dialog.exec():
+            # 用户修改了分类，刷新所有相关窗口
+            if self._activity_panel_window:
+                self._activity_panel_window.refresh_categories()
+            if getattr(self, '_goals_window', None):
+                self._goals_window.refresh()
 
     def update_total_time(self, active_cycle_time_or_total=None, realtime=False):
         """更新累计时间显示"""

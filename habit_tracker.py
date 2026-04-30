@@ -574,8 +574,9 @@ class HabitTrackerWindow(QWidget):
             self.db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._show_coin_toast(claimed_coins)
             self._update_ui_from_cache()
-            from particle_effect import start_coin_explosion
+            from particle_effect import start_coin_explosion, show_success_effect
             start_coin_explosion(self, self.claim_btn, len(ids))
+            show_success_effect(self)
 
 
 
@@ -683,11 +684,17 @@ class HabitTrackerWindow(QWidget):
             self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
             self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
             self._show_coin_toast(coins)
+            # 成功动效
+            from particle_effect import show_success_effect
+            show_success_effect(self)
         elif new_status == 0:
             coins = -reward
             self.db.remove_external_reward(ext_id)
             self.db.add_ledger_entry(coins, 'habit_uncheck', None, f"取消习惯打卡: {habit_name}")
             self._show_coin_toast(coins)
+            # 失败/取消动效
+            from particle_effect import show_failure_effect
+            show_failure_effect(self)
 
         # 本地更新状态并刷新UI，不要马上调API去拉回旧数据
         if habit_id not in self._cached_checkins:
