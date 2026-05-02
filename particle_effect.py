@@ -157,6 +157,7 @@ class SuccessOverlay(QWidget):
         gradient.setColorAt(0.5, QColor(255, 215, 0, 40))
         gradient.setColorAt(1, QColor(255, 215, 0, 0))
         painter.fillRect(self.rect(), QBrush(gradient))
+        painter.end()
 
     def start_anim(self):
         self.show()
@@ -242,6 +243,7 @@ class FailureOverlay(QWidget):
         painter = QPainter(self)
         # 暗色滤镜背景
         painter.fillRect(self.rect(), QColor(20, 20, 30, 160))
+        painter.end()
 
     def start_anim(self):
         self.show()
