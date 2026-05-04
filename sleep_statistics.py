@@ -226,9 +226,9 @@ class SleepStatisticsWindow(QWidget):
         self.grid.setSpacing(15)
         self.metrics = {}
         metric_names = [
-            ("睡眠时长", "night_sleep_duration_min", "min"),
-            ("睡眠周期", "sleep_cycles", ""),
-            ("清醒时间", "awake_time", "s"),
+            ("深睡", "deep_sleep_min", " min"),
+            ("浅睡", "light_sleep_min", " min"),
+            ("快速眼动", "rem_sleep_min", " min"),
             ("深睡比例", "deep_sleep_ratio", "%")
         ]
         for i, (label, key, unit) in enumerate(metric_names):
@@ -271,14 +271,21 @@ class SleepStatisticsWindow(QWidget):
         self.analysis_text.setStyleSheet(f"border: none; background: transparent; color: {TEXT_PRIMARY}; font-size: 13px;")
         analysis_layout.addWidget(self.analysis_text)
         
-        self.ai_btn = QPushButton("🚀 AI 解析截图并分析")
-        self.ai_btn.setFixedHeight(40)
-        self.ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.ai_btn.setStyleSheet(f"""
-            QPushButton {{ background: {TEXT_PRIMARY}; color: white; border-radius: 0px; font-weight: bold; }}
-            QPushButton:hover {{ background: #4C566A; }}
+        # 服务状态提示
+        self.server_status = QLabel("📡 HTTP 服务: 端口 5055\n手机端运行脚本即可自动同步")
+        self.server_status.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; padding: 10px; background: #F0F2F5; border-radius: 6px;")
+        self.server_status.setWordWrap(True)
+        analysis_layout.addWidget(self.server_status)
+
+        self.refresh_btn = QPushButton("🔄 刷新数据")
+        self.refresh_btn.setFixedHeight(40)
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.setStyleSheet(f"""
+            QPushButton {{ background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; }}
+            QPushButton:hover {{ background: #8FBF65; }}
         """)
-        analysis_layout.addWidget(self.ai_btn)
+        self.refresh_btn.clicked.connect(self.load_data)
+        analysis_layout.addWidget(self.refresh_btn)
         
         self.tabs.addTab(analysis_page, "分析建议")
 
@@ -331,16 +338,39 @@ class SleepStatisticsWindow(QWidget):
         elif score >= 70: color = "#81A1C1"
         else: color = RED_ACCENT
         self.score_val.setStyleSheet(f"font-size: 48px; font-weight: bold; color: {color};")
-        
+
+        # 兼容新旧字段名: 旧格式用 deep_sleep (秒), 新格式用 deep_sleep_min (分钟)
+        FALLBACKS = {
+            "deep_sleep_min": lambda d: d.get("deep_sleep_min") or (d.get("deep_sleep", 0) / 60 if d.get("deep_sleep") else None),
+            "light_sleep_min": lambda d: d.get("light_sleep_min") or (d.get("light_sleep", 0) / 60 if d.get("light_sleep") else None),
+            "rem_sleep_min": lambda d: d.get("rem_sleep_min") or (d.get("rem_sleep", 0) / 60 if d.get("rem_sleep") else None),
+            "deep_sleep_ratio": lambda d: d.get("deep_sleep_ratio"),
+        }
+
         for key, (label, unit) in self.metrics.items():
-            val = data.get(key, "--")
-            if isinstance(val, float):
-                label.setText(f"{val:.1f}{unit}")
+            val = FALLBACKS.get(key, lambda d: d.get(key))(data)
+            if val is None:
+                label.setText("--")
+            elif isinstance(val, float):
+                label.setText(f"{val:.0f}{unit}")
             else:
                 label.setText(f"{val}{unit}")
-        
-        analysis = data.get("analysis", {}).get("summary", "暂无分析建议")
-        self.analysis_text.setText(analysis)
+
+        # 时间显示
+        bed = data.get("sleep_start", "")
+        wake = data.get("sleep_end", "")
+        time_info = ""
+        if bed and wake:
+            time_info = f"🛏️ {bed} → ⏰ {wake}\n"
+
+        # 分析文本
+        analysis = data.get("analysis", {})
+        if isinstance(analysis, dict):
+            summary = analysis.get("summary", "")
+        else:
+            summary = str(analysis) if analysis else ""
+
+        self.analysis_text.setText(f"{time_info}{summary}" if (time_info or summary) else "数据已加载，暂无分析文本。")
 
     def _clear_ui(self):
         self.score_val.setText("--")

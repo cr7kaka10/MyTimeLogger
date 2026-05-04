@@ -1,0 +1,14 @@
+{
+  "deep_sleep_ratio": 28,
+  "light_sleep_min": 210,
+  "sleep_start": "23:45",
+  "light_sleep_ratio": 52,
+  "rem_sleep_min": 65,
+  "date": "2026-05-04",
+  "awake_min": 25,
+  "rem_sleep_ratio": 20,
+  "sleep_score": 82,
+  "deep_sleep_min": 95,
+  "sleep_end": "07:30",
+  "received_at": "2026-05-04T15:14:05.767919+08:00"
+}

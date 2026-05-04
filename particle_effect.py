@@ -151,6 +151,8 @@ class SuccessOverlay(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
         # 顶部到底部的金色渐变背景
         gradient = QLinearGradient(0, 0, 0, self.height())
         gradient.setColorAt(0, QColor(255, 215, 0, 0))
@@ -241,6 +243,8 @@ class FailureOverlay(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        if not painter.isActive():
+            return
         # 暗色滤镜背景
         painter.fillRect(self.rect(), QColor(20, 20, 30, 160))
         painter.end()

@@ -36,5 +36,10 @@
         "username": "kaka10cr7@163.com",
         "password": "mufc130130131",
         "sync_interval": 300
+    },
+    "ai_model_config": {
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "",
+        "model_name": "qwen-vl-max"
     }
 }

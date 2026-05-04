@@ -72,6 +72,12 @@ if __name__ == "__main__":
         sys.exit(1)
 
     config = load_or_create_config()
+
+    # 启动睡眠数据接收服务 (后台线程)
+    from sleep_server import SleepServer
+    sleep_srv = SleepServer(port=config.get("sleep_server_port", 5055))
+    sleep_srv.start()
+
     window = MyTimeLoggerGUI(config)
 
     if window._init_failed:
