@@ -724,14 +724,17 @@ class FullLedgerDialog(QDialog):
             QComboBox::drop-down {
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
-                width: 30px;
+                width: 20px;
                 border: none;
+                background: transparent;
             }
             QComboBox::down-arrow {
-                image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239CA3AF'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-                width: 16px;
-                height: 16px;
-                margin-right: 12px;
+                image: none;
+                width: 0;
+                height: 0;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #9CA3AF;
             }
             QComboBox:hover {
                 border: 1px solid #9CA3AF;
