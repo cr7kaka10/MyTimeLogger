@@ -595,6 +595,10 @@ class TimelineItemWidget(QWidget):
                 background-color: #F8FAFC;
                 border: 1px solid #E2E8F0;
             }
+            QLabel {
+                border: none;
+                background: transparent;
+            }
         """)
         
         card_layout = QHBoxLayout(card)
@@ -602,7 +606,7 @@ class TimelineItemWidget(QWidget):
         
         time_lbl = QLabel(time_str)
         time_lbl.setFixedWidth(42)
-        time_lbl.setStyleSheet("color: #9CA3AF; font-size: 12px; font-weight: bold; font-family: 'Consolas', monospace;")
+        time_lbl.setStyleSheet("color: #9CA3AF; font-size: 12px; font-weight: bold; font-family: 'Consolas', monospace; border: none; background: transparent;")
         card_layout.addWidget(time_lbl)
         
         content_layout = QVBoxLayout()
@@ -614,14 +618,14 @@ class TimelineItemWidget(QWidget):
         
         if tag:
             tag_lbl = QLabel(tag)
-            if tag == "目标": tag_lbl.setStyleSheet("background-color: #E0F2FE; color: #0369A1; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
-            elif tag == "习惯": tag_lbl.setStyleSheet("background-color: #F3E8FF; color: #6B21A8; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
-            elif tag == "清单": tag_lbl.setStyleSheet("background-color: #FEF3C7; color: #B45309; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
-            else: tag_lbl.setStyleSheet("background-color: #F3F4F6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            if tag == "目标": tag_lbl.setStyleSheet("background-color: #E0F2FE; color: #0369A1; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
+            elif tag == "习惯": tag_lbl.setStyleSheet("background-color: #F3E8FF; color: #6B21A8; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
+            elif tag == "清单": tag_lbl.setStyleSheet("background-color: #FEF3C7; color: #B45309; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
+            else: tag_lbl.setStyleSheet("background-color: #F3F4F6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
             top_row.addWidget(tag_lbl)
             
         title_lbl = QLabel(main_text)
-        title_lbl.setStyleSheet("color: #1F2937; font-size: 13px; font-weight: 800;")
+        title_lbl.setStyleSheet("color: #1F2937; font-size: 13px; font-weight: 800; border: none; background: transparent;")
         top_row.addWidget(title_lbl)
         
         from PyQt6.QtWidgets import QGraphicsDropShadowEffect
@@ -662,7 +666,7 @@ class TimelineItemWidget(QWidget):
         color = RED_ACCENT if amount > 0 else GREEN_ACCENT
         
         amt_lbl = QLabel(f"{sign}{amt_disp}")
-        amt_lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 900; font-family: 'Consolas', monospace;")
+        amt_lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 900; font-family: 'Consolas', monospace; border: none; background: transparent;")
         card_layout.addWidget(amt_lbl)
         
         layout.addWidget(card)
@@ -685,10 +689,15 @@ class FullLedgerDialog(QDialog):
         
         # 头部统计悬浮卡片
         header_card = QFrame()
+        header_card.setObjectName("HeaderCard")
         header_card.setStyleSheet("""
-            QFrame {
+            QFrame#HeaderCard {
                 background-color: white;
                 border-bottom: 1px solid #E5E7EB;
+            }
+            QLabel {
+                border: none;
+                background: transparent;
             }
         """)
         header_layout = QVBoxLayout(header_card)
@@ -698,20 +707,33 @@ class FullLedgerDialog(QDialog):
         # Title & Filter
         title_row = QHBoxLayout()
         title_lbl = QLabel("💳 资金明细")
-        title_lbl.setStyleSheet(f"color: #1F2937; font-size: 16px; font-weight: bold; font-family: 'Microsoft YaHei';")
+        title_lbl.setStyleSheet(f"color: #1F2937; font-size: 16px; font-weight: bold; font-family: 'Microsoft YaHei'; border: none;")
         title_row.addWidget(title_lbl)
         
         self.period_combo = QComboBox()
         self.period_combo.addItems(["最近7天", "最近30天", "本月", "全部"])
         self.period_combo.setStyleSheet("""
             QComboBox {
-                padding: 4px 12px; 
+                padding: 4px 10px; 
                 border: 1px solid #D1D5DB; 
                 border-radius: 6px; 
                 background: white; 
                 color: #374151;
             }
-            QComboBox::drop-down { border: none; }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: 1px solid #E5E7EB;
+            }
+            QComboBox::down-arrow {
+                width: 0;
+                height: 0;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #9CA3AF;
+                margin-right: 2px;
+            }
         """)
         self.period_combo.currentIndexChanged.connect(self._load_data)
         title_row.addStretch()
@@ -721,9 +743,9 @@ class FullLedgerDialog(QDialog):
         # Stats summary
         stats_row = QHBoxLayout()
         self.total_in_val = QLabel("+0")
-        self.total_in_val.setStyleSheet(f"color: {RED_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace;")
+        self.total_in_val.setStyleSheet(f"color: {RED_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
         in_lbl = QLabel("总收入")
-        in_lbl.setStyleSheet("color: #6B7280; font-size: 12px;")
+        in_lbl.setStyleSheet("color: #6B7280; font-size: 12px; border: none;")
         
         in_box = QVBoxLayout()
         in_box.addWidget(in_lbl)
@@ -733,9 +755,9 @@ class FullLedgerDialog(QDialog):
         stats_row.addSpacing(40)
         
         self.total_out_val = QLabel("0")
-        self.total_out_val.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace;")
+        self.total_out_val.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
         out_lbl = QLabel("总支出")
-        out_lbl.setStyleSheet("color: #6B7280; font-size: 12px;")
+        out_lbl.setStyleSheet("color: #6B7280; font-size: 12px; border: none;")
         
         out_box = QVBoxLayout()
         out_box.addWidget(out_lbl)
