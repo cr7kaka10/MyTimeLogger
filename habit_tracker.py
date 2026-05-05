@@ -43,7 +43,7 @@ class HabitCard(QFrame):
     def __init__(self, habit_data, status=0, parent=None):
         super().__init__(parent)
         self.habit_data = habit_data
-        self.status = status # 0=未打, 2=成功, -1=失败
+        self.status = status # 0=未打, 2=成功, 1=失败
         self.setObjectName("habitCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._build_ui()
@@ -110,7 +110,7 @@ class HabitCard(QFrame):
             self.check_btn.setText("✓")
             self.check_btn.setStyleSheet(f"QPushButton {{ font-size: 14px; font-weight: bold; color: white; background: {GREEN_ACCENT}; border: none; border-radius: 14px; }}")
             self.title_label.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 14px; font-weight: bold; font-family: 'Microsoft YaHei'; background: transparent; border: none; text-decoration: line-through;")
-        elif self.status == -1:  # 失败
+        elif self.status == 1:  # 失败
             bg = "rgba(191, 97, 106, 0.12)"
             border_c = RED_ACCENT
             self.fail_btn.setText("×")
@@ -303,7 +303,7 @@ class HabitWeeklyView(QWidget):
                 if status == 2:  # 已完成
                     btn.setText("✓")
                     btn.setStyleSheet(f"QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 14px; font-size: 14px; font-weight: bold; }}")
-                elif status == -1: # 失败
+                elif status == 1: # 失败
                     btn.setText("×")
                     btn.setStyleSheet(f"QPushButton {{ background: {RED_ACCENT}; color: white; border: none; border-radius: 14px; font-size: 14px; font-weight: bold; }}")
                 else:
@@ -318,7 +318,7 @@ class HabitWeeklyView(QWidget):
                     # 左键点击：成功/取消
                     btn.clicked.connect(lambda checked, hid=h_id, s=stamp, st=status: self._on_weekly_click(hid, s, st, 2))
                     # 右键点击：失败/取消
-                    btn.rightClicked.connect(lambda hid=h_id, s=stamp, st=status: self._on_weekly_click(hid, s, st, -1))
+                    btn.rightClicked.connect(lambda hid=h_id, s=stamp, st=status: self._on_weekly_click(hid, s, st, 1))
 
                 self.grid.addWidget(btn, r + 1, c + 1, alignment=Qt.AlignmentFlag.AlignCenter)
 
@@ -716,7 +716,7 @@ class HabitTrackerWindow(QWidget):
 
             card = HabitCard(habit_display, status)
             card.check_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, 2))
-            card.fail_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, -1))
+            card.fail_btn.clicked.connect(lambda _, h_id=hid, s=status: self._on_checkin(h_id, today_stamp, s, 1))
             self.habit_cards[hid] = card
             self.habit_layout.insertWidget(self.habit_layout.count() - 1, card)
 
@@ -750,7 +750,7 @@ class HabitTrackerWindow(QWidget):
             if show_effect:
                 from particle_effect import show_success_effect
                 show_success_effect(self)
-        elif new_status == -1:
+        elif new_status == 1:
             self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}")
             self._show_coin_toast(-penalty)
             if show_effect:

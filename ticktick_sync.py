@@ -450,7 +450,7 @@ class TickTickSyncWorker(QObject):
                 
                 for ci in block.get('checkins', []):
                     stamp = str(ci.get('stamp', ''))
-                    status = ci.get('status', -1)
+                    status = ci.get('status', 0)
                     checkins_map[hid][stamp] = status
                     
                     if status == 2:
@@ -495,7 +495,7 @@ class TickTickSyncWorker(QObject):
 
     @pyqtSlot(str, str, int)
     def sync_habit_checkin(self, habit_id: str, stamp: str, status: int = 0):
-        """同步打卡到远端 (stamp 格式: YYYYMMDD, status: 0=完成 2=失败)"""
+        """同步打卡到远端 (stamp 格式: YYYYMMDD, status: 2=完成, 1=跳过/失败, 0=取消)"""
         tt_cfg = self.config.get("ticktick_config", {})
         token = tt_cfg.get("access_token")
         if not token:
