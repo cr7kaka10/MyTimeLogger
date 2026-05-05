@@ -424,13 +424,15 @@ class GoalCard(QFrame):
             reward_item = next((r for r in all_rewards if r['id'] == reward_id), None)
             desc = f"达成目标奖励(兑换项): {reward_item['title'] if reward_item else title}"
             self.db.add_ledger_entry(0, 'goal_reward_item', reward_id, desc)
-            msg = f"恭喜达成目标！\n获得奖励: {reward_item['icon'] if reward_item else ''} {reward_item['title'] if reward_item else title}"
         else:
             prefix = "达成目标惩罚" if amount < 0 else "达成目标奖励"
             self.db.add_ledger_entry(amount, 'goal_reward', self.goal_data['id'], f"{prefix}: {title}")
-            msg = f"目标已确认！\n{'获得' if amount >=0 else '扣除'}奖励: {abs(amount)} {COIN_ICON}"
         
-        QMessageBox.information(self, "🎉 操作成功", msg)
+        from particle_effect import start_coin_explosion, show_success_effect
+        if amount > 0:
+            start_coin_explosion(self.window(), self.action_btn, 5)
+        show_success_effect(self.window())
+        
         self.claimed.emit()
 
 class GoalAddDialog(QDialog):
