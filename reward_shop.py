@@ -714,30 +714,19 @@ class FullLedgerDialog(QDialog):
         self.period_combo.addItems(["最近7天", "最近30天", "本月", "全部"])
         self.period_combo.setStyleSheet("""
             QComboBox {
-                padding: 4px 30px 4px 12px; 
+                padding: 4px 8px; 
                 border: 1px solid #D1D5DB; 
                 border-radius: 8px; 
                 background: white; 
                 color: #374151;
                 font-size: 13px;
             }
-            QComboBox::drop-down {
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 20px;
-                border: none;
-                background: transparent;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                width: 0;
-                height: 0;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid #9CA3AF;
-            }
             QComboBox:hover {
                 border: 1px solid #9CA3AF;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 24px;
             }
         """)
         self.period_combo.currentIndexChanged.connect(self._load_data)
