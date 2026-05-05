@@ -224,6 +224,28 @@ class ActivityPanel(QWidget):
         self.status_label.setStyleSheet("color: #5E81AC; font-family: 'Font Awesome 6 Free', 'Microsoft YaHei'; font-size: 13px; font-weight: bold; background: transparent; border: none;")
         bottom_layout.addWidget(self.status_label)
 
+        # 新增：金币余额按钮
+        self.coin_btn = QPushButton("💰 0🪙")
+        self.coin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.coin_btn.setStyleSheet("""
+            QPushButton {
+                color: #5E81AC;
+                background: rgba(94, 129, 172, 0.08);
+                border: none;
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 13px;
+                font-weight: bold;
+                font-family: 'Microsoft YaHei';
+            }
+            QPushButton:hover {
+                background: rgba(94, 129, 172, 0.15);
+                color: #81A1C1;
+            }
+        """)
+        self.coin_btn.clicked.connect(self._on_coin_clicked)
+        bottom_layout.addWidget(self.coin_btn)
+
         bottom_layout.addStretch()
 
         self.claim_btn = QPushButton("🎁 待领取(0)")
@@ -416,11 +438,11 @@ class ActivityPanel(QWidget):
                 timer_text = f"⏱ {m:02d}:{s:02d}"
             
             cycle_text = f"🎯 {cycle_mins:02d}:{cycle_secs:02d}"
-            coin_text = self._coin_text()
-            self.status_label.setText(f"{status_text}     {timer_text}     {cycle_text}     {coin_text}")
+            self.status_label.setText(f"{status_text}     {timer_text}     {cycle_text}")
+            self._update_coin_btn()
         elif self.logic.is_paused:
-            coin_text = self._coin_text()
-            self.status_label.setText(f"⏸️ 已暂停     🎯 {cycle_mins:02d}:{cycle_secs:02d}     {coin_text}")
+            self.status_label.setText(f"⏸️ 已暂停     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
+            self._update_coin_btn()
         elif self.logic.current_state == "long_breaking":
             if self.logic.timer.isActive():
                 remaining_ms = self.logic.timer.remainingTime()
@@ -436,8 +458,20 @@ class ActivityPanel(QWidget):
             else:
                 self.status_label.setText("☕ 短暂休息")
         else:
-            coin_text = self._coin_text()
-            self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}     {coin_text}")
+            self.status_label.setText(f"闲置     🎯 {cycle_mins:02d}:{cycle_secs:02d}")
+            self._update_coin_btn()
+
+    def _update_coin_btn(self):
+        """同步更新金币按钮文本"""
+        coin_text = self._coin_text()
+        if coin_text:
+            self.coin_btn.setText(coin_text)
+
+    def _on_coin_clicked(self):
+        """点击金币按钮打开完整流水"""
+        from reward_shop import FullLedgerDialog
+        dialog = FullLedgerDialog(self)
+        dialog.exec()
 
     def _coin_text(self):
         """获取金币余额文本及更新待领取按钮"""
