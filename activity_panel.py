@@ -230,17 +230,16 @@ class ActivityPanel(QWidget):
         self.coin_btn.setStyleSheet("""
             QPushButton {
                 color: #5E81AC;
-                background: rgba(94, 129, 172, 0.08);
+                background: transparent;
                 border: none;
                 border-radius: 6px;
-                padding: 2px 8px;
+                padding: 2px 4px;
                 font-size: 13px;
                 font-weight: bold;
                 font-family: 'Microsoft YaHei';
             }
             QPushButton:hover {
-                background: rgba(94, 129, 172, 0.15);
-                color: #81A1C1;
+                background: rgba(94, 129, 172, 0.08);
             }
         """)
         self.coin_btn.clicked.connect(self._on_coin_clicked)
@@ -469,8 +468,12 @@ class ActivityPanel(QWidget):
 
     def _on_coin_clicked(self):
         """点击金币按钮打开完整流水"""
+        if getattr(self, '_db', None) is None:
+            from database import StudyLogger
+            self._db = StudyLogger({})
+            
         from reward_shop import FullLedgerDialog
-        dialog = FullLedgerDialog(self)
+        dialog = FullLedgerDialog(self._db, self)
         dialog.exec()
 
     def _coin_text(self):
