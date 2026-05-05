@@ -1009,6 +1009,23 @@ class StudyLogger:
         except Exception:
             return False
 
+    def update_goal(self, goal_id, **kwargs):
+        """更新目标配置"""
+        if not kwargs: return False
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            fields = ", ".join([f"{k} = ?" for k in kwargs.keys()])
+            values = list(kwargs.values())
+            values.append(goal_id)
+            cursor.execute(f"UPDATE goals SET {fields} WHERE id = ?", values)
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"更新目标失败: {e}")
+            return False
+
     def get_all_goals(self):
         """获取所有激活的目标"""
         try:
