@@ -10,11 +10,13 @@
 """
 
 import logging
-from datetime import datetime
+import calendar
+from datetime import datetime, date, timedelta
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QProgressBar, QScrollArea, QFrame, QDialog, QComboBox, 
-    QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QGridLayout, QStackedWidget
+    QLineEdit, QSpinBox, QDoubleSpinBox, QMessageBox, QGridLayout, QStackedWidget,
+    QGraphicsOpacityEffect
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer, QPoint
 from PyQt6.QtGui import QIcon, QFont, QColor
@@ -31,6 +33,212 @@ RED_ACCENT = "#BF616A"
 
 COIN_ICON = "🪙"
 
+class GoalStatsDialog(QDialog):
+    """目标历史完成情况统计图 (月视图/周视图)"""
+    def __init__(self, goal_data, db, parent=None):
+        super().__init__(parent)
+        self.goal_data = goal_data
+        self.db = db
+        self.current_date = date.today()
+        self.view_mode = "month" # "month" or "week"
+        
+        self.setWindowTitle(f"目标统计: {goal_data['title']}")
+        self.setMinimumSize(400, 420)
+        self.setStyleSheet(f"""
+            QDialog {{ background: {BG_COLOR}; }}
+            QLabel {{ color: {TEXT_PRIMARY}; font-size: 13px; font-family: 'Microsoft YaHei'; }}
+            QPushButton {{ background: #F0F2F5; color: {TEXT_PRIMARY}; border: none; border-radius: 4px; padding: 6px 12px; font-weight: bold; }}
+            QPushButton:hover {{ background: #E5E9F0; }}
+            QPushButton:checked {{ background: {BLUE_ACCENT}; color: white; }}
+        """)
+        self._build_ui()
+        self._refresh_data()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # 头部：日期导航和视图切换
+        header = QHBoxLayout()
+        self.prev_btn = QPushButton("◀")
+        self.prev_btn.setFixedSize(32, 32)
+        self.prev_btn.clicked.connect(self._prev_period)
+        
+        self.date_lbl = QLabel()
+        self.date_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.date_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; min-width: 130px;")
+        
+        self.next_btn = QPushButton("▶")
+        self.next_btn.setFixedSize(32, 32)
+        self.next_btn.clicked.connect(self._next_period)
+
+        self.week_btn = QPushButton("周")
+        self.week_btn.setCheckable(True)
+        self.week_btn.clicked.connect(lambda: self._set_view("week"))
+        
+        self.month_btn = QPushButton("月")
+        self.month_btn.setCheckable(True)
+        self.month_btn.setChecked(True)
+        self.month_btn.clicked.connect(lambda: self._set_view("month"))
+
+        header.addWidget(self.prev_btn)
+        header.addWidget(self.date_lbl)
+        header.addWidget(self.next_btn)
+        header.addStretch()
+        header.addWidget(self.week_btn)
+        header.addWidget(self.month_btn)
+        layout.addLayout(header)
+
+        # 主视图网格区
+        self.grid_widget = QWidget()
+        self.grid_layout = QGridLayout(self.grid_widget)
+        self.grid_layout.setSpacing(8)
+        self.grid_layout.setContentsMargins(0, 10, 0, 10)
+        layout.addWidget(self.grid_widget, 1)
+        
+        # 图例区
+        legend = QHBoxLayout()
+        operator = self.goal_data.get('operator', '>=')
+        legend.addWidget(QLabel("图例:"))
+        
+        box1 = QFrame(); box1.setFixedSize(14, 14); box1.setStyleSheet(f"background: {GREEN_ACCENT}; border-radius: 3px;")
+        legend.addWidget(box1)
+        legend.addWidget(QLabel("达标"))
+        
+        box2 = QFrame(); box2.setFixedSize(14, 14); box2.setStyleSheet("background: #ECEFF4; border-radius: 3px;")
+        legend.addWidget(box2)
+        legend.addWidget(QLabel("未达标/无"))
+        
+        if operator == '<=':
+            box3 = QFrame(); box3.setFixedSize(14, 14); box3.setStyleSheet(f"background: {RED_ACCENT}; border-radius: 3px;")
+            legend.addWidget(box3)
+            legend.addWidget(QLabel("超限失败"))
+            
+        legend.addStretch()
+        layout.addLayout(legend)
+
+    def _set_view(self, view):
+        self.view_mode = view
+        if view == "month":
+            self.month_btn.setChecked(True)
+            self.week_btn.setChecked(False)
+        else:
+            self.week_btn.setChecked(True)
+            self.month_btn.setChecked(False)
+        self.current_date = date.today()
+        self._refresh_data()
+
+    def _prev_period(self):
+        if self.view_mode == "month":
+            first = self.current_date.replace(day=1)
+            self.current_date = first - timedelta(days=1)
+        else:
+            self.current_date -= timedelta(days=7)
+        self._refresh_data()
+
+    def _next_period(self):
+        if self.view_mode == "month":
+            _, last = calendar.monthrange(self.current_date.year, self.current_date.month)
+            self.current_date = self.current_date.replace(day=last) + timedelta(days=1)
+        else:
+            self.current_date += timedelta(days=7)
+        self._refresh_data()
+
+    def _refresh_data(self):
+        # 清空布局
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+                
+        # 计算日期范围
+        dates = []
+        if self.view_mode == "month":
+            self.date_lbl.setText(self.current_date.strftime("%Y年%m月"))
+            year, month = self.current_date.year, self.current_date.month
+            _, last_day = calendar.monthrange(year, month)
+            start_date = date(year, month, 1)
+            end_date = date(year, month, last_day)
+            
+            # 补齐整周（周一为起）
+            first_weekday = start_date.weekday()
+            current = start_date - timedelta(days=first_weekday)
+            while current <= end_date or current.weekday() != 0:
+                dates.append(current)
+                current += timedelta(days=1)
+        else:
+            start_date = self.current_date - timedelta(days=self.current_date.weekday())
+            end_date = start_date + timedelta(days=6)
+            self.date_lbl.setText(f"{start_date.strftime('%m.%d')} - {end_date.strftime('%m.%d')}")
+            dates = [start_date + timedelta(days=i) for i in range(7)]
+
+        # 拉取数据
+        start_str = dates[0].strftime("%Y-%m-%d")
+        end_str = dates[-1].strftime("%Y-%m-%d")
+        stats = self.db.get_goal_daily_stats(self.goal_data, start_str, end_str)
+
+        # 绘制表头
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        for col, wd in enumerate(weekdays):
+            lbl = QLabel(wd)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-weight: bold; font-size: 13px; padding-bottom: 5px;")
+            self.grid_layout.addWidget(lbl, 0, col)
+
+        target = self.goal_data['target_value']
+        operator = self.goal_data.get('operator', '>=')
+        metric_suffix = "m" if self.goal_data['metric'] == 'duration' else "次"
+
+        # 绘制格子
+        row = 1
+        for i, d in enumerate(dates):
+            col = d.weekday()
+            val = stats.get(d.strftime("%Y-%m-%d"), 0)
+            
+            frame = QFrame()
+            frame.setFixedSize(44, 44)
+            
+            is_current_month = d.month == self.current_date.month if self.view_mode == "month" else True
+            
+            bg_color = "#ECEFF4" # 默认底色（未达标或无）
+            if not is_current_month:
+                bg_color = "transparent"
+            elif val > 0 or operator == '<=':
+                # 评估进度
+                if operator == '>=':
+                    if val >= target: bg_color = GREEN_ACCENT
+                    elif val > 0: bg_color = "#D8DEE9" # 进度未满，浅灰
+                else:
+                    if val <= target: bg_color = GREEN_ACCENT
+                    else: bg_color = RED_ACCENT # 超限失败
+                    
+            if not is_current_month and bg_color != "transparent":
+                # 非当月但为补齐的天数，降低透明度
+                op = QGraphicsOpacityEffect()
+                op.setOpacity(0.3)
+                frame.setGraphicsEffect(op)
+
+            border_style = ""
+            if d == date.today():
+                border_style = f"border: 2px solid {BLUE_ACCENT};"
+                
+            frame.setStyleSheet(f"QFrame {{ background: {bg_color}; border-radius: 6px; {border_style} }}")
+            frame.setToolTip(f"{d.strftime('%Y-%m-%d')}\n记录值: {int(val)}{metric_suffix}\n目标: {operator}{int(target)}{metric_suffix}")
+            
+            flayout = QVBoxLayout(frame)
+            flayout.setContentsMargins(0,0,0,0)
+            day_lbl = QLabel(str(d.day))
+            day_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            text_color = '#FFFFFF' if bg_color in [GREEN_ACCENT, RED_ACCENT] else TEXT_PRIMARY
+            if not is_current_month and bg_color == "transparent": text_color = "#D8DEE9"
+            day_lbl.setStyleSheet(f"color: {text_color}; font-size: 13px; font-weight: bold; background: transparent; border: none;")
+            flayout.addWidget(day_lbl)
+            
+            self.grid_layout.addWidget(frame, row, col)
+            if col == 6:
+                row += 1
+
 class GoalCard(QFrame):
     """单个目标展示卡片"""
     claimed = pyqtSignal() # 领取成功信号
@@ -40,6 +248,8 @@ class GoalCard(QFrame):
         self.goal_data = goal_data
         self.db = db
         self.setObjectName("goalCard")
+        if self.goal_data.get('period') != 'per_session':
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._build_ui()
 
     def _build_ui(self):
@@ -187,6 +397,12 @@ class GoalCard(QFrame):
                 self.fail_btn.clicked.connect(lambda: self._on_fail(claim_id))
             else:
                 self.fail_btn.hide()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.goal_data['period'] != 'per_session':
+            dialog = GoalStatsDialog(self.goal_data, self.db, self)
+            dialog.exec()
+        super().mousePressEvent(event)
 
     def _on_fail(self, claim_id):
         penalty = self.goal_data.get('penalty_coins', self.goal_data['reward_coins'])

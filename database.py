@@ -1140,6 +1140,36 @@ class StudyLogger:
             logging.error(f"计算目标进度失败: {e}")
             return 0, False, ""
 
+    def get_goal_daily_stats(self, goal_dict, start_str, end_str):
+        """
+        获取目标在指定日期范围内的每日进度统计。
+        返回格式: {'YYYY-MM-DD': value}
+        """
+        metric = goal_dict['metric']
+        cat_id = goal_dict['category_id']
+        period = goal_dict['period']
+        
+        # 单次目标不提供每日趋势
+        if period == 'per_session':
+            return {}
+
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            if metric == 'duration':
+                cursor.execute("SELECT date, SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date BETWEEN ? AND ? GROUP BY date", (cat_id, start_str, end_str))
+            else:
+                cursor.execute("SELECT date, COUNT(*) FROM study_sessions WHERE category_id = ? AND date BETWEEN ? AND ? GROUP BY date", (cat_id, start_str, end_str))
+                
+            rows = cursor.fetchall()
+            conn.close()
+            
+            return {r[0]: r[1] for r in rows}
+        except Exception as e:
+            logging.error(f"获取目标趋势失败: {e}")
+            return {}
+
     def get_task_coins(self, priority):
         """根据任务优先级返回积分收益"""
         diff = self.PRIORITY_TO_DIFFICULTY.get(priority, 'trivial')
