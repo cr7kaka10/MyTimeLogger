@@ -98,9 +98,15 @@ class RewardAddDialog(QDialog):
         try:
             from database import StudyLogger
             db = StudyLogger({})
+            # 1. 加载任务
             tasks = db.get_all_active_tasks()
             for t in tasks:
-                self.task_combo.addItem(t.get('title', '未知任务'), t.get('id'))
+                self.task_combo.addItem(f"📋 {t.get('title', '未知任务')}", t.get('id'))
+                
+            # 2. 加载目标
+            goals = db.get_all_goals()
+            for g in goals:
+                self.task_combo.addItem(f"🎯 {g.get('title', '未知目标')}", f"goal_{g.get('id')}")
         except Exception:
             pass
 
@@ -203,10 +209,13 @@ class RewardCard(QFrame):
             db = StudyLogger({})
             is_completed = db.is_task_completed(unlock_task_id)
             
-            price_lbl = QLabel("任务专属")
-            price_lbl.setStyleSheet(f"color: {GREEN_HOVER}; font-size: 11px; font-weight: bold; background: rgba(163, 190, 140, 0.15); border-radius: 4px; padding: 2px 6px;")
+            label_text = "🎯 目标达成" if is_completed else ("🎯 目标专属" if unlock_task_id.startswith("goal_") else "📋 任务专属")
+            price_lbl = QLabel(label_text)
+            price_lbl.setStyleSheet(f"color: {GREEN_HOVER if is_completed else TEXT_SECONDARY}; font-size: 11px; font-weight: bold; background: {GREEN_ACCENT if is_completed else '#E5E9F0'}; border-radius: 4px; padding: 2px 6px;")
+            if not is_completed and unlock_task_title:
+                price_lbl.setToolTip(f"需先完成: {unlock_task_title}")
             
-            self.buy_btn = QPushButton("解锁")
+            self.buy_btn = QPushButton("领取" if is_completed else "未达成")
             self.buy_btn.setFixedSize(52, 28)
             if is_completed:
                 self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)

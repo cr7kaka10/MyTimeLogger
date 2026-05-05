@@ -911,7 +911,14 @@ class StudyLogger:
                 # 如果任务存在于本地表中，必须是完成状态 (2)
                 return row[0] == 2
                 
-            # 如果本地不存在，则检查外部领取记录（包括任务和习惯）
+            # 3. 检查目标完成记录 (ID 以 goal_ 开头)
+            if ticktick_id.startswith("goal_"):
+                cursor.execute("SELECT 1 FROM external_rewards WHERE id LIKE ?", (f"{ticktick_id}%",))
+                if cursor.fetchone():
+                    conn.close()
+                    return True
+
+            # 4. 检查外部领取记录（包括任务和习惯）
             cursor.execute("SELECT 1 FROM external_rewards WHERE id = ? OR id = ?", (f"task_{ticktick_id}", f"habit_{ticktick_id}"))
             if cursor.fetchone():
                 conn.close()
