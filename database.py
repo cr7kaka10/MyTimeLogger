@@ -898,6 +898,22 @@ class StudyLogger:
         except Exception:
             return False
 
+    def update_reward(self, reward_id, title, icon='🎁', price=10, description='', unlock_task_id=None, unlock_task_title=None):
+        """修改奖励商品配置"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE rewards SET title=?, icon=?, price=?, description=?, unlock_task_id=?, unlock_task_title=? WHERE id=?",
+                (title, icon, price, description, unlock_task_id, unlock_task_title, reward_id)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"修改奖励失败: {e}")
+            return False
+
     def is_task_completed(self, ticktick_id: str) -> bool:
         """检查指定任务是否已完成（本地或外部记录）"""
         try:

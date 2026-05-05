@@ -51,11 +51,12 @@ COIN_ICON = "🪙"
 
 
 class RewardAddDialog(QDialog):
-    """新增奖励弹窗"""
-    def __init__(self, parent=None):
+    """新增/修改奖励弹窗"""
+    def __init__(self, parent=None, reward_data=None):
         super().__init__(parent)
-        self.selected_icon = '🎁'
-        self.setWindowTitle("新增奖励")
+        self.reward_data = reward_data
+        self.selected_icon = reward_data.get('icon', '🎁') if reward_data else '🎁'
+        self.setWindowTitle("修改奖励" if reward_data else "新增奖励")
         self.setFixedSize(340, 260)
         self.setStyleSheet(f"""
             QDialog {{ background: {BG_LIGHT}; font-family: 'Microsoft YaHei'; }}
@@ -109,6 +110,18 @@ class RewardAddDialog(QDialog):
                 self.task_combo.addItem(f"🎯 {g.get('title', '未知目标')}", f"goal_{g.get('id')}")
         except Exception:
             pass
+
+        if self.reward_data:
+            self.name_input.setText(self.reward_data.get('title', ''))
+            price = self.reward_data.get('price', 10)
+            self.price_input.setText(str(price) if price else '0')
+            self.desc_input.setText(self.reward_data.get('description', ''))
+            
+            unlock_id = self.reward_data.get('unlock_task_id')
+            if unlock_id:
+                idx = self.task_combo.findData(unlock_id)
+                if idx >= 0:
+                    self.task_combo.setCurrentIndex(idx)
 
         form.addRow("名称:", self.name_input)
         form.addRow("图标:", icon_row)
@@ -481,10 +494,29 @@ class RewardShopWindow(QWidget):
             QMenu::item:selected {{ background-color: rgba(235, 203, 139, 0.1); color: {GOLD_HOVER}; border-radius: 4px; }}
         """)
 
+        edit_action = QAction("✏️ 修改", self)
+        edit_action.triggered.connect(lambda: self._on_edit_reward(reward))
+        menu.addAction(edit_action)
+
         delete_action = QAction("🗑️ 删除", self)
         delete_action.triggered.connect(lambda: self._on_delete_reward(reward))
         menu.addAction(delete_action)
         menu.exec(card.mapToGlobal(pos))
+
+    def _on_edit_reward(self, reward):
+        dialog = RewardAddDialog(self, reward_data=reward)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            self.db.update_reward(
+                reward_id=reward['id'],
+                title=data['title'],
+                icon=data['icon'],
+                price=data['price'],
+                description=data['description'],
+                unlock_task_id=data.get('unlock_task_id'),
+                unlock_task_title=data.get('unlock_task_title')
+            )
+            self._refresh()
 
     def _on_delete_reward(self, reward):
         reply = QMessageBox.question(
