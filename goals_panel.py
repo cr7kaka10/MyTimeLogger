@@ -435,6 +435,7 @@ class GoalCard(QFrame):
         
         self.claimed.emit()
 
+class GoalAddDialog(QDialog):
     """新增/修改目标对话框"""
     def __init__(self, db, category_manager, initial_data=None, parent=None):
         super().__init__(parent)
