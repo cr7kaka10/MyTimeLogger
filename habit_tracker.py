@@ -597,11 +597,34 @@ class HabitTrackerWindow(QWidget):
         unclaimed = self.db.get_unclaimed_rewards()
         if not unclaimed:
             return
+        from datetime import datetime
         ids = [i['id'] for i in unclaimed]
-        names = [i.get('item_name', '未知项') for i in unclaimed]
+        desc_parts = []
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        
+        for item in unclaimed:
+            name = item.get('item_name', '未知项')
+            try:
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                placeholder = "%s" if self.db.db_type == "mysql" else "?"
+                sql = f"SELECT SUM(net_duration_minutes) FROM study_sessions WHERE date = {placeholder} AND session_summary LIKE {placeholder}"
+                cursor.execute(sql, (today_str, f"%【{name}】%"))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    duration = round(float(row[0]))
+                    if duration > 0:
+                        desc_parts.append(f"{name}({duration}min)")
+                        conn.close()
+                        continue
+                conn.close()
+            except:
+                pass
+            desc_parts.append(name)
+            
         claimed_coins = self.db.claim_rewards(ids)
         if claimed_coins != 0:
-            desc = "领取外部奖励: " + ", ".join(names)
+            desc = "领取外部奖励: " + ", ".join(desc_parts)
             if len(desc) > 100:
                 desc = desc[:97] + "..."
             self.db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
