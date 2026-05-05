@@ -207,7 +207,8 @@ class RewardCard(QFrame):
         if unlock_task_id:
             from database import StudyLogger
             db = StudyLogger({})
-            is_completed = db.is_task_completed(unlock_task_id)
+            available_count = db.get_available_unlocks(unlock_task_id, self.reward_data.get('id'))
+            is_completed = available_count > 0
             
             label_text = "🎯 目标达成" if is_completed else ("🎯 目标专属" if unlock_task_id.startswith("goal_") else "📋 任务专属")
             price_lbl = QLabel(label_text)
@@ -215,8 +216,9 @@ class RewardCard(QFrame):
             if not is_completed and unlock_task_title:
                 price_lbl.setToolTip(f"需先完成: {unlock_task_title}")
             
-            self.buy_btn = QPushButton("领取" if is_completed else "未达成")
-            self.buy_btn.setFixedSize(52, 28)
+            btn_text = f"领取({available_count})" if is_completed else "未达成"
+            self.buy_btn = QPushButton(btn_text)
+            self.buy_btn.setFixedSize(62, 28)
             if is_completed:
                 self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 self.buy_btn.setStyleSheet(f"""

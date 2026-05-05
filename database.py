@@ -911,15 +911,12 @@ class StudyLogger:
                 # 如果任务存在于本地表中，必须是完成状态 (2)
                 return row[0] == 2
                 
-            # 3. 检查目标完成记录 (ID 以 goal_ 开头)
+            # 1. 检查目标解锁额度 (ID 以 goal_ 开头)
             if ticktick_id.startswith("goal_"):
-                # 必须匹配 goal_ID_ 这种格式，防止 goal_1 匹配到 goal_10
-                cursor.execute("SELECT 1 FROM external_rewards WHERE id LIKE ?", (f"{ticktick_id}_%",))
-                if cursor.fetchone():
-                    conn.close()
-                    return True
+                # 注意：此处为向后兼容保留，建议直接调用 get_available_unlocks
+                return False
 
-            # 4. 检查外部领取记录（包括任务和习惯）
+            # 2. 检查外部领取记录（包括任务和习惯）
             cursor.execute("SELECT 1 FROM external_rewards WHERE id = ? OR id = ?", (f"task_{ticktick_id}", f"habit_{ticktick_id}"))
             if cursor.fetchone():
                 conn.close()
@@ -929,6 +926,43 @@ class StudyLogger:
             return False
         except Exception:
             return False
+
+    def get_available_unlocks(self, unlock_task_id: str, reward_id: int) -> int:
+        """
+        计算特定解锁条件剩余的兑换额度。
+        原理：目标达成总次数（扣除惩罚记录） - 该奖励已被兑换的总次数
+        """
+        if not unlock_task_id:
+            return 0
+            
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # 1. 计算达成总次数
+            achieved_count = 0
+            if unlock_task_id.startswith("goal_"):
+                # 对于目标，查找 external_rewards 中所有大于等于0金币（排除惩罚）的记录
+                cursor.execute("SELECT COUNT(*) FROM external_rewards WHERE id LIKE ? AND coins >= 0", (f"{unlock_task_id}_%",))
+                achieved_count = cursor.fetchone()[0] or 0
+            else:
+                # 对于任务或习惯，通常只能完成一次
+                cursor.execute("SELECT 1 FROM tasks WHERE ticktick_id = ? AND status = 2", (unlock_task_id,))
+                if cursor.fetchone():
+                    achieved_count = 1
+                else:
+                    cursor.execute("SELECT COUNT(*) FROM external_rewards WHERE id = ? OR id = ?", (f"task_{unlock_task_id}", f"habit_{unlock_task_id}"))
+                    achieved_count = cursor.fetchone()[0] or 0
+                    
+            # 2. 计算已兑换次数
+            cursor.execute("SELECT COUNT(*) FROM reward_ledger WHERE source_type = 'reward_unlock' AND source_id = ?", (reward_id,))
+            used_count = cursor.fetchone()[0] or 0
+            
+            conn.close()
+            return max(0, achieved_count - used_count)
+        except Exception as e:
+            logging.error(f"获取解锁额度失败: {e}")
+            return 0
 
     def get_all_rewards(self):
         """获取所有激活的奖励项目"""
@@ -962,12 +996,13 @@ class StudyLogger:
             unlock_task_title = reward['unlock_task_title'] if 'unlock_task_title' in reward.keys() else None
 
             if unlock_task_id:
-                # 这是一个任务解锁型奖励
-                conn.close() # is_task_completed 会开新连接
-                if not self.is_task_completed(unlock_task_id):
-                    return False, f'需要先完成任务「{unlock_task_title or "未知任务"}」才能兑换此奖励！'
+                # 这是一个任务/目标解锁型奖励
+                conn.close() 
+                available = self.get_available_unlocks(unlock_task_id, reward_id)
+                if available <= 0:
+                    return False, f'需要先完成条件「{unlock_task_title or "未知"}」才能兑换（或剩余额度不足）！'
                 
-                # 如果已完成任务，兑换成功，但不扣积分，记录0金币的流水
+                # 如果有剩余额度，兑换成功，但不扣积分，记录0金币的流水
                 now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 conn = self._get_connection()
                 cursor = conn.cursor()
