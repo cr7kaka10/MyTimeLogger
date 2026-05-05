@@ -728,12 +728,9 @@ class FullLedgerDialog(QDialog):
                 border: none;
             }
             QComboBox::down-arrow {
-                image: none;
-                width: 0;
-                height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid #6B7280;
+                image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%236B7280'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+                width: 14px;
+                height: 14px;
                 margin-right: 8px;
             }
             QComboBox:hover {
