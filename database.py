@@ -800,6 +800,12 @@ class StudyLogger:
 
     def get_unclaimed_rewards(self) -> list:
         """获取所有待领取的外部奖励"""
+        import time
+        now = time.time()
+        if not hasattr(self, '_last_auto_settle') or now - self._last_auto_settle > 10:
+            self.auto_settle_goals()
+            self._last_auto_settle = now
+            
         try:
             self._migrate_habits_table()
             conn = self._get_connection()
@@ -826,7 +832,7 @@ class StudyLogger:
             row = cursor.fetchone()
             total_coins = float(row[0] or 0)
             
-            if total_coins > 0:
+            if True: # 允许负值（倒扣）
                 cursor.execute(f"UPDATE external_rewards SET status = 1 WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
                 conn.commit()
             conn.close()
@@ -1039,6 +1045,79 @@ class StudyLogger:
         except Exception:
             return []
 
+    def auto_settle_goals(self):
+        """自动结算单次和每日目标（包括成功和失败）"""
+        try:
+            from datetime import date, timedelta
+            today = date.today()
+            yesterday = today - timedelta(days=1)
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM goals WHERE is_active = 1")
+            goals = [dict(r) for r in cursor.fetchall()]
+            
+            for g in goals:
+                g_id, title, cat_id, period, metric = g['id'], g['title'], g['category_id'], g['period'], g['metric']
+                target = g['target_value']
+                operator = g.get('operator', '>=')
+                reward_coins = g['reward_coins']
+                penalty_coins = g.get('penalty_coins', reward_coins)
+                
+                def _issue(claim_id, is_met, fail_if_not_met=False):
+                    cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (claim_id,))
+                    if cursor.fetchone(): return
+                    
+                    amount, desc = 0, ""
+                    if is_met:
+                        amount, desc = reward_coins, f"目标达成: {title}"
+                    elif fail_if_not_met:
+                        amount, desc = -abs(penalty_coins), f"目标未达标: {title}"
+                    else:
+                        return
+                        
+                    if amount != 0:
+                        cursor.execute("INSERT INTO external_rewards (id, item_type, item_name, coins, status, created_at) VALUES (?, 'goal', ?, ?, 0, ?)",
+                                       (claim_id, desc, amount, now_str))
+                
+                if period == 'per_session':
+                    cursor.execute("SELECT id, net_duration_minutes FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, today.strftime('%Y-%m-%d')))
+                    for s_id, s_dur in cursor.fetchall():
+                        is_met = (s_dur >= target) if operator == '>=' else (s_dur <= target)
+                        # 单次目标每次完成后立刻结算（达标给奖励，没达标算失败）
+                        _issue(f"goal_{g_id}_session_{s_id}", is_met, fail_if_not_met=True)
+                
+                elif period == 'daily':
+                    for d in [yesterday, today]:
+                        d_str = d.strftime('%Y-%m-%d')
+                        if metric == 'duration':
+                            cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, d_str))
+                        else:
+                            cursor.execute("SELECT COUNT(*) FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, d_str))
+                        val = cursor.fetchone()[0] or 0.0
+                        
+                        is_met = (val >= target) if operator == '>=' else (val <= target)
+                        claim_id = f"goal_{g_id}_{d_str.replace('-', '')}"
+                        
+                        if d == yesterday:
+                            # 昨天已结束，无论成败均结算
+                            _issue(claim_id, is_met, fail_if_not_met=True)
+                        else:
+                            # 今天：如果当前已经达标（对于>=），直接提前发放奖励
+                            if operator == '>=' and is_met:
+                                _issue(claim_id, True)
+                            # 如果当前已经失败（对于<=），直接发放惩罚
+                            elif operator == '<=' and not is_met:
+                                _issue(claim_id, False, fail_if_not_met=True)
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logging.error(f"目标自动结算失败: {e}")
+
     def get_goal_progress(self, goal_dict, active_session_info=None):
         """计算目标的当前进度"""
         from datetime import date, timedelta
@@ -1068,6 +1147,7 @@ class StudyLogger:
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
         operator = goal_dict.get('operator', '>=')
+        target = goal_dict.get('target_value', 0)
 
         try:
             conn = self._get_connection()
