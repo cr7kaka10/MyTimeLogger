@@ -449,7 +449,7 @@ class ActivityPanel(QWidget):
             unclaimed = self._db.get_unclaimed_rewards()
             if unclaimed:
                 total_coins = sum(r.get('coins', 0) for r in unclaimed)
-                self.claim_btn.setText(f"🎁 待领取({total_coins:g}🪙)")
+                self.claim_btn.setText(f"🎁 待领取({round(total_coins, 2):g}🪙)")
                 self.claim_btn.show()
             else:
                 self.claim_btn.hide()
@@ -488,7 +488,7 @@ class ActivityPanel(QWidget):
         from PyQt6.QtCore import QPropertyAnimation, QEasingCurve, QPoint
         sign = '+' if coins > 0 else ''
         color = "#D08770" if coins > 0 else "#BF616A"
-        toast = QLabel(f"{sign}{coins}🪙", self)
+        toast = QLabel(f"{sign}{round(coins, 2):g}🪙", self)
         toast.setStyleSheet(f"color: {color}; font-size: 24px; font-weight: bold; background: transparent;")
         toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toast.setFixedSize(160, 40)

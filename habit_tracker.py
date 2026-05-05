@@ -588,7 +588,7 @@ class HabitTrackerWindow(QWidget):
         unclaimed = self.db.get_unclaimed_rewards()
         if unclaimed:
             total_coins = sum(r.get('coins', 0) for r in unclaimed)
-            self.claim_btn.setText(f"🎁 待领取({total_coins:g}🪙)")
+            self.claim_btn.setText(f"🎁 待领取({round(total_coins, 2):g}🪙)")
             self.claim_btn.show()
         else:
             self.claim_btn.hide()
@@ -751,7 +751,7 @@ class HabitTrackerWindow(QWidget):
         """积分变动 toast 动画"""
         sign = '+' if coins > 0 else ''
         color = GREEN_ACCENT if coins > 0 else RED_ACCENT
-        toast = QLabel(f"{sign}{coins}{COIN_ICON}", self)
+        toast = QLabel(f"{sign}{round(coins, 2):g}{COIN_ICON}", self)
         toast.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold; background: transparent;")
         toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toast.setFixedSize(120, 30)

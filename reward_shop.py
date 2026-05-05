@@ -376,6 +376,7 @@ class RewardShopWindow(QWidget):
         else:
             for entry in history:
                 amt = entry['amount']
+                amt_disp = f"{round(amt, 2):g}"
                 sign = '+' if amt > 0 else ''
                 color = GREEN_ACCENT if amt > 0 else RED_ACCENT
                 desc = entry.get('description', '')
@@ -385,7 +386,7 @@ class RewardShopWindow(QWidget):
                     time_str = dt.strftime('%H:%M')
                 except Exception:
                     pass
-                row = QLabel(f"<span style='color:{color}; font-weight:bold;'>{sign}{amt}{COIN_ICON}</span> &nbsp; {desc} &nbsp; <span style='color:#999;'>{time_str}</span>")
+                row = QLabel(f"<span style='color:{color}; font-weight:bold;'>{sign}{amt_disp}{COIN_ICON}</span> &nbsp; {desc} &nbsp; <span style='color:#999;'>{time_str}</span>")
                 row.setStyleSheet(f"font-size: 11px; color: {TEXT_SECONDARY};")
                 row.setTextFormat(Qt.TextFormat.RichText)
                 self.history_layout.addWidget(row)
