@@ -515,6 +515,138 @@ class RewardShopWindow(QWidget):
         if p:
             self.move(p)
 
+class TimelineHeaderWidget(QWidget):
+    def __init__(self, date_str):
+        super().__init__()
+        self.setFixedHeight(40)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        timeline_area = QWidget()
+        timeline_area.setFixedWidth(40)
+        
+        line = QFrame(timeline_area)
+        line.setStyleSheet("background-color: #E5E7EB;")
+        line.setFixedWidth(2)
+        line.setGeometry(19, 0, 2, 40)
+        
+        dot = QFrame(timeline_area)
+        dot.setFixedSize(14, 14)
+        dot.setGeometry(13, 13, 14, 14)
+        dot.setStyleSheet("background-color: #9CA3AF; border-radius: 7px; border: 3px solid #F9FAFB;")
+        
+        layout.addWidget(timeline_area)
+        
+        lbl = QLabel(date_str)
+        lbl.setStyleSheet("color: #374151; font-size: 14px; font-weight: 900; letter-spacing: 1px;")
+        layout.addWidget(lbl)
+
+class TimelineItemWidget(QWidget):
+    def __init__(self, time_str, raw_desc, amount, is_last=False):
+        super().__init__()
+        self.setFixedHeight(66)
+        
+        tag = ""
+        main_text = raw_desc
+        import re
+        m = re.match(r'^【(.*?)】(.*)', raw_desc)
+        if m:
+            tag = m.group(1)
+            main_text = m.group(2).strip()
+            
+        is_success = "完成" in main_text
+        is_fail = "失败" in main_text
+        main_text = main_text.replace("完成", "").replace("失败", "").strip()
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 20, 8)
+        layout.setSpacing(0)
+        
+        timeline_area = QWidget()
+        timeline_area.setFixedWidth(40)
+        
+        line = QFrame(timeline_area)
+        line.setStyleSheet("background-color: #E5E7EB;")
+        line.setFixedWidth(2)
+        if is_last:
+            line.setGeometry(19, 0, 2, 30) # Only upper half
+        else:
+            line.setGeometry(19, 0, 2, 66)
+        
+        dot = QFrame(timeline_area)
+        dot.setFixedSize(10, 10)
+        dot.setGeometry(15, 24, 10, 10)
+        dot_color = RED_ACCENT if amount > 0 else GREEN_ACCENT
+        dot.setStyleSheet(f"background-color: {dot_color}; border-radius: 5px; border: 2px solid white;")
+        
+        layout.addWidget(timeline_area)
+        
+        card = QFrame()
+        card.setObjectName("TimelineCard")
+        card.setStyleSheet("""
+            QFrame#TimelineCard {
+                background-color: white;
+                border-radius: 8px;
+                border: 1px solid #F3F4F6;
+            }
+            QFrame#TimelineCard:hover {
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+            }
+        """)
+        
+        card_layout = QHBoxLayout(card)
+        card_layout.setContentsMargins(12, 0, 16, 0)
+        
+        time_lbl = QLabel(time_str)
+        time_lbl.setFixedWidth(42)
+        time_lbl.setStyleSheet("color: #9CA3AF; font-size: 12px; font-weight: bold; font-family: 'Consolas', monospace;")
+        card_layout.addWidget(time_lbl)
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(0, 10, 0, 10)
+        content_layout.setSpacing(4)
+        
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+        
+        if tag:
+            tag_lbl = QLabel(tag)
+            if tag == "目标": tag_lbl.setStyleSheet("background-color: #E0F2FE; color: #0369A1; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            elif tag == "习惯": tag_lbl.setStyleSheet("background-color: #F3E8FF; color: #6B21A8; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            elif tag == "清单": tag_lbl.setStyleSheet("background-color: #FEF3C7; color: #B45309; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            else: tag_lbl.setStyleSheet("background-color: #F3F4F6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            top_row.addWidget(tag_lbl)
+            
+        title_lbl = QLabel(main_text)
+        title_lbl.setStyleSheet("color: #1F2937; font-size: 13px; font-weight: 800;")
+        top_row.addWidget(title_lbl)
+        
+        if is_success:
+            status_lbl = QLabel("✓")
+            status_lbl.setStyleSheet(f"color: white; background-color: {RED_ACCENT}; padding: 1px 4px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            top_row.addWidget(status_lbl)
+        elif is_fail:
+            status_lbl = QLabel("✕")
+            status_lbl.setStyleSheet(f"color: white; background-color: {GREEN_ACCENT}; padding: 1px 4px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            top_row.addWidget(status_lbl)
+            
+        top_row.addStretch()
+        content_layout.addLayout(top_row)
+        card_layout.addLayout(content_layout)
+        
+        amt_disp = f"{round(amount, 2):g}"
+        sign = '+' if amount > 0 else ''
+        color = RED_ACCENT if amount > 0 else GREEN_ACCENT
+        
+        amt_lbl = QLabel(f"{sign}{amt_disp}")
+        amt_lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 900; font-family: 'Consolas', monospace;")
+        card_layout.addWidget(amt_lbl)
+        
+        layout.addWidget(card)
+
 class FullLedgerDialog(QDialog):
     """完整流水查询弹窗"""
     def __init__(self, db, parent=None):
@@ -529,35 +661,80 @@ class FullLedgerDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        self.setStyleSheet("background-color: #F9FAFB;")
         
-        # 头部
-        header = QWidget()
-        header.setFixedHeight(60)
-        header.setStyleSheet("background-color: #ECEFF4; border-bottom: 1px solid #D8DEE9;")
-        h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(20, 0, 20, 0)
+        # 头部统计悬浮卡片
+        header_card = QFrame()
+        header_card.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-bottom: 1px solid #E5E7EB;
+            }
+        """)
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(20, 16, 20, 16)
+        header_layout.setSpacing(12)
         
-        title = QLabel("💳 资金明细")
-        title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: bold; font-family: 'Microsoft YaHei';")
-        h_layout.addWidget(title)
+        # Title & Filter
+        title_row = QHBoxLayout()
+        title_lbl = QLabel("💳 资金明细")
+        title_lbl.setStyleSheet(f"color: #1F2937; font-size: 16px; font-weight: bold; font-family: 'Microsoft YaHei';")
+        title_row.addWidget(title_lbl)
         
         self.period_combo = QComboBox()
         self.period_combo.addItems(["最近7天", "最近30天", "本月", "全部"])
-        self.period_combo.setStyleSheet(f"padding: 5px; border: 1px solid #D8DEE9; border-radius: 4px; background: white;")
+        self.period_combo.setStyleSheet("""
+            QComboBox {
+                padding: 4px 12px; 
+                border: 1px solid #D1D5DB; 
+                border-radius: 6px; 
+                background: white; 
+                color: #374151;
+            }
+            QComboBox::drop-down { border: none; }
+        """)
         self.period_combo.currentIndexChanged.connect(self._load_data)
-        h_layout.addStretch()
-        h_layout.addWidget(self.period_combo)
-        layout.addWidget(header)
+        title_row.addStretch()
+        title_row.addWidget(self.period_combo)
+        header_layout.addLayout(title_row)
         
-        # 统计栏
-        self.stats_label = QLabel("总收入: 0 | 总支出: 0")
-        self.stats_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; padding: 10px 20px; background: #F8F9FB;")
-        layout.addWidget(self.stats_label)
+        # Stats summary
+        stats_row = QHBoxLayout()
+        self.total_in_val = QLabel("+0")
+        self.total_in_val.setStyleSheet(f"color: {RED_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace;")
+        in_lbl = QLabel("总收入")
+        in_lbl.setStyleSheet("color: #6B7280; font-size: 12px;")
+        
+        in_box = QVBoxLayout()
+        in_box.addWidget(in_lbl)
+        in_box.addWidget(self.total_in_val)
+        stats_row.addLayout(in_box)
+        
+        stats_row.addSpacing(40)
+        
+        self.total_out_val = QLabel("0")
+        self.total_out_val.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace;")
+        out_lbl = QLabel("总支出")
+        out_lbl.setStyleSheet("color: #6B7280; font-size: 12px;")
+        
+        out_box = QVBoxLayout()
+        out_box.addWidget(out_lbl)
+        out_box.addWidget(self.total_out_val)
+        stats_row.addLayout(out_box)
+        stats_row.addStretch()
+        
+        header_layout.addLayout(stats_row)
+        layout.addWidget(header_card)
         
         # 流水列表
         self.list_widget = QListWidget()
         self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
-        self.list_widget.setStyleSheet(f"QListWidget::item {{ border-bottom: 1px solid #F0F2F5; padding: 12px 20px; }}")
+        self.list_widget.setStyleSheet("""
+            QListWidget { background-color: #F9FAFB; }
+            QListWidget::item { padding: 0px; }
+            QListWidget::item:selected { background: transparent; }
+        """)
+        self.list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         layout.addWidget(self.list_widget)
         
     def _load_data(self):
@@ -583,17 +760,18 @@ class FullLedgerDialog(QDialog):
             item = QListWidgetItem("暂无流水记录")
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.list_widget.addItem(item)
-            self.stats_label.setText("总收入: 0 | 总支出: 0")
+            self.total_in_val.setText("+0")
+            self.total_out_val.setText("0")
             return
             
         total_in = sum(e['amount'] for e in filtered if e['amount'] > 0)
         total_out = sum(e['amount'] for e in filtered if e['amount'] < 0)
-        self.stats_label.setText(f"总收入: <span style='color:{RED_ACCENT}'>+{round(total_in, 2):g}</span> | 总支出: <span style='color:{GREEN_ACCENT}'>{round(total_out, 2):g}</span>")
-        self.stats_label.setTextFormat(Qt.TextFormat.RichText)
+        self.total_in_val.setText(f"+{round(total_in, 2):g}")
+        self.total_out_val.setText(f"{round(total_out, 2):g}")
         
         current_date_str = None
         
-        for entry in filtered:
+        for i, entry in enumerate(filtered):
             date_header_str = "未知日期"
             time_only_str = ""
             try:
@@ -608,50 +786,19 @@ class FullLedgerDialog(QDialog):
             
             if current_date_str != date_header_str:
                 current_date_str = date_header_str
-                # 插入日期 Header
-                header_widget = QLabel(f"  📅 {current_date_str}")
-                header_widget.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: bold; font-size: 13px; background-color: #F8F9FB; padding: 4px 0px; border-bottom: 1px solid #E5E9F0;")
-                header_widget.setFixedHeight(30)
+                
+                hw = TimelineHeaderWidget(current_date_str)
                 h_item = QListWidgetItem()
-                h_item.setSizeHint(QSize(400, 30))
-                h_item.setFlags(Qt.ItemFlag.NoItemFlags) # 不可选中
+                h_item.setSizeHint(QSize(400, 40))
                 self.list_widget.addItem(h_item)
-                self.list_widget.setItemWidget(h_item, header_widget)
+                self.list_widget.setItemWidget(h_item, hw)
             
             amt = entry['amount']
-            amt_disp = f"{round(amt, 2):g}"
-            sign = '+' if amt > 0 else ''
-            color = RED_ACCENT if amt > 0 else GREEN_ACCENT
             desc = format_ledger_desc(entry.get('description', '未知流水'))
+            is_last = (i == len(filtered) - 1)
             
-            # 富文本高亮关键词
-            desc = desc.replace("完成", f"<span style='color:{RED_ACCENT};'>完成</span>")
-            desc = desc.replace("失败", f"<span style='color:{GREEN_ACCENT};'>失败</span>")
-            
-            item_widget = QWidget()
-            item_widget.setFixedHeight(46)
-            ilayout = QHBoxLayout(item_widget)
-            ilayout.setContentsMargins(0, 0, 0, 0)
-            
-            left_layout = QVBoxLayout()
-            left_layout.setSpacing(2)
-            desc_lbl = QLabel(desc)
-            desc_lbl.setTextFormat(Qt.TextFormat.RichText)
-            desc_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: bold;")
-            time_lbl = QLabel(time_only_str)
-            time_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
-            left_layout.addWidget(desc_lbl)
-            left_layout.addWidget(time_lbl)
-            
-            amt_lbl = QLabel(f"{sign}{amt_disp}")
-            amt_lbl.setStyleSheet(f"color: {color}; font-size: 15px; font-weight: bold; font-family: 'Consolas', monospace;")
-            amt_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            
-            ilayout.addLayout(left_layout)
-            ilayout.addStretch()
-            ilayout.addWidget(amt_lbl)
-            
+            iw = TimelineItemWidget(time_only_str, desc, amt, is_last)
             item = QListWidgetItem()
-            item.setSizeHint(QSize(400, 46))
+            item.setSizeHint(QSize(400, 66))
             self.list_widget.addItem(item)
-            self.list_widget.setItemWidget(item, item_widget)
+            self.list_widget.setItemWidget(item, iw)
