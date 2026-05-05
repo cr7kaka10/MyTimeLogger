@@ -913,7 +913,8 @@ class StudyLogger:
                 
             # 3. 检查目标完成记录 (ID 以 goal_ 开头)
             if ticktick_id.startswith("goal_"):
-                cursor.execute("SELECT 1 FROM external_rewards WHERE id LIKE ?", (f"{ticktick_id}%",))
+                # 必须匹配 goal_ID_ 这种格式，防止 goal_1 匹配到 goal_10
+                cursor.execute("SELECT 1 FROM external_rewards WHERE id LIKE ?", (f"{ticktick_id}_%",))
                 if cursor.fetchone():
                     conn.close()
                     return True

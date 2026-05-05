@@ -211,7 +211,7 @@ class RewardCard(QFrame):
             
             label_text = "🎯 目标达成" if is_completed else ("🎯 目标专属" if unlock_task_id.startswith("goal_") else "📋 任务专属")
             price_lbl = QLabel(label_text)
-            price_lbl.setStyleSheet(f"color: {GREEN_HOVER if is_completed else TEXT_SECONDARY}; font-size: 11px; font-weight: bold; background: {GREEN_ACCENT if is_completed else '#E5E9F0'}; border-radius: 4px; padding: 2px 6px;")
+            price_lbl.setStyleSheet(f"color: {'white' if is_completed else TEXT_SECONDARY}; font-size: 11px; font-weight: bold; background: {GREEN_ACCENT if is_completed else '#E5E9F0'}; border-radius: 4px; padding: 2px 6px;")
             if not is_completed and unlock_task_title:
                 price_lbl.setToolTip(f"需先完成: {unlock_task_title}")
             
