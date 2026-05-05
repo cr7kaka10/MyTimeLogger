@@ -591,18 +591,42 @@ class FullLedgerDialog(QDialog):
         self.stats_label.setText(f"总收入: <span style='color:{RED_ACCENT}'>+{round(total_in, 2):g}</span> | 总支出: <span style='color:{GREEN_ACCENT}'>{round(total_out, 2):g}</span>")
         self.stats_label.setTextFormat(Qt.TextFormat.RichText)
         
+        current_date_str = None
+        
         for entry in filtered:
-            dt_str = ""
+            date_header_str = "未知日期"
+            time_only_str = ""
             try:
                 dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
-                dt_str = dt.strftime('%m-%d %H:%M')
+                date_header_str = dt.strftime('%Y年%m月%d日')
+                if dt.date() == now.date():
+                    date_header_str = "今天"
+                elif dt.date() == (now - timedelta(days=1)).date():
+                    date_header_str = "昨天"
+                time_only_str = dt.strftime('%H:%M')
             except: pass
+            
+            if current_date_str != date_header_str:
+                current_date_str = date_header_str
+                # 插入日期 Header
+                header_widget = QLabel(f"  📅 {current_date_str}")
+                header_widget.setStyleSheet(f"color: {TEXT_PRIMARY}; font-weight: bold; font-size: 13px; background-color: #F8F9FB; padding: 4px 0px; border-bottom: 1px solid #E5E9F0;")
+                header_widget.setFixedHeight(30)
+                h_item = QListWidgetItem()
+                h_item.setSizeHint(QSize(400, 30))
+                h_item.setFlags(Qt.ItemFlag.NoItemFlags) # 不可选中
+                self.list_widget.addItem(h_item)
+                self.list_widget.setItemWidget(h_item, header_widget)
             
             amt = entry['amount']
             amt_disp = f"{round(amt, 2):g}"
             sign = '+' if amt > 0 else ''
             color = RED_ACCENT if amt > 0 else GREEN_ACCENT
             desc = format_ledger_desc(entry.get('description', '未知流水'))
+            
+            # 富文本高亮关键词
+            desc = desc.replace("完成", f"<span style='color:{RED_ACCENT};'>完成</span>")
+            desc = desc.replace("失败", f"<span style='color:{GREEN_ACCENT};'>失败</span>")
             
             item_widget = QWidget()
             item_widget.setFixedHeight(46)
@@ -612,8 +636,9 @@ class FullLedgerDialog(QDialog):
             left_layout = QVBoxLayout()
             left_layout.setSpacing(2)
             desc_lbl = QLabel(desc)
+            desc_lbl.setTextFormat(Qt.TextFormat.RichText)
             desc_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: bold;")
-            time_lbl = QLabel(dt_str)
+            time_lbl = QLabel(time_only_str)
             time_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
             left_layout.addWidget(desc_lbl)
             left_layout.addWidget(time_lbl)
