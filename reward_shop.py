@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QPushButton, QLabel, QFrame, QMessageBox, QDialog,
                              QScrollArea, QLineEdit, QComboBox, QSpinBox,
                              QListWidget, QListWidgetItem)
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QSettings
 from PyQt6.QtGui import QIcon, QFont
 from datetime import datetime, timedelta
 
