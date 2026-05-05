@@ -435,15 +435,17 @@ class GoalCard(QFrame):
         
         self.claimed.emit()
 
-class GoalAddDialog(QDialog):
-    """新增目标对话框"""
-    def __init__(self, db, category_manager, parent=None):
+    """新增/修改目标对话框"""
+    def __init__(self, db, category_manager, initial_data=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.cm = category_manager
-        self.setWindowTitle("新增目标")
+        self.initial_data = initial_data
+        self.setWindowTitle("修改目标" if initial_data else "新增目标")
         self.setFixedWidth(380)
         self._build_ui()
+        if initial_data:
+            self._fill_data()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -545,14 +547,44 @@ class GoalAddDialog(QDialog):
 
         # 按钮
         btns = QHBoxLayout()
-        save_btn = QPushButton("创建")
-        save_btn.setStyleSheet(f"background: {BLUE_ACCENT}; color: white; padding: 8px; border-radius: 4px; font-weight: bold;")
-        save_btn.clicked.connect(self.accept)
+        self.save_btn = QPushButton("保存" if self.initial_data else "创建")
+        self.save_btn.setStyleSheet(f"background: {BLUE_ACCENT}; color: white; padding: 8px; border-radius: 4px; font-weight: bold;")
+        self.save_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton("取消")
         cancel_btn.clicked.connect(self.reject)
         btns.addWidget(cancel_btn)
-        btns.addWidget(save_btn)
+        btns.addWidget(self.save_btn)
         layout.addLayout(btns)
+
+    def _fill_data(self):
+        d = self.initial_data
+        self.title_input.setText(d.get('title', ''))
+        
+        # 设置 ComboBox
+        idx = self.cat_combo.findData(d.get('category_id'))
+        if idx >= 0: self.cat_combo.setCurrentIndex(idx)
+        
+        idx = self.period_combo.findData(d.get('period'))
+        if idx >= 0: self.period_combo.setCurrentIndex(idx)
+        
+        idx = self.operator_combo.findData(d.get('operator', '>='))
+        if idx >= 0: self.operator_combo.setCurrentIndex(idx)
+        
+        idx = self.metric_combo.findData(d.get('metric'))
+        if idx >= 0: self.metric_combo.setCurrentIndex(idx)
+        
+        self.val_input.setValue(int(d.get('target_value', 60)))
+        
+        # 奖励设置
+        reward_id = d.get('reward_id')
+        if reward_id:
+            self.reward_type_combo.setCurrentIndex(1)
+            idx = self.item_combo.findData(reward_id)
+            if idx >= 0: self.item_combo.setCurrentIndex(idx)
+        else:
+            self.reward_type_combo.setCurrentIndex(0)
+            self.coin_input.setValue(int(d.get('reward_coins', 0)))
+            self.penalty_input.setValue(int(d.get('penalty_coins', 0)))
 
     def get_data(self):
         is_coin = self.reward_type_combo.currentData() == "coins"
@@ -707,12 +739,28 @@ class GoalsWindow(QWidget):
     def _show_context_menu(self, pos, goal_id):
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
+        edit_action = menu.addAction("✏️ 修改目标")
         del_action = menu.addAction("🗑️ 删除目标")
         action = menu.exec(self.mapToGlobal(self.mapFromGlobal(self.cursor().pos()))) 
         if action == del_action:
             if QMessageBox.question(self, "确认删除", "确定要删除这个目标吗？") == QMessageBox.StandardButton.Yes:
                 self.db.remove_goal(goal_id)
                 self.refresh()
+        elif action == edit_action:
+            self._on_edit_goal(goal_id)
+
+    def _on_edit_goal(self, goal_id):
+        # 获取目标详情
+        goals = self.db.get_all_goals()
+        goal_data = next((g for g in goals if g['id'] == goal_id), None)
+        if not goal_data: return
+        
+        dialog = GoalAddDialog(self.db, self.cm, initial_data=goal_data, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            if not data['title']: return
+            self.db.update_goal(goal_id, **data)
+            self.refresh()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
