@@ -15,6 +15,23 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QSettings
 from PyQt6.QtGui import QIcon, QFont
 from datetime import datetime, timedelta
+import re
+
+def format_ledger_desc(desc):
+    if desc.startswith("达成目标奖励: "): return f"【目标】{desc[8:]} 完成"
+    if desc.startswith("目标达成: "): return f"【目标】{desc[6:]} 完成"
+    if desc.startswith("目标未达标: "): return f"【目标】{desc[7:]} 失败"
+    if desc.startswith("达成目标惩罚: "): return f"【目标】{desc[8:]} 失败"
+    if desc.startswith("目标挑战失败: "): return f"【目标】{desc[8:]} 失败"
+    if desc.startswith("习惯打卡完成: "): return f"【习惯】{desc[8:]} 完成"
+    if desc.startswith("习惯判定失败: "): return f"【习惯】{desc[8:]} 失败"
+    if desc.startswith("领取外部奖励: "): return f"【清单】{desc[8:]} 完成"
+    
+    m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
+    if m:
+        return f"【习惯】{m.group(1)} 完成 {m.group(2) or ''}".strip()
+        
+    return desc
 
 from database import StudyLogger
 
@@ -395,8 +412,8 @@ class RewardShopWindow(QWidget):
                 amt = entry['amount']
                 amt_disp = f"{round(amt, 2):g}"
                 sign = '+' if amt > 0 else ''
-                color = GREEN_ACCENT if amt > 0 else RED_ACCENT
-                desc = entry.get('description', '')
+                color = RED_ACCENT if amt > 0 else GREEN_ACCENT
+                desc = format_ledger_desc(entry.get('description', ''))
                 time_str = ''
                 try:
                     dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
@@ -571,7 +588,7 @@ class FullLedgerDialog(QDialog):
             
         total_in = sum(e['amount'] for e in filtered if e['amount'] > 0)
         total_out = sum(e['amount'] for e in filtered if e['amount'] < 0)
-        self.stats_label.setText(f"总收入: <span style='color:{GREEN_ACCENT}'>+{round(total_in, 2):g}</span> | 总支出: <span style='color:{RED_ACCENT}'>{round(total_out, 2):g}</span>")
+        self.stats_label.setText(f"总收入: <span style='color:{RED_ACCENT}'>+{round(total_in, 2):g}</span> | 总支出: <span style='color:{GREEN_ACCENT}'>{round(total_out, 2):g}</span>")
         self.stats_label.setTextFormat(Qt.TextFormat.RichText)
         
         for entry in filtered:
@@ -584,8 +601,8 @@ class FullLedgerDialog(QDialog):
             amt = entry['amount']
             amt_disp = f"{round(amt, 2):g}"
             sign = '+' if amt > 0 else ''
-            color = GREEN_ACCENT if amt > 0 else RED_ACCENT
-            desc = entry.get('description', '未知流水')
+            color = RED_ACCENT if amt > 0 else GREEN_ACCENT
+            desc = format_ledger_desc(entry.get('description', '未知流水'))
             
             item_widget = QWidget()
             item_widget.setFixedHeight(46)
