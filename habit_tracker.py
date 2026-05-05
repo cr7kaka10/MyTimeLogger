@@ -600,7 +600,7 @@ class HabitTrackerWindow(QWidget):
         ids = [i['id'] for i in unclaimed]
         names = [i.get('item_name', '未知项') for i in unclaimed]
         claimed_coins = self.db.claim_rewards(ids)
-        if claimed_coins > 0:
+        if claimed_coins != 0:
             desc = "领取外部奖励: " + ", ".join(names)
             if len(desc) > 100:
                 desc = desc[:97] + "..."

@@ -8,13 +8,13 @@
 import logging
 from datetime import datetime
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QPushButton, QFrame, QDialog, QLineEdit,
-    QFormLayout, QMessageBox
-)
-from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
+                             QPushButton, QLabel, QFrame, QMessageBox, QDialog,
+                             QScrollArea, QLineEdit, QComboBox, QSpinBox,
+                             QListWidget, QListWidgetItem)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QIcon, QFont
+from datetime import datetime, timedelta
 
 from database import StudyLogger
 
@@ -28,6 +28,7 @@ GREEN_HOVER = "#8FBF65"
 GOLD_ACCENT = "#EBCB8B"
 GOLD_HOVER = "#D9B44A"
 RED_ACCENT = "#BF616A"
+BLUE_ACCENT = "#5E81AC"
 BG_LIGHT = "#FFFFFF"
 COIN_ICON = "🪙"
 
@@ -321,10 +322,26 @@ class RewardShopWindow(QWidget):
         layout.addWidget(self.scroll, 1)
 
         # 分割线 + 流水标题
-        history_header = QLabel("  📜 最近流水")
-        history_header.setFixedHeight(24)
-        history_header.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; font-weight: bold; background: #F8F9FB; border-top: 1px solid #F0F2F5;")
-        layout.addWidget(history_header)
+        history_header_layout = QHBoxLayout()
+        history_header_layout.setContentsMargins(16, 0, 16, 0)
+        
+        history_header = QLabel("📜 最近流水")
+        history_header.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; font-weight: bold;")
+        
+        view_all_btn = QPushButton("查看完整流水 ›")
+        view_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        view_all_btn.setStyleSheet(f"color: {BLUE_ACCENT}; font-size: 11px; background: transparent; border: none;")
+        view_all_btn.clicked.connect(self._show_full_ledger)
+        
+        history_header_layout.addWidget(history_header)
+        history_header_layout.addStretch()
+        history_header_layout.addWidget(view_all_btn)
+        
+        header_widget = QWidget()
+        header_widget.setStyleSheet("background: #F8F9FB; border-top: 1px solid #F0F2F5;")
+        header_widget.setLayout(history_header_layout)
+        header_widget.setFixedHeight(26)
+        layout.addWidget(header_widget)
 
         # 流水区域
         self.history_widget = QWidget()
@@ -452,6 +469,10 @@ class RewardShopWindow(QWidget):
             self.db.remove_reward(reward['id'])
             self._refresh()
 
+    def _show_full_ledger(self):
+        dialog = FullLedgerDialog(self.db, self)
+        dialog.exec()
+
     # ======================== 窗口交互 ========================
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -476,3 +497,119 @@ class RewardShopWindow(QWidget):
         p = self.settings.value("pos")
         if p:
             self.move(p)
+
+class FullLedgerDialog(QDialog):
+    """完整流水查询弹窗"""
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("金币流水明细")
+        self.setFixedSize(450, 600)
+        self._build_ui()
+        self._load_data()
+        
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # 头部
+        header = QWidget()
+        header.setFixedHeight(60)
+        header.setStyleSheet("background-color: #ECEFF4; border-bottom: 1px solid #D8DEE9;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(20, 0, 20, 0)
+        
+        title = QLabel("💳 资金明细")
+        title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: bold; font-family: 'Microsoft YaHei';")
+        h_layout.addWidget(title)
+        
+        self.period_combo = QComboBox()
+        self.period_combo.addItems(["最近7天", "最近30天", "本月", "全部"])
+        self.period_combo.setStyleSheet(f"padding: 5px; border: 1px solid #D8DEE9; border-radius: 4px; background: white;")
+        self.period_combo.currentIndexChanged.connect(self._load_data)
+        h_layout.addStretch()
+        h_layout.addWidget(self.period_combo)
+        layout.addWidget(header)
+        
+        # 统计栏
+        self.stats_label = QLabel("总收入: 0 | 总支出: 0")
+        self.stats_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px; padding: 10px 20px; background: #F8F9FB;")
+        layout.addWidget(self.stats_label)
+        
+        # 流水列表
+        self.list_widget = QListWidget()
+        self.list_widget.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_widget.setStyleSheet(f"QListWidget::item {{ border-bottom: 1px solid #F0F2F5; padding: 12px 20px; }}")
+        layout.addWidget(self.list_widget)
+        
+    def _load_data(self):
+        idx = self.period_combo.currentIndex()
+        history = self.db.get_ledger_history(2000)
+        
+        now = datetime.now()
+        filtered = []
+        
+        for entry in history:
+            try:
+                dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
+                if idx == 0 and (now - dt).days > 7: continue
+                if idx == 1 and (now - dt).days > 30: continue
+                if idx == 2 and (now.month != dt.month or now.year != dt.year): continue
+                filtered.append(entry)
+            except:
+                pass
+                
+        self.list_widget.clear()
+        
+        if not filtered:
+            item = QListWidgetItem("暂无流水记录")
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.list_widget.addItem(item)
+            self.stats_label.setText("总收入: 0 | 总支出: 0")
+            return
+            
+        total_in = sum(e['amount'] for e in filtered if e['amount'] > 0)
+        total_out = sum(e['amount'] for e in filtered if e['amount'] < 0)
+        self.stats_label.setText(f"总收入: <span style='color:{GREEN_ACCENT}'>+{round(total_in, 2):g}</span> | 总支出: <span style='color:{RED_ACCENT}'>{round(total_out, 2):g}</span>")
+        self.stats_label.setTextFormat(Qt.TextFormat.RichText)
+        
+        for entry in filtered:
+            dt_str = ""
+            try:
+                dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
+                dt_str = dt.strftime('%m-%d %H:%M')
+            except: pass
+            
+            amt = entry['amount']
+            amt_disp = f"{round(amt, 2):g}"
+            sign = '+' if amt > 0 else ''
+            color = GREEN_ACCENT if amt > 0 else RED_ACCENT
+            desc = entry.get('description', '未知流水')
+            
+            item_widget = QWidget()
+            item_widget.setFixedHeight(46)
+            ilayout = QHBoxLayout(item_widget)
+            ilayout.setContentsMargins(0, 0, 0, 0)
+            
+            left_layout = QVBoxLayout()
+            left_layout.setSpacing(2)
+            desc_lbl = QLabel(desc)
+            desc_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: bold;")
+            time_lbl = QLabel(dt_str)
+            time_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+            left_layout.addWidget(desc_lbl)
+            left_layout.addWidget(time_lbl)
+            
+            amt_lbl = QLabel(f"{sign}{amt_disp}")
+            amt_lbl.setStyleSheet(f"color: {color}; font-size: 15px; font-weight: bold; font-family: 'Consolas', monospace;")
+            amt_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            
+            ilayout.addLayout(left_layout)
+            ilayout.addStretch()
+            ilayout.addWidget(amt_lbl)
+            
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(400, 46))
+            self.list_widget.addItem(item)
+            self.list_widget.setItemWidget(item, item_widget)
