@@ -728,10 +728,10 @@ class FullLedgerDialog(QDialog):
                 border: none;
             }
             QComboBox::down-arrow {
-                image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%236B7280'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-                width: 14px;
-                height: 14px;
-                margin-right: 8px;
+                image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239CA3AF'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+                width: 16px;
+                height: 16px;
+                margin-right: 12px;
             }
             QComboBox:hover {
                 border: 1px solid #9CA3AF;
