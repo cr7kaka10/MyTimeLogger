@@ -624,13 +624,33 @@ class TimelineItemWidget(QWidget):
         title_lbl.setStyleSheet("color: #1F2937; font-size: 13px; font-weight: 800;")
         top_row.addWidget(title_lbl)
         
+        from PyQt6.QtWidgets import QGraphicsDropShadowEffect
+        from PyQt6.QtGui import QColor
         if is_success:
             status_lbl = QLabel("✓")
-            status_lbl.setStyleSheet(f"color: white; background-color: {RED_ACCENT}; padding: 1px 4px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_lbl.setFixedSize(16, 16)
+            status_lbl.setStyleSheet("color: white; background-color: #10B981; border-radius: 8px; font-size: 11px; font-weight: 900;")
+            
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(8)
+            shadow.setColor(QColor(16, 185, 129, 150))
+            shadow.setOffset(0, 0)
+            status_lbl.setGraphicsEffect(shadow)
+            
             top_row.addWidget(status_lbl)
         elif is_fail:
             status_lbl = QLabel("✕")
-            status_lbl.setStyleSheet(f"color: white; background-color: {GREEN_ACCENT}; padding: 1px 4px; border-radius: 4px; font-size: 10px; font-weight: bold;")
+            status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_lbl.setFixedSize(16, 16)
+            status_lbl.setStyleSheet("color: white; background-color: #EF4444; border-radius: 8px; font-size: 11px; font-weight: 900;")
+            
+            shadow = QGraphicsDropShadowEffect()
+            shadow.setBlurRadius(8)
+            shadow.setColor(QColor(239, 68, 68, 150))
+            shadow.setOffset(0, 0)
+            status_lbl.setGraphicsEffect(shadow)
+            
             top_row.addWidget(status_lbl)
             
         top_row.addStretch()
