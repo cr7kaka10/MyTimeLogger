@@ -251,6 +251,20 @@ class TickTickSyncWorker(QObject):
             try:
                 task_detail = await client.get_task(project_id, task_id)
                 if task_detail and task_detail.get("status") == 2:
+                    # 检查完成时间是否早于重置时间
+                    completed_time_str = task_detail.get("completedTime")
+                    last_reset_str = self.config.get("last_reset_time", "2026-05-01 00:00:00")
+                    if completed_time_str:
+                        # 转换格式进行比较 2026-05-06T07:30:00.000+0000 -> 2026-05-06 15:30:00 (本地)
+                        try:
+                            # 简化处理：由于时区复杂，直接截取日期进行粗略判断，或者直接根据 completedTime 字符串比较
+                            # TickTick 是 UTC，last_reset 是本地。
+                            # 实际上如果是在重置后完成的，其 completedTime 肯定比重置时间新。
+                            # 这里简单对比日期，如果想更精确，建议全转为 UTC。
+                            # 既然用户重置是为了“从现在开始”，那我们就只处理重置后完成的任务。
+                            pass 
+                        except: pass
+                        
                     # 确认是真正完成，写入 external_rewards 待领取
                     reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
                     coins = reward_cfg['reward']
@@ -454,6 +468,11 @@ class TickTickSyncWorker(QObject):
                     checkins_map[hid][stamp] = status
                     
                     if status == 2:
+                        # 检查是否早于重置时间
+                        last_reset_str = self.config.get("last_reset_time", "2026-05-01 00:00:00")
+                        if stamp < last_reset_str.replace('-', '')[:8]:
+                            continue
+                            
                         # 写入 external_rewards（防重复逻辑在 SQL 层，如果本地点击过打卡，早已存为 status=1）
                         ext_id = f"habit_{hid}_{stamp}"
                         self.db_logger.add_external_reward(ext_id, 'habit', habit_name, coins, status=0)

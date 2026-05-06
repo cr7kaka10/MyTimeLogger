@@ -1166,8 +1166,10 @@ class StudyLogger:
                         cursor.execute("INSERT INTO external_rewards (id, item_type, item_name, coins, status, created_at) VALUES (?, 'goal', ?, ?, 0, ?)",
                                        (claim_id, desc, amount, now_str))
                 
+                last_reset_str = self.config.get("last_reset_time", "2026-05-01 00:00:00")
+                
                 if period == 'per_session':
-                    cursor.execute("SELECT id, net_duration_minutes FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, today.strftime('%Y-%m-%d')))
+                    cursor.execute("SELECT id, net_duration_minutes FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, today.strftime('%Y-%m-%d'), last_reset_str))
                     for s_id, s_dur in cursor.fetchall():
                         is_met = (s_dur >= target) if operator == '>=' else (s_dur <= target)
                         # 单次目标每次完成后立刻结算（达标给奖励，没达标算失败）
@@ -1175,14 +1177,15 @@ class StudyLogger:
                 
                 elif period == 'daily':
                     for d in [yesterday, today]:
-                        if d < date(2026, 5, 6):
-                            continue
-                        
                         d_str = d.strftime('%Y-%m-%d')
+                        # 检查该日期是否早于最后重置日期
+                        if d_str < last_reset_str[:10]:
+                            continue
+                            
                         if metric == 'duration':
-                            cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, d_str))
+                            cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, d_str, last_reset_str))
                         else:
-                            cursor.execute("SELECT COUNT(*) FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, d_str))
+                            cursor.execute("SELECT COUNT(*) FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, d_str, last_reset_str))
                         val = cursor.fetchone()[0] or 0.0
                         
                         is_met = (val >= target) if operator == '>=' else (val <= target)
@@ -1369,6 +1372,13 @@ class StudyLogger:
             cursor.execute("DELETE FROM external_rewards")
             conn.commit()
             conn.close()
+            
+            # 记录重置时间点，防止旧记录重新触发奖励结算
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.config["last_reset_time"] = now_str
+            from config import save_config
+            save_config(self.config)
+            
             return True
         except Exception as e:
             logging.error(f"重置金币失败: {e}")
