@@ -737,7 +737,7 @@ class GoalsWindow(QWidget):
             card.update_progress(active_info)
 
     def _on_add_goal(self):
-        dialog = GoalAddDialog(self.db, self.cm, self)
+        dialog = GoalAddDialog(self.db, self.cm, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
             if not data['title']:
