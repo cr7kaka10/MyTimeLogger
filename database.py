@@ -1151,6 +1151,9 @@ class StudyLogger:
                 
                 elif period == 'daily':
                     for d in [yesterday, today]:
+                        if d < date(2026, 5, 6):
+                            continue
+                        
                         d_str = d.strftime('%Y-%m-%d')
                         if metric == 'duration':
                             cursor.execute("SELECT SUM(net_duration_minutes) FROM study_sessions WHERE category_id = ? AND date = ?", (cat_id, d_str))

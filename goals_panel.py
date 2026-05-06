@@ -204,6 +204,9 @@ class GoalStatsDialog(QDialog):
             bg_color = "#ECEFF4" # 默认底色（未达标或无）
             if not is_current_month:
                 bg_color = "transparent"
+            elif d > date.today() or d < date(2026, 5, 1):
+                # 未来的日期 或 2026-05-01 之前的日期，不统计达标情况，显示默认灰底
+                bg_color = "#ECEFF4"
             elif val > 0 or operator == '<=':
                 # 评估进度
                 if operator == '>=':
