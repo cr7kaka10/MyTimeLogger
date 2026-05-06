@@ -1150,15 +1150,20 @@ class StudyLogger:
                 reward_coins = g['reward_coins']
                 penalty_coins = g.get('penalty_coins', reward_coins)
                 
-                def _issue(claim_id, is_met, fail_if_not_met=False):
+                def _issue(claim_id, is_met, val, target_val, operator_str, date_str, fail_if_not_met=False):
                     cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (claim_id,))
                     if cursor.fetchone(): return
                     
                     amount, desc = 0, ""
+                    unit = "m" if metric == 'duration' else "次"
+                    status_text = "达成" if is_met else "未达标"
+                    # 详细描述：目标达成[2026-05-05]: 标题 (实际 45m / 目标 <=60m)
+                    desc = f"目标{status_text}[{date_str}]: {title} ({int(val)}{unit} / {operator_str}{int(target_val)}{unit})"
+                    
                     if is_met:
-                        amount, desc = reward_coins, f"目标达成: {title}"
+                        amount = reward_coins
                     elif fail_if_not_met:
-                        amount, desc = -abs(penalty_coins), f"目标未达标: {title}"
+                        amount = -abs(penalty_coins)
                     else:
                         return
                         
@@ -1169,16 +1174,15 @@ class StudyLogger:
                 last_reset_str = self.config.get("last_reset_time", "2026-05-01 00:00:00")
                 
                 if period == 'per_session':
-                    cursor.execute("SELECT id, net_duration_minutes FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, today.strftime('%Y-%m-%d'), last_reset_str))
-                    for s_id, s_dur in cursor.fetchall():
+                    cursor.execute("SELECT id, net_duration_minutes, start_time FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, today.strftime('%Y-%m-%d'), last_reset_str))
+                    for s_id, s_dur, s_time in cursor.fetchall():
                         is_met = (s_dur >= target) if operator == '>=' else (s_dur <= target)
-                        # 单次目标每次完成后立刻结算（达标给奖励，没达标算失败）
-                        _issue(f"goal_{g_id}_session_{s_id}", is_met, fail_if_not_met=True)
+                        # 单次目标每次完成后立刻结算
+                        _issue(f"goal_{g_id}_session_{s_id}", is_met, s_dur, target, operator, s_time[:10], fail_if_not_met=True)
                 
                 elif period == 'daily':
                     for d in [yesterday, today]:
                         d_str = d.strftime('%Y-%m-%d')
-                        # 检查该日期是否早于最后重置日期
                         if d_str < last_reset_str[:10]:
                             continue
                             
@@ -1193,14 +1197,14 @@ class StudyLogger:
                         
                         if d == yesterday:
                             # 昨天已结束，无论成败均结算
-                            _issue(claim_id, is_met, fail_if_not_met=True)
+                            _issue(claim_id, is_met, val, target, operator, d_str, fail_if_not_met=True)
                         else:
-                            # 今天：如果当前已经达标（对于>=），直接提前发放奖励
+                            # 今天：仅在确定状态（>= 达成 或 <= 失败）时提前结算
                             if operator == '>=' and is_met:
-                                _issue(claim_id, True)
-                            # 如果当前已经失败（对于<=），直接发放惩罚
+                                _issue(claim_id, True, val, target, operator, d_str)
                             elif operator == '<=' and not is_met:
-                                _issue(claim_id, False, fail_if_not_met=True)
+                                _issue(claim_id, False, val, target, operator, d_str, fail_if_not_met=True)
+                            # 对于 <= 且当前未超限的情况，必须等到明天结算
             
             conn.commit()
             conn.close()
