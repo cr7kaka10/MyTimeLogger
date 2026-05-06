@@ -396,6 +396,7 @@ class MyTimeLoggerGUI(QWidget):
             op_action.triggered.connect(lambda _, v=val: self.set_opacity(v))
             opacity_menu.addAction(op_action)
 
+        reset_menu = QMenu("🔄 重置", self)
         reset_coins_action = QAction("💰 重置金币与流水", self)
         reset_coins_action.triggered.connect(self._on_reset_coins_and_ledger)
         
