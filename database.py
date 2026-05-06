@@ -432,6 +432,25 @@ class StudyLogger:
             if 'penalty_coins' not in cols:
                 cursor.execute("ALTER TABLE goals ADD COLUMN penalty_coins REAL DEFAULT 0")
 
+            # 修正现有数据的时间偏差（针对之前因 DEFAULT 产生的 UTC 时间）
+            try:
+                from datetime import timedelta
+                cursor.execute("SELECT id, created_at FROM goals WHERE created_at LIKE '2026-%'")
+                for g_id, c_at in cursor.fetchall():
+                    # 如果时间点在 0-11 点之间，且当前是下午，极大概率是 UTC
+                    if " " in c_at:
+                        time_part = c_at.split(" ")[1]
+                        hour = int(time_part.split(":")[0])
+                        # 如果记录的时间明显晚于现在（比如记录是15点，现在是16点，但记录其实是UTC的07点），
+                        # 简单的逻辑是：如果该记录的时间 + 8小时 仍然不晚于“现在”，则可以修正
+                        dt = datetime.strptime(c_at, '%Y-%m-%d %H:%M:%S')
+                        # 这是一个保守的补正：仅对 2026-05-06 之前的记录，或者今天早些时候且小时数 < 12 的进行补正
+                        if dt < datetime.now() - timedelta(hours=4): 
+                            new_at = (dt + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
+                            cursor.execute("UPDATE goals SET created_at = ? WHERE id = ?", (new_at, g_id))
+            except Exception as e:
+                logging.error(f"时间修正迁移失败: {e}")
+
             # 再次检查 reward_config
             cursor.execute("PRAGMA table_info(reward_config)")
             rc_cols = [c[1] for c in cursor.fetchall()]
@@ -1074,11 +1093,12 @@ class StudyLogger:
         """添加新目标"""
         try:
             if penalty_coins is None: penalty_coins = reward_coins
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             conn = self._get_connection()
             cursor = conn.cursor()
             placeholder = "%s" if self.db_type == "mysql" else "?"
-            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins) VALUES ({','.join([placeholder]*9)})"
-            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins))
+            sql = f"INSERT INTO goals (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins, created_at) VALUES ({','.join([placeholder]*10)})"
+            cursor.execute(sql, (title, category_id, metric, target_value, period, reward_coins, reward_id, operator, penalty_coins, now_str))
             conn.commit()
             conn.close()
             return True
