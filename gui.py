@@ -252,40 +252,36 @@ class MyTimeLoggerGUI(QWidget):
             print(f"无法打开文件夹: {e}")
             QMessageBox.warning(self, "操作失败", f"无法自动打开文件夹。\n请手动前往: {log_dir}")
 
-    def confirm_and_reset_all(self):
-        """确认后清空所有学习记录"""
-        reply = QMessageBox.question(
-            self, '安全提示',
-            "您确定要彻底清空所有学习记录和由于此产生的报表吗？此操作不可撤销！",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            pwd, ok = QInputDialog.getText(self, "高危操作鉴权", "请输入授权密码：", QLineEdit.EchoMode.Password)
-            correct_pwd = "111"
-            try:
-                with open(resource_path('config.json'), 'r', encoding='utf-8') as f:
-                    correct_pwd = json.load(f).get("reset_password", "111")
-            except Exception:
-                correct_pwd = self.config.get("reset_password", "111")
-            if ok and pwd == correct_pwd:
-                self.logic.reset_all()
-                log_path = self.logic.local_logger.log_path
-                if os.path.exists(log_path):
-                    try:
-                        conn = sqlite3.connect(log_path)
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM study_sessions")
-                        conn.commit()
-                        conn.close()
-                        os.remove(log_path)
-                    except Exception as e:
-                        print(f"清理数据库失败: {e}")
-                self.logic.local_logger._initialize_db()
+    def _on_reset_coins(self):
+        if QMessageBox.question(self, "确认重置", "确定要重置金币和待领取奖励吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            if self.logic.local_logger.reset_coins():
+                QMessageBox.information(self, "成功", "金币已重置。")
                 self.generate_statistics_html()
-                QMessageBox.information(self, "清理成功", "所有记录及统计报表已彻底清空。")
+            else:
+                QMessageBox.warning(self, "失败", "操作失败。")
+
+    def _on_reset_ledger(self):
+        if QMessageBox.question(self, "确认重置", "确定要清空金币流水吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            if self.logic.local_logger.reset_ledger():
+                QMessageBox.information(self, "成功", "流水已清空。")
+                self.generate_statistics_html()
+            else:
+                QMessageBox.warning(self, "失败", "操作失败。")
+
+    def _on_reset_focus_records(self):
+        if QMessageBox.question(self, "确认重置", "确定要清空所有专注记录吗？此操作不可撤销！", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            pwd, ok = QInputDialog.getText(self, "鉴权", "请输入授权密码：", QLineEdit.EchoMode.Password)
+            correct_pwd = self.config.get("reset_password", "111")
+            if ok and pwd == correct_pwd:
+                if self.logic.local_logger.reset_focus_records():
+                    self.logic.total_study_time = 0
+                    self.logic.time_updated.emit(0)
+                    self.generate_statistics_html()
+                    QMessageBox.information(self, "成功", "专注记录已清空。")
+                else:
+                    QMessageBox.warning(self, "失败", "操作失败。")
             elif ok:
-                QMessageBox.warning(self, "密码错误", "密码不正确，操作已取消。")
+                QMessageBox.warning(self, "密码错误", "密码错误。")
 
     # ======================== 右键菜单 ========================
 
@@ -409,14 +405,19 @@ class MyTimeLoggerGUI(QWidget):
             opacity_menu.addAction(op_action)
 
         reset_menu = QMenu("🔄 重置", self)
-        reset_cycle_hotkey = hotkey_config.get('reset_cycle', '')
-        reset_cycle_text = "重置当前轮次" + (f"  ({reset_cycle_hotkey})" if reset_cycle_hotkey else "")
-        reset_cycle_action = QAction(reset_cycle_text, self)
-        reset_cycle_action.triggered.connect(self.logic.reset_cycle)
-        clear_all_action = QAction("🗑️ 清空所有记录", self)
-        clear_all_action.triggered.connect(self.confirm_and_reset_all)
-        reset_menu.addAction(reset_cycle_action)
-        reset_menu.addAction(clear_all_action)
+        
+        reset_coins_action = QAction("💰 重置金币", self)
+        reset_coins_action.triggered.connect(self._on_reset_coins)
+        
+        reset_ledger_action = QAction("📜 金币流水", self)
+        reset_ledger_action.triggered.connect(self._on_reset_ledger)
+        
+        reset_sessions_action = QAction("🎯 专注记录", self)
+        reset_sessions_action.triggered.connect(self._on_reset_focus_records)
+        
+        reset_menu.addAction(reset_coins_action)
+        reset_menu.addAction(reset_ledger_action)
+        reset_menu.addAction(reset_sessions_action)
 
         open_log_action = QAction("📂 打开日志文件夹", self)
         open_log_action.triggered.connect(self.open_log_folder)

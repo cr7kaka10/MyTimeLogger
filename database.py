@@ -819,22 +819,31 @@ class StudyLogger:
             return []
 
     def claim_rewards(self, ext_ids: list) -> float:
-        """将指定的奖励标记为已领取，返回领取的总金币数"""
+        """将指定的奖励标记为已领取，并分条写入积分流水"""
         if not ext_ids: return 0.0
         total_coins = 0.0
         try:
             self._migrate_habits_table()
             conn = self._get_connection()
             cursor = conn.cursor()
-            # 先计算总金额
-            placeholders = ','.join(['?'] * len(ext_ids))
-            cursor.execute(f"SELECT SUM(coins) FROM external_rewards WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
-            row = cursor.fetchone()
-            total_coins = float(row[0] or 0)
             
-            if True: # 允许负值（倒扣）
-                cursor.execute(f"UPDATE external_rewards SET status = 1 WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
-                conn.commit()
+            # 获取所有待领取的项详情
+            placeholders = ','.join(['?'] * len(ext_ids))
+            cursor.execute(f"SELECT id, item_name, coins FROM external_rewards WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
+            items = cursor.fetchall()
+            
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            for item_id, item_name, coins in items:
+                total_coins += coins
+                # 为每一项单独插入流水，满足用户分条展示的需求
+                cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'external_claim', ?, ?, ?)",
+                               (coins, item_id, f"领取奖励: {item_name}", now_str))
+            
+            # 批量更新外部奖励表状态为已领取
+            cursor.execute(f"UPDATE external_rewards SET status = 1 WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
+            
+            conn.commit()
             conn.close()
             return total_coins
         except Exception as e:
@@ -1333,6 +1342,48 @@ class StudyLogger:
         """根据任务优先级返回积分收益"""
         diff = self.PRIORITY_TO_DIFFICULTY.get(priority, 'trivial')
         return self.DIFFICULTY_MAP[diff]['task_coins']
+
+    # ======================== 重置功能 = : redesigned ========================
+
+    def reset_coins(self):
+        """重置金币：清空流水和待领取"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM reward_ledger")
+            cursor.execute("DELETE FROM external_rewards")
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"重置金币失败: {e}")
+            return False
+
+    def reset_ledger(self):
+        """重置金币流水：仅清空流水记录"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM reward_ledger")
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"重置流水失败: {e}")
+            return False
+
+    def reset_focus_records(self):
+        """重置专注记录：清空 study_sessions 表"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM study_sessions")
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"重置专注记录失败: {e}")
+            return False
 
 
 class DatabaseWorker(QObject):

@@ -418,18 +418,11 @@ class GoalCard(QFrame):
     def _on_claim(self, claim_id):
         amount = self.goal_data['reward_coins']
         title = self.goal_data['title']
-        reward_id = self.goal_data.get('reward_id')
         
-        self.db.add_external_reward(claim_id, 'goal', title, amount, status=1)
-        
-        if reward_id:
-            all_rewards = self.db.get_all_rewards()
-            reward_item = next((r for r in all_rewards if r['id'] == reward_id), None)
-            desc = f"达成目标奖励(兑换项): {reward_item['title'] if reward_item else title}"
-            self.db.add_ledger_entry(0, 'goal_reward_item', reward_id, desc)
-        else:
-            prefix = "达成目标惩罚" if amount < 0 else "达成目标奖励"
-            self.db.add_ledger_entry(amount, 'goal_reward', self.goal_data['id'], f"{prefix}: {title}")
+        # 确保 external_rewards 表中有此项（如果 auto_settle 还没跑，手动补上）
+        self.db.add_external_reward(claim_id, 'goal', title, amount, status=0)
+        # 调用统一领取逻辑，实现分条入账
+        self.db.claim_rewards([claim_id])
         
         from particle_effect import start_coin_explosion, show_success_effect
         if amount > 0:

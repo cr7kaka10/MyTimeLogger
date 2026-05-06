@@ -733,8 +733,21 @@ class TimelineItemWidget(QWidget):
         from PyQt6.QtWidgets import QMessageBox
         msg = QMessageBox(self)
         msg.setWindowTitle("流水详情")
-        msg.setText(f"<b>时间:</b> {self.time_str}<br><b>明细:</b> {self.full_desc}<br><b>金额:</b> {round(self.amount, 2):g}🪙")
-        msg.setStyleSheet("QLabel { font-family: 'Microsoft YaHei'; font-size: 14px; min-width: 300px; }")
+        # 使用 HTML 格式增强可读性，并确保换行
+        detail_html = f"""
+            <div style="font-family: 'Microsoft YaHei'; font-size: 13px; min-width: 320px;">
+                <p><b>📅 发生时间:</b> {self.time_str}</p>
+                <p><b>📝 明细记录:</b><br/>
+                   <span style="color: #4C566A;">{self.full_desc}</span></p>
+                <hr/>
+                <p style="font-size: 15px;"><b>💰 变动金额:</b> 
+                   <span style="color: {'#BF616A' if self.amount < 0 else '#D08770'}; font-weight: bold;">
+                   {'+' if self.amount > 0 else ''}{round(self.amount, 2):g} 🪙</span>
+                </p>
+            </div>
+        """
+        msg.setText(detail_html)
+        msg.setStyleSheet("QPushButton { padding: 5px 15px; }")
         msg.exec()
 
 class FullLedgerDialog(QDialog):
