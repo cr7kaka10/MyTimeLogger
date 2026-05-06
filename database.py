@@ -715,12 +715,12 @@ class StudyLogger:
         except Exception:
             return 0
 
-    def add_ledger_entry(self, amount, source_type, source_id=None, description=''):
+    def add_ledger_entry(self, amount, source_type, source_id=None, description='', created_at=None):
         """写入一条积分流水"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            now_str = created_at if created_at else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, ?, ?, ?, ?)",
                            (amount, source_type, source_id, description, now_str))
             conn.commit()

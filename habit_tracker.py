@@ -712,19 +712,32 @@ class HabitTrackerWindow(QWidget):
         penalty = reward_cfg['penalty']
         ext_id = f"habit_{habit_id}_{stamp}"
         
-        # 获取旧状态
-        old_status = self._cached_checkins.get(habit_id, {}).get(stamp, 0)
+        # 区分是否为补卡（stamp 与今天不符）
+        today_stamp = datetime.now(CST).strftime('%Y%m%d')
+        is_makeup = (stamp != today_stamp)
+        
+        display_suffix = " (补卡)" if is_makeup else ""
+        ledger_date = None
+        if is_makeup:
+            # 补卡时，流水时间设为目标日期的当前时刻
+            try:
+                dt = datetime.strptime(stamp, '%Y%m%d')
+                now = datetime.now()
+                dt = dt.replace(hour=now.hour, minute=now.minute, second=now.second)
+                ledger_date = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                pass
 
         if new_status == 2:
             coins = reward
-            self.db.add_external_reward(ext_id, 'habit', habit_name, coins, status=1)
-            self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}")
+            self.db.add_external_reward(ext_id, 'habit', habit_name + display_suffix, coins, status=1)
+            self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(coins)
             if show_effect:
                 from particle_effect import show_success_effect
                 show_success_effect(self)
         elif new_status == 1:
-            self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}")
+            self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(-penalty)
             if show_effect:
                 from particle_effect import show_failure_effect
