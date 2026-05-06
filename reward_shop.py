@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                              QScrollArea, QLineEdit, QComboBox, QSpinBox,
                              QListWidget, QListWidgetItem, QFormLayout)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QSettings
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtGui import QIcon, QFont, QFontMetrics
 from datetime import datetime, timedelta
 import re
 
@@ -593,6 +593,9 @@ class TimelineItemWidget(QWidget):
     def __init__(self, time_str, raw_desc, amount, is_last=False):
         super().__init__()
         self.setFixedHeight(66)
+        self.full_desc = raw_desc # 保留完整描述用于详情展示
+        self.amount = amount
+        self.time_str = time_str
         
         tag = ""
         main_text = raw_desc
@@ -630,6 +633,7 @@ class TimelineItemWidget(QWidget):
         layout.addWidget(timeline_area)
         
         card = QFrame()
+        card.setCursor(Qt.CursorShape.PointingHandCursor) # 增加手型光标
         card.setObjectName("TimelineCard")
         card.setStyleSheet("""
             QFrame#TimelineCard {
@@ -670,8 +674,15 @@ class TimelineItemWidget(QWidget):
             else: tag_lbl.setStyleSheet("background-color: #F3F4F6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
             top_row.addWidget(tag_lbl)
             
-        title_lbl = QLabel(main_text)
-        title_lbl.setStyleSheet("color: #1F2937; font-size: 13px; font-weight: 800; border: none; background: transparent;")
+        # 对主文本进行摘要处理
+        font = QFont("Microsoft YaHei", 13, 800)
+        fm = QFontMetrics(font)
+        # 限制显示长度，如果过长则摘要
+        display_text = fm.elidedText(main_text, Qt.TextElideMode.ElideRight, 200)
+        
+        title_lbl = QLabel(display_text)
+        title_lbl.setFont(font)
+        title_lbl.setStyleSheet("color: #1F2937; border: none; background: transparent;")
         top_row.addWidget(title_lbl)
         
         from PyQt6.QtWidgets import QGraphicsDropShadowEffect
@@ -716,6 +727,15 @@ class TimelineItemWidget(QWidget):
         card_layout.addWidget(amt_lbl)
         
         layout.addWidget(card)
+
+    def mousePressEvent(self, event):
+        """点击弹出完整信息"""
+        from PyQt6.QtWidgets import QMessageBox
+        msg = QMessageBox(self)
+        msg.setWindowTitle("流水详情")
+        msg.setText(f"<b>时间:</b> {self.time_str}<br><b>明细:</b> {self.full_desc}<br><b>金额:</b> {round(self.amount, 2):g}🪙")
+        msg.setStyleSheet("QLabel { font-family: 'Microsoft YaHei'; font-size: 14px; min-width: 300px; }")
+        msg.exec()
 
 class FullLedgerDialog(QDialog):
     """完整流水查询弹窗"""
