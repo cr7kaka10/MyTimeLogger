@@ -730,25 +730,78 @@ class TimelineItemWidget(QWidget):
 
     def mousePressEvent(self, event):
         """点击弹出完整信息"""
-        from PyQt6.QtWidgets import QMessageBox
-        msg = QMessageBox(self)
-        msg.setWindowTitle("流水详情")
-        # 使用 HTML 格式增强可读性，并确保换行
-        detail_html = f"""
-            <div style="font-family: 'Microsoft YaHei'; font-size: 13px; min-width: 320px;">
-                <p><b>📅 发生时间:</b> {self.time_str}</p>
-                <p><b>📝 明细记录:</b><br/>
-                   <span style="color: #4C566A;">{self.full_desc}</span></p>
-                <hr/>
-                <p style="font-size: 15px;"><b>💰 变动金额:</b> 
-                   <span style="color: {'#BF616A' if self.amount < 0 else '#D08770'}; font-weight: bold;">
-                   {'+' if self.amount > 0 else ''}{round(self.amount, 2):g} 🪙</span>
-                </p>
-            </div>
-        """
-        msg.setText(detail_html)
-        msg.setStyleSheet("QPushButton { padding: 5px 15px; }")
-        msg.exec()
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QFrame
+        from PyQt6.QtCore import Qt
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("流水详情")
+        dialog.setMinimumWidth(420)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(15)
+        
+        # 样式
+        dialog.setStyleSheet("""
+            QLabel { font-family: 'Microsoft YaHei'; font-size: 14px; color: #2E3440; }
+        """)
+        
+        # 发生时间
+        time_layout = QHBoxLayout()
+        time_label = QLabel("📅 发生时间:")
+        time_label.setStyleSheet("font-weight: bold; color: #4C566A;")
+        time_val = QLabel(self.time_str if len(self.time_str) > 5 else f"今日 {self.time_str}")
+        time_layout.addWidget(time_label)
+        time_layout.addWidget(time_val)
+        time_layout.addStretch()
+        layout.addLayout(time_layout)
+        
+        # 明细内容
+        content_label = QLabel("📝 明细记录:")
+        content_label.setStyleSheet("font-weight: bold; color: #4C566A;")
+        layout.addWidget(content_label)
+        
+        content_val = QLabel(self.full_desc)
+        content_val.setWordWrap(True) # 开启自动换行
+        content_val.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        content_val.setStyleSheet("""
+            background-color: #F8FAFC; 
+            padding: 12px; 
+            border-radius: 6px; 
+            color: #1F2937;
+            border: 1px solid #E2E8F0;
+            line-height: 1.6;
+        """)
+        layout.addWidget(content_val)
+        
+        # 变动金额
+        amt_layout = QHBoxLayout()
+        amt_label = QLabel("💰 变动金额:")
+        amt_label.setStyleSheet("font-weight: bold; color: #4C566A;")
+        
+        amt_disp = f"{round(self.amount, 2):g}"
+        sign = '+' if self.amount > 0 else ''
+        color = "#BF616A" if self.amount < 0 else "#A3BE8C"
+        
+        amt_val = QLabel(f"{sign}{amt_disp} 🪙")
+        amt_val.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: 800; font-family: 'Consolas';")
+        
+        amt_layout.addWidget(amt_label)
+        amt_layout.addWidget(amt_val)
+        amt_layout.addStretch()
+        layout.addLayout(amt_layout)
+        
+        # 底部按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        ok_btn = QPushButton("确定")
+        ok_btn.setFixedSize(80, 32)
+        ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        ok_btn.setStyleSheet(f"background-color: {GREEN_ACCENT}; color: white; border-radius: 4px; font-weight: bold;")
+        ok_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.exec()
 
 class FullLedgerDialog(QDialog):
     """完整流水查询弹窗"""
