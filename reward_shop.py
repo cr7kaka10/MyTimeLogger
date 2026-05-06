@@ -25,7 +25,10 @@ def format_ledger_desc(desc):
     if desc.startswith("目标挑战失败: "): return f"【目标】{desc[8:]} 失败"
     if desc.startswith("习惯打卡完成: "): return f"【习惯】{desc[8:]} 完成"
     if desc.startswith("习惯判定失败: "): return f"【习惯】{desc[8:]} 失败"
-    if desc.startswith("领取外部奖励: "): return f"【清单】{desc[8:]} 完成"
+    if desc.startswith("领取外部奖励: "):
+        content = desc[8:]
+        status = "失败" if ("未达标" in content or "失败" in content) else "完成"
+        return f"【清单】{content} {status}"
     
     m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
     if m:

@@ -538,9 +538,12 @@ class ActivityPanel(QWidget):
             self._db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._show_coin_toast(claimed_coins)
             self._on_timer_tick()
-            from particle_effect import start_coin_explosion, show_success_effect
-            start_coin_explosion(self, self.claim_btn, len(ids))
-            show_success_effect(self)
+            from particle_effect import start_coin_explosion, show_success_effect, show_failure_effect
+            if claimed_coins > 0:
+                start_coin_explosion(self, self.claim_btn, len(ids))
+                show_success_effect(self)
+            else:
+                show_failure_effect(self)
 
     def _show_coin_toast(self, coins):
         """积分变动 toast 动画"""
