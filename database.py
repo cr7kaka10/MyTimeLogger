@@ -1149,6 +1149,7 @@ class StudyLogger:
                 operator = g.get('operator', '>=')
                 reward_coins = g['reward_coins']
                 penalty_coins = g.get('penalty_coins', reward_coins)
+                created_at_goal = g.get('created_at', '2000-01-01') # 目标创建时间
                 
                 def _issue(claim_id, is_met, val, target_val, operator_str, date_str, fail_if_not_met=False):
                     cursor.execute("SELECT 1 FROM external_rewards WHERE id = ?", (claim_id,))
@@ -1176,6 +1177,9 @@ class StudyLogger:
                 if period == 'per_session':
                     cursor.execute("SELECT id, net_duration_minutes, start_time FROM study_sessions WHERE category_id = ? AND date = ? AND start_time > ?", (cat_id, today.strftime('%Y-%m-%d'), last_reset_str))
                     for s_id, s_dur, s_time in cursor.fetchall():
+                        # 会话开始时间也必须在目标创建之后
+                        if s_time < created_at_goal:
+                            continue
                         is_met = (s_dur >= target) if operator == '>=' else (s_dur <= target)
                         # 单次目标每次完成后立刻结算
                         _issue(f"goal_{g_id}_session_{s_id}", is_met, s_dur, target, operator, s_time[:10], fail_if_not_met=True)
@@ -1183,6 +1187,10 @@ class StudyLogger:
                 elif period == 'daily':
                     for d in [yesterday, today]:
                         d_str = d.strftime('%Y-%m-%d')
+                        # 核心修正：结算日期不能早于目标创建日期
+                        if d_str < created_at_goal[:10]:
+                            continue
+                        
                         if d_str < last_reset_str[:10]:
                             continue
                             

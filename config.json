@@ -41,5 +41,6 @@
         "base_url": "https://api.openai.com/v1",
         "api_key": "",
         "model_name": "qwen-vl-max"
-    }
+    },
+    "last_reset_time": "2026-05-06 16:18:22"
 }
