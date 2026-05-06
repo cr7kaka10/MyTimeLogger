@@ -716,13 +716,28 @@ class StudyLogger:
             return 0
 
     def add_ledger_entry(self, amount, source_type, source_id=None, description='', created_at=None):
-        """写入一条积分流水"""
+        """写入一条积分流水，并防止重复入账"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            
+            # 校验重复：如果 source_id 存在，检查是否已经有该来源的记录
+            if source_id:
+                cursor.execute("SELECT id FROM reward_ledger WHERE source_type = ? AND source_id = ?", (source_type, str(source_id)))
+                if cursor.fetchone():
+                    logging.info(f"忽略重复流水: {source_type}/{source_id}")
+                    conn.close()
+                    return False
+
             now_str = created_at if created_at else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # 在描述中补全具体的打卡时间点，方便用户回溯详情
+            final_desc = description
+            if now_str not in description:
+                # 提取日期时间，如果是补卡则保留补卡字样
+                final_desc = f"{description} [{now_str}]"
+
             cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, ?, ?, ?, ?)",
-                           (amount, source_type, source_id, description, now_str))
+                           (amount, source_type, source_id, final_desc, now_str))
             conn.commit()
             conn.close()
             return True

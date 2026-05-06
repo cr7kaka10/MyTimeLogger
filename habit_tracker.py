@@ -731,13 +731,14 @@ class HabitTrackerWindow(QWidget):
         if new_status == 2:
             coins = reward
             self.db.add_external_reward(ext_id, 'habit', habit_name + display_suffix, coins, status=1)
-            self.db.add_ledger_entry(coins, 'habit_complete', None, f"习惯打卡完成: {habit_name}{display_suffix}", created_at=ledger_date)
+            # 传入 ext_id 作为 source_id，防止同一天重复打卡重复计分
+            self.db.add_ledger_entry(coins, 'habit_complete', ext_id, f"习惯打卡完成: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(coins)
             if show_effect:
                 from particle_effect import show_success_effect
                 show_success_effect(self)
         elif new_status == 1:
-            self.db.add_ledger_entry(-penalty, 'habit_fail', None, f"习惯判定失败: {habit_name}{display_suffix}", created_at=ledger_date)
+            self.db.add_ledger_entry(-penalty, 'habit_fail', ext_id, f"习惯判定失败: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(-penalty)
             if show_effect:
                 from particle_effect import show_failure_effect
