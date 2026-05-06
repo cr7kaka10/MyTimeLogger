@@ -533,8 +533,6 @@ class ActivityPanel(QWidget):
         claimed_coins = self._db.claim_rewards(ids)
         if claimed_coins != 0:
             desc = "领取外部奖励: " + ", ".join(desc_parts)
-            if len(desc) > 100:
-                desc = desc[:97] + "..."
             self._db.add_ledger_entry(claimed_coins, 'external_claim', None, desc)
             self._show_coin_toast(claimed_coins)
             self._on_timer_tick()
