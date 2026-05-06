@@ -378,6 +378,11 @@ class GoalCard(QFrame):
         try: self.fail_btn.clicked.disconnect()
         except: pass
 
+        from datetime import date
+        today_tag = date.today().strftime('%Y%m%d')
+        # 判断是否为今日的日目标
+        is_today_daily = (self.goal_data['period'] == 'daily' and claim_id and claim_id.endswith(today_tag))
+
         if is_claimed:
             self.action_btn.setText("已完成")
             self.action_btn.setEnabled(False)
@@ -385,10 +390,17 @@ class GoalCard(QFrame):
             self.fail_btn.hide()
         elif is_met and claim_id:
             # 自动结算模式下，不再显示“领取”按钮，仅显示状态
-            self.action_btn.setEnabled(False)
-            self.action_btn.setText("已达标")
-            self.action_btn.setStyleSheet(f"background: rgba(163, 190, 140, 0.15); color: {GREEN_ACCENT}; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid {GREEN_ACCENT};")
-            self.fail_btn.hide()
+            # 特殊逻辑：如果是今日的 <= 目标，且还未超过限制，则应显示“进行中”，因为要等明天才结算
+            if is_today_daily and operator == '<=':
+                self.action_btn.setText("进行中")
+                self.action_btn.setEnabled(False)
+                self.action_btn.setStyleSheet(f"background: #ECEFF4; color: {TEXT_SECONDARY}; border-radius: 4px; font-size: 11px;")
+                self.fail_btn.hide()
+            else:
+                self.action_btn.setEnabled(False)
+                self.action_btn.setText("已达标")
+                self.action_btn.setStyleSheet(f"background: rgba(163, 190, 140, 0.15); color: {GREEN_ACCENT}; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid {GREEN_ACCENT};")
+                self.fail_btn.hide()
         else:
             self.action_btn.setText("未达标" if operator == '>=' else "进行中")
             self.action_btn.setEnabled(False)
