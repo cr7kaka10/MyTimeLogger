@@ -432,24 +432,30 @@ class StudyLogger:
             if 'penalty_coins' not in cols:
                 cursor.execute("ALTER TABLE goals ADD COLUMN penalty_coins REAL DEFAULT 0")
 
-            # 修正现有数据的时间偏差（针对之前因 DEFAULT 产生的 UTC 时间）
+            # 核心修正：全面纠正数据库中的 UTC 时间偏差（针对之前因 DEFAULT 产生的 UTC 时间）
             try:
                 from datetime import timedelta
-                cursor.execute("SELECT id, created_at FROM goals WHERE created_at LIKE '2026-%'")
-                for g_id, c_at in cursor.fetchall():
-                    # 如果时间点在 0-11 点之间，且当前是下午，极大概率是 UTC
-                    if " " in c_at:
-                        time_part = c_at.split(" ")[1]
-                        hour = int(time_part.split(":")[0])
-                        # 如果记录的时间明显晚于现在（比如记录是15点，现在是16点，但记录其实是UTC的07点），
-                        # 简单的逻辑是：如果该记录的时间 + 8小时 仍然不晚于“现在”，则可以修正
-                        dt = datetime.strptime(c_at, '%Y-%m-%d %H:%M:%S')
-                        # 这是一个保守的补正：仅对 2026-05-06 之前的记录，或者今天早些时候且小时数 < 12 的进行补正
-                        if dt < datetime.now() - timedelta(hours=4): 
-                            new_at = (dt + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
-                            cursor.execute("UPDATE goals SET created_at = ? WHERE id = ?", (new_at, g_id))
+                now = datetime.now()
+                # 需要检查并修正的表
+                tables_to_fix = ['habits', 'reward_ledger', 'rewards', 'external_rewards', 'goals']
+                for t in tables_to_fix:
+                    # 使用 rowid 兼容没有 id 或 id 类型不同的表
+                    cursor.execute(f"SELECT rowid, created_at FROM {t} WHERE created_at LIKE '2026-%'")
+                    for rowid, c_at in cursor.fetchall():
+                        if not c_at or " " not in c_at: continue
+                        try:
+                            dt = datetime.strptime(c_at, '%Y-%m-%d %H:%M:%S')
+                            # 补正逻辑：如果小时数 < 12，且加上 8 小时后不晚于“现在”
+                            # 例如用户在 16:12 建立，库里存 08:12。08:12+8=16:12，小于当前 17:06，执行补正。
+                            if dt.hour < 12:
+                                new_dt = dt + timedelta(hours=8)
+                                # 只要补正后的时间不超前于当前时间太多（容错5分钟），就认为是 UTC 偏差
+                                if new_dt <= now + timedelta(minutes=5):
+                                    new_at = new_dt.strftime('%Y-%m-%d %H:%M:%S')
+                                    cursor.execute(f"UPDATE {t} SET created_at = ? WHERE rowid = ?", (new_at, rowid))
+                        except: continue
             except Exception as e:
-                logging.error(f"时间修正迁移失败: {e}")
+                logging.error(f"全局时间修正迁移失败: {e}")
 
             # 再次检查 reward_config
             cursor.execute("PRAGMA table_info(reward_config)")
