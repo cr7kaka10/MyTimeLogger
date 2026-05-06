@@ -384,10 +384,10 @@ class GoalCard(QFrame):
             self.action_btn.setStyleSheet(f"background: {BORDER_COLOR}; color: #AAB0BC; border-radius: 4px; font-size: 11px;")
             self.fail_btn.hide()
         elif is_met and claim_id:
-            self.action_btn.setEnabled(True)
-            self.action_btn.setText("领取" if self.goal_data['reward_coins'] >= 0 else "确认")
-            self.action_btn.setStyleSheet(f"background: {GREEN_ACCENT}; color: white; border-radius: 4px; font-weight: bold; font-size: 11px;")
-            self.action_btn.clicked.connect(lambda: self._on_claim(claim_id))
+            # 自动结算模式下，不再显示“领取”按钮，仅显示状态
+            self.action_btn.setEnabled(False)
+            self.action_btn.setText("已达标")
+            self.action_btn.setStyleSheet(f"background: rgba(163, 190, 140, 0.15); color: {GREEN_ACCENT}; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid {GREEN_ACCENT};")
             self.fail_btn.hide()
         else:
             self.action_btn.setText("未达标" if operator == '>=' else "进行中")
@@ -395,9 +395,9 @@ class GoalCard(QFrame):
             self.action_btn.setStyleSheet(f"background: #ECEFF4; color: {TEXT_SECONDARY}; border-radius: 4px; font-size: 11px;")
             if operator == '<=' and progress_val > target:
                 self.fail_btn.show()
-                self.fail_btn.setText("放弃")
-                self.fail_btn.setStyleSheet(f"background: {RED_ACCENT}; color: white; border-radius: 4px; font-weight: bold; font-size: 11px;")
-                self.fail_btn.clicked.connect(lambda: self._on_fail(claim_id))
+                self.fail_btn.setText("超限失败")
+                self.fail_btn.setStyleSheet(f"background: rgba(191, 97, 106, 0.15); color: {RED_ACCENT}; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid {RED_ACCENT};")
+                self.fail_btn.setEnabled(False)
             else:
                 self.fail_btn.hide()
 

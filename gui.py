@@ -252,18 +252,10 @@ class MyTimeLoggerGUI(QWidget):
             print(f"无法打开文件夹: {e}")
             QMessageBox.warning(self, "操作失败", f"无法自动打开文件夹。\n请手动前往: {log_dir}")
 
-    def _on_reset_coins(self):
-        if QMessageBox.question(self, "确认重置", "确定要重置金币和待领取奖励吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+    def _on_reset_coins_and_ledger(self):
+        if QMessageBox.question(self, "确认重置", "确定要重置所有金币、流水以及待领取奖励吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             if self.logic.local_logger.reset_coins():
-                QMessageBox.information(self, "成功", "金币已重置。")
-                self.generate_statistics_html()
-            else:
-                QMessageBox.warning(self, "失败", "操作失败。")
-
-    def _on_reset_ledger(self):
-        if QMessageBox.question(self, "确认重置", "确定要清空金币流水吗？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
-            if self.logic.local_logger.reset_ledger():
-                QMessageBox.information(self, "成功", "流水已清空。")
+                QMessageBox.information(self, "成功", "金币数据已清空。")
                 self.generate_statistics_html()
             else:
                 QMessageBox.warning(self, "失败", "操作失败。")
@@ -404,19 +396,13 @@ class MyTimeLoggerGUI(QWidget):
             op_action.triggered.connect(lambda _, v=val: self.set_opacity(v))
             opacity_menu.addAction(op_action)
 
-        reset_menu = QMenu("🔄 重置", self)
-        
-        reset_coins_action = QAction("💰 重置金币", self)
-        reset_coins_action.triggered.connect(self._on_reset_coins)
-        
-        reset_ledger_action = QAction("📜 金币流水", self)
-        reset_ledger_action.triggered.connect(self._on_reset_ledger)
+        reset_coins_action = QAction("💰 重置金币与流水", self)
+        reset_coins_action.triggered.connect(self._on_reset_coins_and_ledger)
         
         reset_sessions_action = QAction("🎯 专注记录", self)
         reset_sessions_action.triggered.connect(self._on_reset_focus_records)
         
         reset_menu.addAction(reset_coins_action)
-        reset_menu.addAction(reset_ledger_action)
         reset_menu.addAction(reset_sessions_action)
 
         open_log_action = QAction("📂 打开日志文件夹", self)
