@@ -709,7 +709,7 @@ class TimelineItemWidget(QWidget):
             common_style = "padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: none; margin-right: 4px;"
             if tag == "目标": tag_lbl.setStyleSheet(f"background-color: #E0F2FE; color: #0369A1; {common_style}")
             elif tag == "习惯": tag_lbl.setStyleSheet(f"background-color: #F3E8FF; color: #6B21A8; {common_style}")
-            elif tag == "清单": tag_lbl.setStyleSheet(f"background-color: #DCFCE7; color: #15803D; {common_style}")
+            elif tag == "清单": tag_lbl.setStyleSheet(f"background-color: #FEF3C7; color: #B45309; {common_style}")
             else: tag_lbl.setStyleSheet(f"background-color: #F3F4F6; color: #374151; {common_style}")
             top_row.addWidget(tag_lbl)
             
