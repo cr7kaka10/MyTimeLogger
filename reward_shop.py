@@ -18,23 +18,61 @@ from datetime import datetime, timedelta
 import re
 
 def format_ledger_desc(desc):
-    if desc.startswith("达成目标奖励: "): return f"【目标】{desc[8:]} 完成"
-    if desc.startswith("目标达成: "): return f"【目标】{desc[6:]} 完成"
-    if desc.startswith("目标未达标: "): return f"【目标】{desc[7:]} 失败"
-    if desc.startswith("达成目标惩罚: "): return f"【目标】{desc[8:]} 失败"
-    if desc.startswith("目标挑战失败: "): return f"【目标】{desc[8:]} 失败"
-    if desc.startswith("习惯打卡完成: "): return f"【习惯】{desc[8:]} 完成"
-    if desc.startswith("习惯判定失败: "): return f"【习惯】{desc[8:]} 失败"
-    if desc.startswith("领取外部奖励: "):
+    # 移除统一的“领取奖励: ”前缀
+    if desc.startswith("领取奖励: "):
+        desc = desc[6:]
+    
+    # 目标
+    if "目标达成" in desc or "达成目标奖励" in desc:
+        # 提取目标标题。格式：目标达成[2026-05-05]: 娱乐≤60min (0m / <=60m)
+        name = desc
+        if "]: " in desc:
+            name = desc.split("]: ")[1]
+        if " (" in name:
+            name = name.split(" (")[0]
+        return f"【目标】{name} 完成"
+    
+    if "目标未达标" in desc or "目标挑战失败" in desc or "达成目标惩罚" in desc:
+        name = desc
+        if "]: " in desc:
+            name = desc.split("]: ")[1]
+        if " (" in name:
+            name = name.split(" (")[0]
+        return f"【目标】{name} 失败"
+
+    # 习惯
+    if desc.startswith("习惯打卡:") or desc.startswith("习惯打卡完成:"):
+        name = desc.split(":")[-1].strip()
+        if " (" in name: name = name.split(" (")[0]
+        return f"【习惯】{name} 完成"
+    
+    if desc.startswith("习惯判定失败"):
+        name = desc.split(":")[-1].strip()
+        return f"【习惯】{name} 失败"
+
+    # 清单/外部
+    if desc.startswith("领取外部奖励:"):
         content = desc[8:]
         status = "失败" if ("未达标" in content or "失败" in content) else "完成"
         return f"【清单】{content} {status}"
     
+    # 兜底：如果是习惯打卡产生的（通过 re 匹配）
     m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
     if m:
-        return f"【习惯】{m.group(1)} 完成 {m.group(2) or ''}".strip()
+        return f"【习惯】{m.group(1)} 完成".strip()
         
-    return desc
+    # 如果没有标签，根据关键词尝试补全
+    if "打卡" in desc or "习惯" in desc:
+        return f"【习惯】{desc} 完成"
+    if "清单" in desc or "任务" in desc:
+        return f"【清单】{desc} 完成"
+    if "目标" in desc:
+        return f"【目标】{desc} 完成"
+
+    # 特殊处理：如果没有前缀但来自 external_claim，通常是习惯或清单
+    # 鉴于用户截图，很多直接是名称，我们加个【习惯】兜底或者保持原样
+    # 这里我们假设大部分外部同步过来的都是习惯
+    return f"【习惯】{desc} 完成" if not desc.startswith("【") else desc
 
 from database import StudyLogger
 
@@ -668,10 +706,11 @@ class TimelineItemWidget(QWidget):
         
         if tag:
             tag_lbl = QLabel(tag)
-            if tag == "目标": tag_lbl.setStyleSheet("background-color: #E0F2FE; color: #0369A1; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
-            elif tag == "习惯": tag_lbl.setStyleSheet("background-color: #F3E8FF; color: #6B21A8; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
-            elif tag == "清单": tag_lbl.setStyleSheet("background-color: #FEF3C7; color: #B45309; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
-            else: tag_lbl.setStyleSheet("background-color: #F3F4F6; color: #374151; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: none;")
+            common_style = "padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: none; margin-right: 4px;"
+            if tag == "目标": tag_lbl.setStyleSheet(f"background-color: #E0F2FE; color: #0369A1; {common_style}")
+            elif tag == "习惯": tag_lbl.setStyleSheet(f"background-color: #F3E8FF; color: #6B21A8; {common_style}")
+            elif tag == "清单": tag_lbl.setStyleSheet(f"background-color: #DCFCE7; color: #15803D; {common_style}")
+            else: tag_lbl.setStyleSheet(f"background-color: #F3F4F6; color: #374151; {common_style}")
             top_row.addWidget(tag_lbl)
             
         # 对主文本进行摘要处理
@@ -690,28 +729,26 @@ class TimelineItemWidget(QWidget):
         if is_success:
             status_lbl = QLabel("✓")
             status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_lbl.setFixedSize(16, 16)
-            status_lbl.setStyleSheet("color: white; background-color: #10B981; border-radius: 8px; font-size: 11px; font-weight: 900;")
-            
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(8)
-            shadow.setColor(QColor(16, 185, 129, 150))
-            shadow.setOffset(0, 0)
-            status_lbl.setGraphicsEffect(shadow)
-            
+            status_lbl.setFixedSize(18, 18)
+            status_lbl.setStyleSheet("""
+                color: white; 
+                background-color: #10B981; 
+                border-radius: 9px; 
+                font-size: 11px; 
+                font-weight: bold;
+            """)
             top_row.addWidget(status_lbl)
         elif is_fail:
             status_lbl = QLabel("✕")
             status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_lbl.setFixedSize(16, 16)
-            status_lbl.setStyleSheet("color: white; background-color: #EF4444; border-radius: 8px; font-size: 11px; font-weight: 900;")
-            
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(8)
-            shadow.setColor(QColor(239, 68, 68, 150))
-            shadow.setOffset(0, 0)
-            status_lbl.setGraphicsEffect(shadow)
-            
+            status_lbl.setFixedSize(18, 18)
+            status_lbl.setStyleSheet("""
+                color: white; 
+                background-color: #F97316; 
+                border-radius: 9px; 
+                font-size: 10px; 
+                font-weight: bold;
+            """)
             top_row.addWidget(status_lbl)
             
         top_row.addStretch()
