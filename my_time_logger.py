@@ -49,6 +49,8 @@ setup_logging()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    from PyQt6.QtGui import QFont
+    app.setFont(QFont("Microsoft YaHei", 9))
 
     # 单实例锁定检测
     lock_path = resource_path("my_time_logger.lock")

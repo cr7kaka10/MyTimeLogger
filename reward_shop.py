@@ -624,7 +624,7 @@ class TimelineHeaderWidget(QWidget):
         layout.addWidget(timeline_area)
         
         lbl = QLabel(date_str)
-        lbl.setStyleSheet("color: #374151; font-size: 14px; font-weight: 900; letter-spacing: 1px;")
+        lbl.setStyleSheet("color: #374151; font-size: 14px; font-weight: 900;")
         layout.addWidget(lbl)
 
 class TimelineItemWidget(QWidget):
@@ -806,7 +806,6 @@ class TimelineItemWidget(QWidget):
             border-radius: 6px; 
             color: #1F2937;
             border: 1px solid #E2E8F0;
-            line-height: 1.6;
         """)
         layout.addWidget(content_val)
         
@@ -880,6 +879,7 @@ class FullLedgerDialog(QDialog):
         title_row.addWidget(title_lbl)
         
         self.period_combo = QComboBox()
+        self.period_combo.setFont(QFont("Microsoft YaHei", 10))
         self.period_combo.addItems(["最近7天", "最近30天", "本月", "全部"])
         self.period_combo.setStyleSheet("""
             QComboBox {
