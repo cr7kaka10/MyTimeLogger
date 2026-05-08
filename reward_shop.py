@@ -624,7 +624,7 @@ class TimelineHeaderWidget(QWidget):
         layout.addWidget(timeline_area)
         
         lbl = QLabel(date_str)
-        lbl.setStyleSheet("color: #374151; font-size: 14px; font-weight: 900;")
+        lbl.setStyleSheet("color: #374151; font-size: 11pt; font-weight: 900;")
         layout.addWidget(lbl)
 
 class TimelineItemWidget(QWidget):
@@ -706,7 +706,7 @@ class TimelineItemWidget(QWidget):
         
         if tag:
             tag_lbl = QLabel(tag)
-            common_style = "padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: none; margin-right: 4px;"
+            common_style = "padding: 2px 8px; border-radius: 4px; font-size: 9pt; font-weight: bold; border: none; margin-right: 4px;"
             if tag == "目标": tag_lbl.setStyleSheet(f"background-color: #E0F2FE; color: #0369A1; {common_style}")
             elif tag == "习惯": tag_lbl.setStyleSheet(f"background-color: #F3E8FF; color: #6B21A8; {common_style}")
             elif tag == "清单": tag_lbl.setStyleSheet(f"background-color: #FEF3C7; color: #B45309; {common_style}")
@@ -714,14 +714,14 @@ class TimelineItemWidget(QWidget):
             top_row.addWidget(tag_lbl)
             
         # 对主文本进行摘要处理
-        font = QFont("Microsoft YaHei", 13, 800)
+        font = QFont("Microsoft YaHei", 10, 800)
         fm = QFontMetrics(font)
         # 限制显示长度，如果过长则摘要
         display_text = fm.elidedText(main_text, Qt.TextElideMode.ElideRight, 200)
         
         title_lbl = QLabel(display_text)
         title_lbl.setFont(font)
-        title_lbl.setStyleSheet("color: #1F2937; border: none; background: transparent;")
+        title_lbl.setStyleSheet("color: #1F2937; border: none; background: transparent; font-size: 10pt;")
         top_row.addWidget(title_lbl)
         
         from PyQt6.QtWidgets import QGraphicsDropShadowEffect
@@ -760,7 +760,7 @@ class TimelineItemWidget(QWidget):
         color = RED_ACCENT if amount > 0 else GREEN_ACCENT
         
         amt_lbl = QLabel(f"{sign}{amt_disp}")
-        amt_lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: 900; font-family: 'Consolas', monospace; border: none; background: transparent;")
+        amt_lbl.setStyleSheet(f"color: {color}; font-size: 12pt; font-weight: 900; font-family: 'Consolas', monospace; border: none; background: transparent;")
         card_layout.addWidget(amt_lbl)
         
         layout.addWidget(card)
@@ -888,7 +888,13 @@ class FullLedgerDialog(QDialog):
                 border-radius: 8px; 
                 background: white; 
                 color: #374151;
-                font-size: 13px;
+                font-size: 10pt;
+            }
+            QComboBox QAbstractItemView {
+                font-size: 10pt;
+                background-color: white;
+                border: 1px solid #D1D5DB;
+                selection-background-color: #F3F4F6;
             }
             QComboBox:hover {
                 border: 1px solid #9CA3AF;
@@ -906,9 +912,9 @@ class FullLedgerDialog(QDialog):
         # Stats summary
         stats_row = QHBoxLayout()
         self.total_in_val = QLabel("+0")
-        self.total_in_val.setStyleSheet(f"color: {RED_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
+        self.total_in_val.setStyleSheet(f"color: {RED_ACCENT}; font-size: 18pt; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
         in_lbl = QLabel("总收入")
-        in_lbl.setStyleSheet("color: #6B7280; font-size: 12px; border: none;")
+        in_lbl.setStyleSheet("color: #6B7280; font-size: 9pt; border: none;")
         
         in_box = QVBoxLayout()
         in_box.addWidget(in_lbl)
@@ -918,9 +924,9 @@ class FullLedgerDialog(QDialog):
         stats_row.addSpacing(40)
         
         self.total_out_val = QLabel("0")
-        self.total_out_val.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 24px; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
+        self.total_out_val.setStyleSheet(f"color: {GREEN_ACCENT}; font-size: 18pt; font-weight: 900; font-family: 'Consolas', monospace; border: none;")
         out_lbl = QLabel("总支出")
-        out_lbl.setStyleSheet("color: #6B7280; font-size: 12px; border: none;")
+        out_lbl.setStyleSheet("color: #6B7280; font-size: 9pt; border: none;")
         
         out_box = QVBoxLayout()
         out_box.addWidget(out_lbl)
