@@ -25,7 +25,6 @@ def format_ledger_desc(desc):
     # 处理合并进来的奖励标记 (支持多个)
     reward_suffix = ""
     reward_names = []
-    import re
     matches = re.findall(r" 🎁\[解锁奖励:(.+?)\]", desc)
     if matches:
         reward_names = matches
@@ -34,38 +33,46 @@ def format_ledger_desc(desc):
         reward_suffix = f" 🎁已获:{', '.join(reward_names)}"
 
     # 目标
-    if "目标达成" in desc or "达成目标奖励" in desc:
-        # 提取目标标题。格式：目标达成[2026-05-05]: 娱乐≤60min (0m / <=60m)
+    if "目标达成" in desc or "达成目标奖励" in desc or "目标未达标" in desc or "目标挑战失败" in desc:
+        from datetime import date
+        yesterday_str = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        is_fail = "未达标" in desc or "失败" in desc
+        status = "失败" if is_fail else "完成"
+        
+        # 提取日期标记 [YYYY-MM-DD]
+        date_mark = ""
+        if "[" in desc and "]:" in desc:
+            d_part = desc.split("[")[1].split("]")[0]
+            if d_part == yesterday_str:
+                date_mark = "(昨日)"
+            else:
+                date_mark = f"({d_part})"
+        
+        # 提取名称
         name = desc
         if "]: " in desc:
             name = desc.split("]: ")[1]
         if " (" in name:
             name = name.split(" (")[0]
-        return f"【目标】{name} 完成"
-    
-    if "目标未达标" in desc or "目标挑战失败" in desc or "达成目标惩罚" in desc:
-        name = desc
-        if "]: " in desc:
-            name = desc.split("]: ")[1]
-        if " (" in name:
-            name = name.split(" (")[0]
-        return f"【目标】{name} 失败"
+            
+        return f"【目标】{date_mark}{name} {status}" + reward_suffix
 
     # 习惯
     if desc.startswith("习惯打卡:") or desc.startswith("习惯打卡完成:"):
         name = desc.split(":")[-1].strip()
         if " (" in name: name = name.split(" (")[0]
-        return f"【习惯】{name} 完成"
+        return f"【习惯】{name} 完成" + reward_suffix
     
     if desc.startswith("习惯判定失败"):
         name = desc.split(":")[-1].strip()
-        return f"【习惯】{name} 失败"
+        return f"【习惯】{name} 失败" + reward_suffix
 
     # 清单/外部
     if desc.startswith("领取外部奖励:"):
         content = desc[8:]
         status = "失败" if ("未达标" in content or "失败" in content) else "完成"
-        return f"【清单】{content} {status}"
+        return f"【清单】{content} {status}" + reward_suffix
 
     # 解锁型奖励兑换（任务/目标达成自动入背包）
     if desc.startswith("任务解锁兑换:"):
