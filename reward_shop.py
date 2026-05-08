@@ -58,9 +58,14 @@ def format_ledger_desc(desc):
 
     # 解锁型奖励兑换（任务/目标达成自动入背包）
     if desc.startswith("任务解锁兑换:"):
-        name = desc[7:].strip()  # 去掉「任务解锁兑换: 」前缀
-        return f"【奖励】{name} 已入背包"
-    
+        rest = desc[7:].strip()  # 去掉「任务解锁兑换: 」前缀
+        if ' [来自: ' in rest:
+            parts = rest.split(' [来自: ', 1)
+            reward_name = parts[0].strip()
+            source_name = parts[1].rstrip(']').strip()
+            return f"【奖励】完成「{source_name}」→ 获得「{reward_name}」"
+        return f"【奖励】{rest} 已入背包"
+
     # 兜底：如果是习惯打卡产生的（通过 re 匹配）
     m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
     if m:

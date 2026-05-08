@@ -1067,12 +1067,14 @@ class StudyLogger:
                 if available <= 0:
                     return False, f'需要先完成条件「{unlock_task_title or "未知"}」才能兑换（或剩余额度不足）！'
                 
-                # 如果有剩余额度，兑换成功，但不扣积分，记录0金币的流水
+                # 如果有剩余额度，兑换成功，不扣积分，记录0金币流水，携带来源任务名
                 now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                source_name = unlock_task_title or unlock_task_id or '未知来源'
+                desc_text = f'任务解锁兑换: {title} [来自: {source_name}]'
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'reward_unlock', ?, ?, ?)",
-                               (0, reward_id, f'任务解锁兑换: {title}', now_str))
+                               (0, reward_id, desc_text, now_str))
                 conn.commit()
                 conn.close()
                 return True, f'成功兑换「{title}」！'
