@@ -882,6 +882,11 @@ class MyTimeLoggerGUI(QWidget):
         else:
             win.show()
 
+    def toggle_backpack(self):
+        """直接唤起背包弹窗"""
+        win = self._ensure_reward_shop_window()
+        win._show_backpack()
+
     def _ensure_goals_window(self):
         """确保目标挑战窗口已创建并返回"""
         if getattr(self, '_goals_window', None) is None:
@@ -1166,7 +1171,6 @@ class MyTimeLoggerGUI(QWidget):
             return
         self.settings.setValue("ui/geometry", self.saveGeometry())
         self.settings.setValue("ui/opacity", self.settings.value("ui/opacity", 0.8))
-        self.settings.setValue("ui/alwaysOnTop", self.is_always_on_top)
 
     def load_settings(self):
         """加载 UI 设置"""

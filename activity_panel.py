@@ -197,6 +197,15 @@ class ActivityPanel(QWidget):
         if self.main_window and hasattr(self.main_window, "toggle_sleep_statistics"):
             sleep_btn.clicked.connect(self.main_window.toggle_sleep_statistics)
 
+        backpack_btn = QPushButton("🎒 背包")
+        backpack_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        backpack_btn.setStyleSheet("""
+            QPushButton { color: #88C0D0; background: transparent; font-size: 12px; border: none; padding: 0 5px; }
+            QPushButton:hover { color: #81A1C1; }
+        """)
+        if self.main_window and hasattr(self.main_window, "toggle_backpack"):
+            backpack_btn.clicked.connect(self.main_window.toggle_backpack)
+
         title_layout.addWidget(title_label)
         title_layout.addStretch()
         title_layout.addWidget(goals_btn)
@@ -204,7 +213,8 @@ class ActivityPanel(QWidget):
         title_layout.addWidget(habit_btn)
         title_layout.addWidget(sleep_btn)
         title_layout.addWidget(shop_btn)
-        title_layout.addSpacing(5)
+        title_layout.addWidget(backpack_btn)
+        title_layout.addSpacing(2)
         title_layout.addWidget(refresh_btn)
         title_layout.addWidget(close_btn)
         bg_layout.addLayout(title_layout)
