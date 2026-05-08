@@ -366,8 +366,7 @@ class HabitTrackerWindow(QWidget):
         self.setFixedSize(520, 560)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.dragPos = None

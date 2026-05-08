@@ -314,7 +314,7 @@ class DailyChecklistWindow(QWidget):
         
         self.setWindowTitle("今日清单")
         self.setFixedSize(400, 520)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.dragPos = None
 

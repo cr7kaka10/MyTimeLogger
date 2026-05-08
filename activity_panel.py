@@ -98,8 +98,7 @@ class ActivityPanel(QWidget):
         
         self.setWindowFlags(
             Qt.WindowType.Tool | 
-            Qt.WindowType.FramelessWindowHint | 
-            Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.FramelessWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setObjectName("ActivityPanel")

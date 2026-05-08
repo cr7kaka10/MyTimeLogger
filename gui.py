@@ -49,9 +49,7 @@ class MyTimeLoggerGUI(QWidget):
         self.setWindowIcon(QIcon(resource_path(os.path.join("document", "icon.ico"))))
 
         self.dragPos = None
-        self.is_locked = False
         self.settings = QSettings("MyTimeLogger", "App")
-        self.is_always_on_top = self.settings.value("ui/alwaysOnTop", True, type=bool)
         self.is_mini_mode = True # 强制 Mini 模式
 
         self.create_tray_icon()
@@ -82,8 +80,7 @@ class MyTimeLoggerGUI(QWidget):
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowStaysOnTopHint if self.is_always_on_top else Qt.WindowType.Widget
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -332,14 +329,6 @@ class MyTimeLoggerGUI(QWidget):
         if not is_running and not is_paused:
             pause_action.setDisabled(True)
 
-        lock_text = "🔓 解锁 (可交互)" if self.is_locked else "🔒 锁定 (鼠标穿透)"
-        lock_action = QAction(lock_text, self)
-        lock_action.triggered.connect(self.toggle_mouse_penetration)
-
-        always_on_top_text = f"{'✅' if self.is_always_on_top else '🔲'} 总在最前"
-        always_on_top_action = QAction(always_on_top_text, self)
-        always_on_top_action.triggered.connect(self.toggle_always_on_top)
-
         config_menu = QMenu("⚙️ 设置", self)
 
         hotkey_menu = QMenu("快捷键设置", self)
@@ -426,8 +415,6 @@ class MyTimeLoggerGUI(QWidget):
         menu.addAction(start_action)
         menu.addAction(pause_action)
         menu.addSeparator()
-        menu.addAction(lock_action)
-        menu.addAction(always_on_top_action)
         menu.addMenu(config_menu)
         menu.addMenu(opacity_menu)
         menu.addMenu(reset_menu)
@@ -446,7 +433,7 @@ class MyTimeLoggerGUI(QWidget):
     def update_stylesheet(self):
         """根据模式和设置更新样式"""
         opacity = self.settings.value("ui/opacity", 0.8, type=float)
-        border_style = "border: none;" if self.is_locked else "border: 1px solid #E5E9F0;"
+        border_style = "border: 1px solid #E5E9F0;"
         label_font = 13
         total_time_font = 20
         self.background_widget.setStyleSheet(f"""
@@ -647,21 +634,11 @@ class MyTimeLoggerGUI(QWidget):
                 win.show()
                 win.activateWindow()
                 win.raise_()
-        
-        # 始终置顶逻辑（右键托盘菜单触发 Context 信号）
-        elif self.is_always_on_top and reason == QSystemTrayIcon.ActivationReason.Context:
-            if not (self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
-                self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
-            # 移除这里的 self.show()，避免右键菜单弹出时 Mini 栏意外出现
-            self.activateWindow()
-            self.raise_()
 
     def update_tray_menu(self):
         self.populate_context_menu(self.tray_menu)
 
     def contextMenuEvent(self, event):
-        if self.is_locked:
-            return
         context_menu = QMenu(self)
         self.populate_context_menu(context_menu)
         context_menu.exec(event.globalPos())
@@ -669,19 +646,12 @@ class MyTimeLoggerGUI(QWidget):
     # ======================== 窗口交互 ========================
 
     def toggle_mouse_penetration(self):
-        """切换鼠标穿透锁定状态"""
-        self.is_locked = not self.is_locked
-        self.setWindowFlag(Qt.WindowType.WindowTransparentForInput, self.is_locked)
-        self.show()
-        if not self.is_locked:
-            self.activateWindow()
-        self.update_stylesheet()
+        """已移除"""
+        pass
 
     def toggle_always_on_top(self):
-        """切换始终置顶"""
-        self.is_always_on_top = not self.is_always_on_top
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.is_always_on_top)
-        self.show()
+        """已移除"""
+        pass
 
     def set_interval_config(self, min_m, max_m):
         """设置学习间隔配置"""
@@ -745,15 +715,14 @@ class MyTimeLoggerGUI(QWidget):
     # ======================== 鼠标事件 ========================
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.toggle_mouse_penetration()
+        pass
 
     def mousePressEvent(self, event):
-        if not self.is_locked and event.button() == Qt.MouseButton.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.dragPos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
     def mouseMoveEvent(self, event):
-        if not self.is_locked and event.buttons() == Qt.MouseButton.LeftButton and self.dragPos:
+        if event.buttons() == Qt.MouseButton.LeftButton and self.dragPos:
             self.move(event.globalPosition().toPoint() - self.dragPos)
 
     def mouseReleaseEvent(self, event):

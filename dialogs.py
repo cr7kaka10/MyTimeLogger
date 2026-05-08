@@ -91,7 +91,7 @@ class MarkdownInputDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(500, 350)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        # self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True) # 根据用户要求移除置顶
 
         layout = QVBoxLayout(self)
 

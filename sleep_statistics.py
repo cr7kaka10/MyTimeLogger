@@ -216,8 +216,7 @@ class SleepStatisticsWindow(QWidget):
         self.setFixedSize(800, 600)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.dragPos = None
