@@ -1103,6 +1103,7 @@ class StudyLogger:
             cursor.execute("""
                 SELECT rl.id, rl.source_id as reward_id, rl.created_at,
                        r.title, r.icon, r.description,
+                       r.unlock_task_title,
                        COALESCE(rl.description, '') as memo
                 FROM reward_ledger rl
                 LEFT JOIN rewards r ON r.id = rl.source_id

@@ -55,6 +55,11 @@ def format_ledger_desc(desc):
         content = desc[8:]
         status = "失败" if ("未达标" in content or "失败" in content) else "完成"
         return f"【清单】{content} {status}"
+
+    # 解锁型奖励兑换（任务/目标达成自动入背包）
+    if desc.startswith("任务解锁兑换:"):
+        name = desc[7:].strip()  # 去掉「任务解锁兑换: 」前缀
+        return f"【奖励】{name} 已入背包"
     
     # 兜底：如果是习惯打卡产生的（通过 re 匹配）
     m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
@@ -1173,13 +1178,20 @@ class BackpackDialog(QDialog):
         info.addWidget(title_lbl)
 
         time_str = ''
+        source_str = ''
         try:
             from datetime import datetime
             dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
             time_str = dt.strftime('%m-%d %H:%M 入库')
         except Exception:
             pass
-        sub_lbl = QLabel(time_str)
+        unlock_src = entry.get('unlock_task_title') or ''
+        if unlock_src:
+            # 截断过长的来源名
+            src_display = unlock_src[:20] + ('…' if len(unlock_src) > 20 else '')
+            source_str = f'🔓 由「{src_display}」解锁'
+        sub_text = f"{time_str}   {source_str}" if source_str else time_str
+        sub_lbl = QLabel(sub_text)
         sub_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none; background: transparent;")
         info.addWidget(sub_lbl)
         lay.addLayout(info, 1)
