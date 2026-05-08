@@ -263,23 +263,27 @@ class RewardCard(QFrame):
             db = StudyLogger({})
             available_count = db.get_available_unlocks(unlock_task_id, self.reward_data.get('id'))
             is_completed = available_count > 0
-            
+
             label_text = "🎯 目标达成" if is_completed else ("🎯 目标专属" if unlock_task_id.startswith("goal_") else "📋 任务专属")
             price_lbl = QLabel(label_text)
             price_lbl.setStyleSheet(f"color: {'white' if is_completed else TEXT_SECONDARY}; font-size: 11px; font-weight: bold; background: {GREEN_ACCENT if is_completed else '#E5E9F0'}; border-radius: 4px; padding: 2px 6px;")
             if not is_completed and unlock_task_title:
                 price_lbl.setToolTip(f"需先完成: {unlock_task_title}")
-            
-            btn_text = f"领取({available_count})" if is_completed else "未达成"
-            self.buy_btn = QPushButton(btn_text)
-            self.buy_btn.setFixedSize(62, 28)
+
+            # 已达成 → 显示「自动入库」状态提示，不再允许手动点击
             if is_completed:
-                self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                self.buy_btn = QPushButton(f"🎁 ×{available_count}")
+                self.buy_btn.setFixedSize(66, 28)
+                self.buy_btn.setEnabled(False)
+                self.buy_btn.setToolTip("达标自动入背包，无需手动领取")
                 self.buy_btn.setStyleSheet(f"""
-                    QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
-                    QPushButton:hover {{ background: {GREEN_HOVER}; }}
+                    QPushButton {{ background: rgba(163,190,140,0.15); color: {GREEN_ACCENT};
+                                   border: 1px solid {GREEN_ACCENT}; border-radius: 6px;
+                                   font-size: 11px; font-weight: bold; }}
                 """)
             else:
+                self.buy_btn = QPushButton("未达成")
+                self.buy_btn.setFixedSize(62, 28)
                 self.buy_btn.setCursor(Qt.CursorShape.ForbiddenCursor)
                 self.buy_btn.setEnabled(False)
                 self.buy_btn.setStyleSheet(f"""
@@ -289,7 +293,7 @@ class RewardCard(QFrame):
             price = self.reward_data.get('price', 0)
             price_lbl = QLabel(f"{price}{COIN_ICON}")
             price_lbl.setStyleSheet(f"color: {GOLD_HOVER}; font-size: 14px; font-weight: bold;")
-            
+
             self.buy_btn = QPushButton("兑换")
             self.buy_btn.setFixedSize(52, 28)
             self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -297,7 +301,7 @@ class RewardCard(QFrame):
                 QPushButton {{ background: {GOLD_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
                 QPushButton:hover {{ background: {GOLD_HOVER}; }}
             """)
-        
+
         layout.addWidget(price_lbl)
         layout.addWidget(self.buy_btn)
 
@@ -360,6 +364,13 @@ class RewardShopWindow(QWidget):
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         add_btn.clicked.connect(self._on_add_reward)
 
+        bag_btn = QPushButton("🎒")
+        bag_btn.setFixedSize(30, 30)
+        bag_btn.setStyleSheet(f"QPushButton {{ background: transparent; font-size: 16px; border: none; }} QPushButton:hover {{ background: rgba(163,190,140,0.15); border-radius: 6px; }}")
+        bag_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bag_btn.setToolTip("我的背包")
+        bag_btn.clicked.connect(self._show_backpack)
+
         close_btn = QPushButton("×")
         close_btn.setFixedSize(30, 30)
         close_btn.setStyleSheet(f"QPushButton {{ color: {TEXT_SECONDARY}; background: transparent; font-size: 16px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {GOLD_ACCENT}; }}")
@@ -367,6 +378,7 @@ class RewardShopWindow(QWidget):
         close_btn.clicked.connect(self.hide)
 
         header_layout.addWidget(add_btn)
+        header_layout.addWidget(bag_btn)
         header_layout.addWidget(close_btn)
         layout.addWidget(header)
 
@@ -453,12 +465,28 @@ class RewardShopWindow(QWidget):
         else:
             self.empty_label.hide()
 
+        auto_claimed = []
         for reward in rewards:
+            # 解锁型奖励：有可用额度时自动兑换入背包
+            if reward.get('unlock_task_id'):
+                available = self.db.get_available_unlocks(reward['unlock_task_id'], reward['id'])
+                for _ in range(available):
+                    ok, _ = self.db.buy_reward(reward['id'])
+                    if ok:
+                        auto_claimed.append(reward.get('title', '奖励'))
+
             card = RewardCard(reward)
-            card.buy_btn.clicked.connect(lambda _, r=reward: self._on_buy(r))
+            # 金币兑换型才绑定点击
+            if not reward.get('unlock_task_id'):
+                card.buy_btn.clicked.connect(lambda _, r=reward: self._on_buy(r))
             card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             card.customContextMenuRequested.connect(lambda pos, r=reward, c=card: self._show_context_menu(r, pos, c))
             self.reward_layout.insertWidget(self.reward_layout.count() - 1, card)
+
+        if auto_claimed:
+            # 重新刷新余额和卡片状态（因为 available_count 变了）
+            balance = self.db.get_balance()
+            self.balance_label.setText(f"💰 {balance} {COIN_ICON}")
 
         # 更新流水
         while self.history_layout.count():
@@ -571,6 +599,10 @@ class RewardShopWindow(QWidget):
 
     def _show_full_ledger(self):
         dialog = FullLedgerDialog(self.db, self)
+        dialog.exec()
+
+    def _show_backpack(self):
+        dialog = BackpackDialog(self.db, self)
         dialog.exec()
 
     # ======================== 窗口交互 ========================
@@ -1012,3 +1044,164 @@ class FullLedgerDialog(QDialog):
             item.setSizeHint(QSize(400, 66))
             self.list_widget.addItem(item)
             self.list_widget.setItemWidget(item, iw)
+
+
+class BackpackDialog(QDialog):
+    """🎒 背包弹窗：展示所有自动入库的解锁型奖励"""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("🎒 我的背包")
+        self.setFixedSize(420, 520)
+        self.setStyleSheet(f"""
+            QDialog {{
+                background: #F8F9FB;
+                font-family: 'Microsoft YaHei';
+            }}
+            QLabel {{ color: {TEXT_PRIMARY}; }}
+        """)
+        self._build_ui()
+        self._load()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 顶部标题栏
+        header = QFrame()
+        header.setFixedHeight(52)
+        header.setStyleSheet(f"background: white; border-bottom: 1px solid {BORDER_COLOR};")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(18, 0, 12, 0)
+
+        title_lbl = QLabel("🎒  <b>我的背包</b>")
+        title_lbl.setStyleSheet(f"font-size: 16px; color: {TEXT_PRIMARY};")
+        hl.addWidget(title_lbl)
+        hl.addStretch()
+
+        self.count_lbl = QLabel("0 件")
+        self.count_lbl.setStyleSheet(f"font-size: 12px; color: {TEXT_SECONDARY};")
+        hl.addWidget(self.count_lbl)
+
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(30, 30)
+        close_btn.setStyleSheet(f"QPushButton {{ color: {TEXT_SECONDARY}; background: transparent; font-size: 16px; border: none; font-weight: bold; }} QPushButton:hover {{ color: {RED_ACCENT}; }}")
+        close_btn.clicked.connect(self.accept)
+        hl.addWidget(close_btn)
+        layout.addWidget(header)
+
+        # 说明栏
+        hint = QLabel("  ✨ 达标奖励自动入库，点击「使用」记录消耗")
+        hint.setFixedHeight(26)
+        hint.setStyleSheet(f"font-size: 11px; color: {TEXT_SECONDARY}; background: rgba(163,190,140,0.08); border-bottom: 1px solid {BORDER_COLOR};")
+        layout.addWidget(hint)
+
+        # 滚动列表
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: #F8F9FB; }")
+        self.container = QWidget()
+        self.container.setStyleSheet("background: transparent;")
+        self.items_layout = QVBoxLayout(self.container)
+        self.items_layout.setContentsMargins(16, 12, 16, 12)
+        self.items_layout.setSpacing(10)
+        self.items_layout.addStretch()
+        scroll.setWidget(self.container)
+        layout.addWidget(scroll, 1)
+
+        self.empty_lbl = QLabel("背包空空如也～\n完成目标/任务后奖励会自动入库 🎁")
+        self.empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 14px; padding: 40px;")
+
+    def _load(self):
+        # 清理
+        while self.items_layout.count() > 1:
+            item = self.items_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        items = self.db.get_backpack_items()
+        self.count_lbl.setText(f"{len(items)} 件")
+
+        if not items:
+            self.items_layout.insertWidget(0, self.empty_lbl)
+            self.empty_lbl.show()
+            return
+
+        self.empty_lbl.hide() if self.empty_lbl.parent() else None
+
+        for entry in items:
+            self.items_layout.insertWidget(self.items_layout.count() - 1,
+                                            self._make_item_card(entry))
+
+    def _make_item_card(self, entry):
+        is_used = '[已使用]' in (entry.get('memo') or '')
+        ledger_id = entry.get('id')
+
+        card = QFrame()
+        card.setObjectName("BpCard")
+        card.setStyleSheet(f"""
+            QFrame#BpCard {{
+                background: {'#F0F2F5' if is_used else 'white'};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 10px;
+            }}
+        """)
+        lay = QHBoxLayout(card)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(12)
+
+        # 图标
+        icon_lbl = QLabel(entry.get('icon') or '🎁')
+        icon_lbl.setFixedSize(38, 38)
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet(f"font-size: 22px; background: {'#E5E9F0' if is_used else 'rgba(163,190,140,0.12)'}; border-radius: 8px; border: none;")
+        lay.addWidget(icon_lbl)
+
+        # 名称 + 时间
+        info = QVBoxLayout()
+        info.setSpacing(2)
+        title_text = entry.get('title') or '未知奖励'
+        if is_used:
+            title_text = f"<s>{title_text}</s>"
+        title_lbl = QLabel(title_text)
+        title_lbl.setStyleSheet(f"color: {'#9CA3AF' if is_used else TEXT_PRIMARY}; font-size: 14px; font-weight: bold; border: none; background: transparent;")
+        title_lbl.setTextFormat(Qt.TextFormat.RichText)
+        info.addWidget(title_lbl)
+
+        time_str = ''
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
+            time_str = dt.strftime('%m-%d %H:%M 入库')
+        except Exception:
+            pass
+        sub_lbl = QLabel(time_str)
+        sub_lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none; background: transparent;")
+        info.addWidget(sub_lbl)
+        lay.addLayout(info, 1)
+
+        # 使用按钮
+        if is_used:
+            state_lbl = QLabel("✓ 已使用")
+            state_lbl.setStyleSheet(f"color: #9CA3AF; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+            lay.addWidget(state_lbl)
+        else:
+            use_btn = QPushButton("使用")
+            use_btn.setFixedSize(52, 28)
+            use_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            use_btn.setStyleSheet(f"""
+                QPushButton {{ background: {GREEN_ACCENT}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; }}
+                QPushButton:hover {{ background: {GREEN_HOVER}; }}
+            """)
+            use_btn.clicked.connect(lambda _, lid=ledger_id: self._on_use(lid))
+            lay.addWidget(use_btn)
+
+        return card
+
+    def _on_use(self, ledger_id):
+        self.db.mark_backpack_item_used(ledger_id)
+        self._load()

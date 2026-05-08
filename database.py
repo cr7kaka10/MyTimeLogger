@@ -1093,7 +1093,47 @@ class StudyLogger:
             logging.error(f"购买奖励失败: {e}")
             return False, str(e)
 
+    def get_backpack_items(self):
+        """获取背包物品列表（所有已兑换的解锁型奖励），含使用状态"""
+        try:
+            conn = self._get_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            # 关联 rewards 表取名称/图标，按兑换时间倒序
+            cursor.execute("""
+                SELECT rl.id, rl.source_id as reward_id, rl.created_at,
+                       r.title, r.icon, r.description,
+                       COALESCE(rl.description, '') as memo
+                FROM reward_ledger rl
+                LEFT JOIN rewards r ON r.id = rl.source_id
+                WHERE rl.source_type = 'reward_unlock'
+                ORDER BY rl.created_at DESC
+            """)
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return rows
+        except Exception as e:
+            logging.error(f"获取背包失败: {e}")
+            return []
+
+    def mark_backpack_item_used(self, ledger_id: int):
+        """将背包物品标记为已使用（在 description 末尾追加 [已使用]）"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE reward_ledger SET description = description || ' [已使用]' WHERE id = ? AND source_type = 'reward_unlock' AND description NOT LIKE '%[已使用]%'",
+                (ledger_id,)
+            )
+            conn.commit()
+            conn.close()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logging.error(f"标记使用失败: {e}")
+            return False
+
     # ======================== 目标挑战系统 (Goals) ========================
+
 
     def add_goal(self, title, category_id, metric, target_value, period, reward_coins, reward_id=None, operator='>=', penalty_coins=None):
         """添加新目标"""
