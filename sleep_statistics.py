@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 import os
 import json
+import base64
 import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
     QPushButton, QFrame, QStackedWidget, QGridLayout,
-    QLineEdit, QTextEdit, QTabWidget, QGraphicsOpacityEffect, QMessageBox
+    QLineEdit, QTextEdit, QTabWidget, QGraphicsOpacityEffect,
+    QMessageBox, QFileDialog
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QThread
 from PyQt6.QtGui import QFont, QColor
 
 from config import save_config
@@ -25,8 +28,111 @@ RED_ACCENT = "#BF616A"
 BG_LIGHT = "#FFFFFF"
 CST = timezone(timedelta(hours=8))
 
+class AIWorker(QThread):
+    """AI 分析工作线程，避免 UI 卡顿"""
+    finished = pyqtSignal(str)    # 成功：返回分析文本
+    error = pyqtSignal(str)       # 失败：返回错误信息
+    progress = pyqtSignal(str)    # 进度：中间状态提示
+
+    def __init__(self, ai_cfg, image_path=None, sleep_data=None):
+        super().__init__()
+        self.ai_cfg = ai_cfg
+        self.image_path = image_path    # 截图路径（可选）
+        self.sleep_data = sleep_data    # JSON 数据（可选）
+
+    def run(self):
+        try:
+            from openai import OpenAI
+            base_url = self.ai_cfg.get("base_url", "").rstrip("/")
+            api_key  = self.ai_cfg.get("api_key", "")
+            if not api_key:
+                self.error.emit("⚠️ 未配置 API Key，请先在「AI 配置」页填写。")
+                return
+
+            client = OpenAI(api_key=api_key, base_url=base_url)
+
+            # ── 步骤 1: 若有截图，用视觉模型解析 ──
+            if self.image_path and os.path.exists(self.image_path):
+                self.progress.emit("📸 正在用视觉模型解析截图...")
+                with open(self.image_path, "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode()
+                ext = os.path.splitext(self.image_path)[1].lower().lstrip(".")
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+
+                vision_model = self.ai_cfg.get("vision_model", "glm-4.6v-flash")
+                vision_resp = client.chat.completions.create(
+                    model=vision_model,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime};base64,{img_b64}"}
+                            },
+                            {
+                                "type": "text",
+                                "text": (
+                                    "这是华为健康APP的睡眠详情截图，请精确提取以下字段并以JSON格式返回（只返回JSON，不要多余文字）：\n"
+                                    "sleep_score（睡眠评分，整数）, sleep_start（入睡时间，如22:30）, "
+                                    "sleep_end（起床时间，如07:00）, total_sleep_min（总睡眠分钟数）, "
+                                    "deep_sleep_min（深睡分钟数）, light_sleep_min（浅睡分钟数）, "
+                                    "rem_sleep_min（快速眼动分钟数）, deep_sleep_ratio（深睡占比%，纯数字）。"
+                                    "若截图中某字段不存在，对应值填 null。"
+                                )
+                            }
+                        ]
+                    }],
+                    max_tokens=512,
+                    temperature=0.1
+                )
+                raw = vision_resp.choices[0].message.content.strip()
+                # 提取 JSON 块
+                if "```" in raw:
+                    raw = raw.split("```")[1].lstrip("json").strip()
+                try:
+                    self.sleep_data = json.loads(raw)
+                    self.progress.emit("✅ 截图解析完成，正在生成分析报告...")
+                except json.JSONDecodeError:
+                    self.progress.emit(f"⚠️ 视觉模型返回格式异常，已尝试继续...\n原始内容: {raw[:200]}")
+                    self.sleep_data = {"raw_ocr": raw}
+
+            # ── 步骤 2: 用文本模型生成分析报告 ──
+            if not self.sleep_data:
+                self.error.emit("❌ 没有可分析的睡眠数据，请先提供截图或加载 JSON。")
+                return
+
+            self.progress.emit("🧠 正在生成深度分析报告（启用深度思考）...")
+            text_model = self.ai_cfg.get("text_model", "glm-4.7-flash")
+            data_str = json.dumps(self.sleep_data, ensure_ascii=False, indent=2)
+            text_resp = client.chat.completions.create(
+                model=text_model,
+                messages=[{
+                    "role": "system",
+                    "content": (
+                        "你是一位专业的睡眠健康顾问，请根据用户的睡眠数据给出简洁有深度的分析报告。"
+                        "报告包含：①整体评价（2句话）②关键亮点（深睡/REM情况）③改进建议（1~2条具体可行的建议）。"
+                        "语气亲切，用中文，总字数控制在200字以内。"
+                    )
+                }, {
+                    "role": "user",
+                    "content": f"我的睡眠数据如下：\n{data_str}\n请给出分析。"
+                }],
+                extra_body={"thinking": {"type": "enabled"}},
+                max_tokens=1024,
+                temperature=0.7
+            )
+            report = text_resp.choices[0].message.content.strip()
+            self.finished.emit(report)
+
+        except ImportError:
+            self.error.emit("❌ 缺少 openai 库，请运行：pip install openai")
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            self.error.emit(f"❌ 分析失败：{e}")
+
+
 class AIConfigWidget(QWidget):
-    """AI 模型配置面板"""
+    """AI 模型配置面板（智谱双模型）"""
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
@@ -34,24 +140,31 @@ class AIConfigWidget(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("🤖 AI 模型配置")
-        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};")
+        title = QLabel("🤖 AI 模型配置（智谱 GLM）")
+        title.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {TEXT_PRIMARY};")
         layout.addWidget(title)
 
-        # 配置项
+        tip = QLabel("Base URL: https://open.bigmodel.cn/api/paas/v4")
+        tip.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        tip.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(tip)
+
         ai_cfg = self.config.get("ai_model_config", {})
-        
-        self.base_url_input = self._create_input("Base URL:", ai_cfg.get("base_url", ""))
+
+        self.base_url_input = self._make_field("Base URL:", ai_cfg.get("base_url", "https://open.bigmodel.cn/api/paas/v4"))
         layout.addLayout(self.base_url_input[0])
-        
-        self.api_key_input = self._create_input("API Key:", ai_cfg.get("api_key", ""), is_password=True)
+
+        self.api_key_input = self._make_field("API Key:", ai_cfg.get("api_key", ""), is_password=True)
         layout.addLayout(self.api_key_input[0])
-        
-        self.model_name_input = self._create_input("Model Name:", ai_cfg.get("model_name", "qwen-vl-max"))
-        layout.addLayout(self.model_name_input[0])
+
+        self.vision_model_input = self._make_field("视觉模型（截图解析）:", ai_cfg.get("vision_model", "glm-4.6v-flash"))
+        layout.addLayout(self.vision_model_input[0])
+
+        self.text_model_input = self._make_field("文本模型（报告生成）:", ai_cfg.get("text_model", "glm-4.7-flash"))
+        layout.addLayout(self.text_model_input[0])
 
         layout.addStretch()
 
@@ -59,43 +172,27 @@ class AIConfigWidget(QWidget):
         self.save_btn.setFixedHeight(36)
         self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {GREEN_ACCENT};
-                color: white;
-                border-radius: 6px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: #8FBF65;
-            }}
+            QPushButton {{ background-color: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; }}
+            QPushButton:hover {{ background-color: #8FBF65; }}
         """)
         self.save_btn.clicked.connect(self._save_config)
         layout.addWidget(self.save_btn)
 
-    def _create_input(self, label_text, value, is_password=False):
+    def _make_field(self, label_text, value, is_password=False):
         layout = QVBoxLayout()
-        layout.setSpacing(5)
-        
+        layout.setSpacing(4)
         label = QLabel(label_text)
         label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 12px;")
-        
         line_edit = QLineEdit(value)
         if is_password:
             line_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        
         line_edit.setStyleSheet(f"""
             QLineEdit {{
-                border: 1px solid {BORDER_COLOR};
-                border-radius: 6px;
-                padding: 8px;
-                background: white;
-                color: {TEXT_PRIMARY};
+                border: 1px solid {BORDER_COLOR}; border-radius: 6px;
+                padding: 7px; background: white; color: {TEXT_PRIMARY};
             }}
-            QLineEdit:focus {{
-                border-color: {GREEN_ACCENT};
-            }}
+            QLineEdit:focus {{ border-color: {GREEN_ACCENT}; }}
         """)
-        
         layout.addWidget(label)
         layout.addWidget(line_edit)
         return layout, line_edit
@@ -103,11 +200,11 @@ class AIConfigWidget(QWidget):
     def _save_config(self):
         if "ai_model_config" not in self.config:
             self.config["ai_model_config"] = {}
-            
-        self.config["ai_model_config"]["base_url"] = self.base_url_input[1].text()
-        self.config["ai_model_config"]["api_key"] = self.api_key_input[1].text()
-        self.config["ai_model_config"]["model_name"] = self.model_name_input[1].text()
-        
+        c = self.config["ai_model_config"]
+        c["base_url"]      = self.base_url_input[1].text().strip()
+        c["api_key"]       = self.api_key_input[1].text().strip()
+        c["vision_model"]  = self.vision_model_input[1].text().strip()
+        c["text_model"]    = self.text_model_input[1].text().strip()
         save_config(self.config)
         QMessageBox.information(self, "成功", "AI 配置已保存！")
 
@@ -125,7 +222,10 @@ class SleepStatisticsWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.dragPos = None
         self.current_date = datetime.now(CST).date()
-        
+        self._selected_image = None   # 用户选择的截图路径
+        self._ai_worker = None        # AIWorker 线程引用
+        self._current_sleep_data = None  # 当前加载的 JSON 数据
+
         self._build_ui()
         self.load_data()
 
@@ -265,28 +365,59 @@ class SleepStatisticsWindow(QWidget):
         # 分析页
         analysis_page = QWidget()
         analysis_layout = QVBoxLayout(analysis_page)
+        analysis_layout.setSpacing(8)
+        analysis_layout.setContentsMargins(12, 12, 12, 12)
+
         self.analysis_text = QTextEdit()
         self.analysis_text.setReadOnly(True)
-        self.analysis_text.setPlaceholderText("在此展示 AI 睡眠分析报告...")
-        self.analysis_text.setStyleSheet(f"border: none; background: transparent; color: {TEXT_PRIMARY}; font-size: 13px;")
+        self.analysis_text.setPlaceholderText("点击下方按钮进行 AI 分析...")
+        self.analysis_text.setStyleSheet(
+            f"border: none; background: transparent; color: {TEXT_PRIMARY}; font-size: 13px; line-height: 1.6;"
+        )
         analysis_layout.addWidget(self.analysis_text)
-        
-        # 服务状态提示
-        self.server_status = QLabel("📡 HTTP 服务: 端口 5055\n手机端运行脚本即可自动同步")
-        self.server_status.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; padding: 10px; background: #F0F2F5; border-radius: 6px;")
-        self.server_status.setWordWrap(True)
-        analysis_layout.addWidget(self.server_status)
 
-        self.refresh_btn = QPushButton("🔄 刷新数据")
-        self.refresh_btn.setFixedHeight(40)
-        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.refresh_btn.setStyleSheet(f"""
-            QPushButton {{ background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; }}
+        # 截图路径显示
+        self.img_path_label = QLabel("未选择截图（也可直接分析已加载的 JSON 数据）")
+        self.img_path_label.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        self.img_path_label.setWordWrap(True)
+        analysis_layout.addWidget(self.img_path_label)
+
+        # 按钮行
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self.pick_img_btn = QPushButton("📂 选择截图")
+        self.pick_img_btn.setFixedHeight(36)
+        self.pick_img_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pick_img_btn.setStyleSheet(f"""
+            QPushButton {{ background: #81A1C1; color: white; border-radius: 6px; font-weight: bold; font-size: 12px; }}
+            QPushButton:hover {{ background: #6A8FAF; }}
+        """)
+        self.pick_img_btn.clicked.connect(self._pick_image)
+        btn_row.addWidget(self.pick_img_btn)
+
+        self.ai_btn = QPushButton("🚀 AI 分析")
+        self.ai_btn.setFixedHeight(36)
+        self.ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ai_btn.setStyleSheet(f"""
+            QPushButton {{ background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; font-size: 12px; }}
             QPushButton:hover {{ background: #8FBF65; }}
         """)
+        self.ai_btn.clicked.connect(self._run_ai_analysis)
+        btn_row.addWidget(self.ai_btn)
+
+        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn.setFixedHeight(36)
+        self.refresh_btn.setFixedWidth(60)
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.refresh_btn.setStyleSheet(f"""
+            QPushButton {{ background: #D8DEE9; color: {TEXT_PRIMARY}; border-radius: 6px; font-size: 12px; }}
+            QPushButton:hover {{ background: #C4CDD9; }}
+        """)
         self.refresh_btn.clicked.connect(self.load_data)
-        analysis_layout.addWidget(self.refresh_btn)
-        
+        btn_row.addWidget(self.refresh_btn)
+
+        analysis_layout.addLayout(btn_row)
         self.tabs.addTab(analysis_page, "分析建议")
 
         # 配置页
@@ -370,7 +501,8 @@ class SleepStatisticsWindow(QWidget):
         else:
             summary = str(analysis) if analysis else ""
 
-        self.analysis_text.setText(f"{time_info}{summary}" if (time_info or summary) else "数据已加载，暂无分析文本。")
+        self.analysis_text.setText(f"{time_info}{summary}" if (time_info or summary) else "数据已加载，点击《🚀 AI 分析》生成智能报告。")
+        self._current_sleep_data = data  # 缓存当前数据供 AI 使用
 
     def _clear_ui(self):
         self.score_val.setText("--")
@@ -388,3 +520,59 @@ class SleepStatisticsWindow(QWidget):
         if event.buttons() & Qt.MouseButton.LeftButton and self.dragPos:
             self.move(event.globalPosition().toPoint() - self.dragPos)
             event.accept()
+
+    def _pick_image(self):
+        """打开文件选择器选择截图"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择半华健康睡眠截图",
+            os.path.expanduser("~"),
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.webp)"
+        )
+        if path:
+            self._selected_image = path
+            fname = os.path.basename(path)
+            self.img_path_label.setText(f"✅ 已选择: {fname}")
+
+    def _run_ai_analysis(self):
+        """启动 AI 分析线程"""
+        # 防止重复启动
+        if self._ai_worker and self._ai_worker.isRunning():
+            return
+
+        ai_cfg = self.config.get("ai_model_config", {})
+        if not ai_cfg.get("api_key", "").strip():
+            QMessageBox.warning(self, "请先配置", "请先在「AI 配置」页填写 API Key。")
+            self.tabs.setCurrentIndex(1)  # 切换到配置页
+            return
+
+        # 准备的数据：截图或已加载的 JSON
+        has_image = self._selected_image and os.path.exists(self._selected_image)
+        has_data  = bool(self._current_sleep_data)
+        if not has_image and not has_data:
+            QMessageBox.information(self, "无数据", "请先选择截图，或切换日期使 JSON 数据加载。")
+            return
+
+        self.ai_btn.setEnabled(False)
+        self.ai_btn.setText("⏳ 分析中...")
+        self.analysis_text.setPlaceholderText("")
+        self.analysis_text.setText("🔄 开始分析，请稍候...")
+
+        self._ai_worker = AIWorker(
+            ai_cfg=ai_cfg,
+            image_path=self._selected_image if has_image else None,
+            sleep_data=None if has_image else self._current_sleep_data
+        )
+        self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
+        self._ai_worker.finished.connect(self._on_ai_finished)
+        self._ai_worker.error.connect(self._on_ai_error)
+        self._ai_worker.start()
+
+    def _on_ai_finished(self, report):
+        self.analysis_text.setText(report)
+        self.ai_btn.setEnabled(True)
+        self.ai_btn.setText("🚀 AI 分析")
+
+    def _on_ai_error(self, msg):
+        self.analysis_text.setText(msg)
+        self.ai_btn.setEnabled(True)
+        self.ai_btn.setText("🚀 AI 分析")

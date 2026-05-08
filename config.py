@@ -57,9 +57,10 @@ DEFAULT_CONFIG = {
         "sync_interval": 300
     },
     "ai_model_config": {               # AI 模型配置 (用于睡眠分析等)
-        "base_url": "https://api.openai.com/v1",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "api_key": "",
-        "model_name": "qwen-vl-max"
+        "vision_model": "glm-4.6v-flash",  # 视觉模型：截图解析
+        "text_model": "glm-4.7-flash"      # 文本模型：报告生成
     }
 }
 
