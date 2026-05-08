@@ -22,6 +22,17 @@ def format_ledger_desc(desc):
     if desc.startswith("领取奖励: "):
         desc = desc[6:]
     
+    # 处理合并进来的奖励标记 (支持多个)
+    reward_suffix = ""
+    reward_names = []
+    import re
+    matches = re.findall(r" 🎁\[解锁奖励:(.+?)\]", desc)
+    if matches:
+        reward_names = matches
+        # 移除所有标记以获得纯净的描述
+        desc = re.sub(r" 🎁\[解锁奖励:.+?\]", "", desc)
+        reward_suffix = f" 🎁已获:{', '.join(reward_names)}"
+
     # 目标
     if "目标达成" in desc or "达成目标奖励" in desc:
         # 提取目标标题。格式：目标达成[2026-05-05]: 娱乐≤60min (0m / <=60m)
@@ -79,10 +90,11 @@ def format_ledger_desc(desc):
     if "目标" in desc:
         return f"【目标】{desc} 完成"
 
-    # 特殊处理：如果没有前缀但来自 external_claim，通常是习惯或清单
+    # 如果没有前缀但来自 external_claim，通常是习惯或清单
     # 鉴于用户截图，很多直接是名称，我们加个【习惯】兜底或者保持原样
     # 这里我们假设大部分外部同步过来的都是习惯
-    return f"【习惯】{desc} 完成" if not desc.startswith("【") else desc
+    res = f"【习惯】{desc} 完成" if not desc.startswith("【") else desc
+    return res + reward_suffix
 
 from database import StudyLogger
 
@@ -998,6 +1010,10 @@ class FullLedgerDialog(QDialog):
         
         for entry in history:
             try:
+                # 过滤掉自动入库产生的 0 金币流水，因为信息已经合并到任务流水中了
+                if entry.get('source_type') == 'reward_unlock':
+                    continue
+
                 dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
                 if idx == 0 and (now - dt).days > 7: continue
                 if idx == 1 and (now - dt).days > 30: continue

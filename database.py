@@ -12,7 +12,7 @@ import json
 import copy
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -1075,6 +1075,22 @@ class StudyLogger:
                 cursor = conn.cursor()
                 cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'reward_unlock', ?, ?, ?)",
                                (0, reward_id, desc_text, now_str))
+                
+                # 合并信息：尝试找到最近 24 小时内对应的来源任务流水，追加奖励标记
+                # 这样 UI 展示时可以将两条流水合成显示
+                try:
+                    yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+                    cursor.execute("""
+                        UPDATE reward_ledger 
+                        SET description = description || ?
+                        WHERE source_id = ? 
+                          AND created_at >= ?
+                          AND source_type != 'reward_unlock'
+                        ORDER BY created_at DESC LIMIT 1
+                    """, (f" 🎁[解锁奖励:{title}]", str(unlock_task_id), yesterday))
+                except Exception as e:
+                    logging.warning(f"合并奖励描述失败: {e}")
+
                 conn.commit()
                 conn.close()
                 return True, f'成功兑换「{title}」！'
