@@ -819,6 +819,10 @@ class MyTimeLoggerGUI(QWidget):
         else:
             self.hide()
             full_win.show()
+            full_win.activateWindow()
+            full_win.raise_()
+            # Windows 下强制拉到前台（pynput 热键在非主线程触发，需借助 WinAPI）
+            QTimer.singleShot(50, lambda: self._force_foreground(int(full_win.winId())))
 
     def show(self):
         """重写 show：Mini 模式已废弃，彻底拦截 mini 条显示"""

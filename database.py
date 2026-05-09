@@ -486,6 +486,21 @@ class StudyLogger:
         except Exception as e:
             logging.error(f"习惯表迁移失败: {e}")
 
+    def get_category_id_by_name(self, name: str):
+        """从 categories 表按名称查找分类 ID（仅 SQLite）"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM categories WHERE name = ? AND is_active = 1 LIMIT 1",
+                (name,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception:
+            return None
+
     def get_all_habits(self):
         """获取所有启用的习惯"""
         try:
@@ -867,18 +882,25 @@ class StudyLogger:
             conn = self._get_connection()
             cursor = conn.cursor()
             
-            # 获取所有待领取的项详情
+            # 获取所有待领取的项详情（含 item_type 以便流水正确显示标签）
             placeholders = ','.join(['?'] * len(ext_ids))
-            cursor.execute(f"SELECT id, item_name, coins FROM external_rewards WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
+            cursor.execute(f"SELECT id, item_name, coins, item_type FROM external_rewards WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))
             items = cursor.fetchall()
             
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
-            for item_id, item_name, coins in items:
+            for item_id, item_name, coins, item_type in items:
                 total_coins += coins
+                # 根据 item_type 写入带前缀的描述，让 format_ledger_desc 能正确识别标签
+                if item_type == 'habit':
+                    desc = f"习惯打卡: {item_name}"
+                elif item_type == 'task':
+                    desc = f"任务完成: {item_name}"
+                else:
+                    desc = f"领取奖励: {item_name}"
                 # 为每一项单独插入流水，满足用户分条展示的需求
                 cursor.execute("INSERT INTO reward_ledger (amount, source_type, source_id, description, created_at) VALUES (?, 'external_claim', ?, ?, ?)",
-                               (coins, item_id, f"领取奖励: {item_name}", now_str))
+                               (coins, item_id, desc, now_str))
             
             # 批量更新外部奖励表状态为已领取
             cursor.execute(f"UPDATE external_rewards SET status = 1 WHERE status = 0 AND id IN ({placeholders})", tuple(ext_ids))

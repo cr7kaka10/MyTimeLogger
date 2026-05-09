@@ -68,7 +68,12 @@ def format_ledger_desc(desc):
         name = desc.split(":")[-1].strip()
         return f"【习惯】{name} 失败" + reward_suffix
 
-    # 清单/外部
+    # 清单（本地点击完成产生的外部任务记录）
+    if desc.startswith("任务完成:"):
+        name = desc[5:].strip()
+        return f"【清单】{name} 完成" + reward_suffix
+
+    # 清单/外部（旧格式兼容）
     if desc.startswith("领取外部奖励:"):
         content = desc[8:]
         status = "失败" if ("未达标" in content or "失败" in content) else "完成"
@@ -97,11 +102,12 @@ def format_ledger_desc(desc):
     if "目标" in desc:
         return f"【目标】{desc} 完成"
 
-    # 如果没有前缀但来自 external_claim，通常是习惯或清单
-    # 鉴于用户截图，很多直接是名称，我们加个【习惯】兜底或者保持原样
-    # 这里我们假设大部分外部同步过来的都是习惯
-    res = f"【习惯】{desc} 完成" if not desc.startswith("【") else desc
-    return res + reward_suffix
+    # 旧版"领取奖励: xxx"格式：无法判断类型，展示名称
+    if desc.startswith("领取奖励:"):
+        return desc[5:].strip() + reward_suffix
+
+    # 终极兜底：原样返回
+    return (desc if desc.startswith("【") else desc) + reward_suffix
 
 from database import StudyLogger
 
