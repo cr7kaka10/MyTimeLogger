@@ -139,6 +139,20 @@ class TickTickSyncWorker(QObject):
         self._ensure_loop()
         return self._loop.run_until_complete(coro)
 
+    def _is_time_today_cst(self, time_str: str) -> bool:
+        """判断 TickTick 的 UTC 时间字符串是否为北京时间今天"""
+        if not time_str:
+            return False
+        try:
+            # TickTick 格式: 2026-05-09T07:30:00.000+0000
+            clean = time_str.replace("+0000", "Z")
+            dt = datetime.fromisoformat(clean.replace("Z", "+00:00"))
+            cst_dt = dt.astimezone(CST)
+            return cst_dt.date() == datetime.now(CST).date()
+        except Exception as e:
+            logger.error(f"时间解析失败: {time_str}, {e}")
+            return False
+
     def get_cached_tasks(self) -> list:
         return list(self._cached_tasks)
 
@@ -210,18 +224,40 @@ class TickTickSyncWorker(QObject):
                 p_id = data.get("project", {}).get("id")
                 p_name = self._project_map.get(p_id, "收集箱")
                 for t in data.get("tasks", []):
-                    if t.get("status", 0) != 0: continue  # 跳过已完成
+                    task_id = t["id"]
+                    title = t.get("title", "未知任务")
+                    status = t.get("status", 0)
+
+                    # --- 新增逻辑：处理外部直接完成的任务奖励 ---
+                    if status == 2:
+                        completed_time_str = t.get("completedTime")
+                        if self._is_time_today_cst(completed_time_str):
+                            # 奖励逻辑：同步外部完成奖励
+                            reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
+                            coins = reward_cfg['reward']
+                            ext_id = f"task_{task_id}"
+                            # 数据库 INSERT OR IGNORE 保证幂等性
+                            self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
+                        continue
+
+                    # --- 原有逻辑：处理未完成任务用于 UI 展示 ---
+                    if status != 0: continue
+                    
+                    self._raw_task_map[task_id] = t  # 缓存原始数据用于后续“消失检查”
+                    
                     due_date_str = t.get("dueDate")
-                    if not due_date_str: continue  # 跳过无截止日期
+                    if not due_date_str: 
+                        # 如果没有截止日期，不显示在“今天”列表，但如果用户在外部点完成，上面 status==2 的逻辑仍能抓到奖励
+                        continue
+                    
                     try:
                         clean_date = due_date_str.replace("+0000", "Z")
                         due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
                         due_cst = due_dt.astimezone(CST).date()
                     except:
                         continue
-                    if due_cst <= today_cst:  # 今日及过期任务
-                        task_id = t["id"]
-                        self._raw_task_map[task_id] = t  # 缓存原始全量数据
+                        
+                    if due_cst <= today_cst:  # 今日及过期任务展示在 UI
                         result.append(self._task_to_dict(t, p_name))
 
             # 检查消失的任务，通过 API 二次确认是否真正完成
@@ -251,20 +287,13 @@ class TickTickSyncWorker(QObject):
             try:
                 task_detail = await client.get_task(project_id, task_id)
                 if task_detail and task_detail.get("status") == 2:
-                    # 检查完成时间是否早于重置时间
+                    # 检查完成时间是否为今天
                     completed_time_str = task_detail.get("completedTime")
-                    last_reset_str = self.config.get("last_reset_time", "2026-05-01 00:00:00")
-                    if completed_time_str:
-                        # 转换格式进行比较 2026-05-06T07:30:00.000+0000 -> 2026-05-06 15:30:00 (本地)
-                        try:
-                            # 简化处理：由于时区复杂，直接截取日期进行粗略判断，或者直接根据 completedTime 字符串比较
-                            # TickTick 是 UTC，last_reset 是本地。
-                            # 实际上如果是在重置后完成的，其 completedTime 肯定比重置时间新。
-                            # 这里简单对比日期，如果想更精确，建议全转为 UTC。
-                            # 既然用户重置是为了“从现在开始”，那我们就只处理重置后完成的任务。
-                            pass 
-                        except: pass
-                        
+                    if not self._is_time_today_cst(completed_time_str):
+                        logger.info(f"[任务确认] 任务 {title} 虽然完成，但不是今天完成的，不发金币")
+                        self.db_logger.update_task_status(task_id, 4)
+                        continue
+                    
                     # 确认是真正完成，写入 external_rewards 待领取
                     reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
                     coins = reward_cfg['reward']
