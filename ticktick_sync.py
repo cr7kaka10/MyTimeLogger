@@ -95,6 +95,14 @@ class OfficialTickTickClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_completed_tasks(self, start_time: str):
+        """获取已完成任务列表 start_time 格式: 2023-01-01T00:00:00+0000"""
+        url = f"{self.base_url}/task/completed"
+        payload = {"start": start_time}
+        resp = await self.client.post(url, json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
     async def close(self):
         await self.client.aclose()
 
@@ -213,6 +221,17 @@ class TickTickSyncWorker(QObject):
             tasks_data = await asyncio.gather(*[
                 client.get_project_data(p["id"]) for p in projects
             ])
+            
+            # 关键补充：获取今日已完成任务
+            # 使用北京时间今日凌晨转 UTC 格式
+            today_start_cst = datetime.now(CST).replace(hour=0, minute=0, second=0, microsecond=0)
+            utc_start_str = today_start_cst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
+            try:
+                completed_tasks = await client.get_completed_tasks(utc_start_str)
+                logger.info(f"[任务同步] 已获取到今日完成任务: {len(completed_tasks)} 个")
+            except Exception as ce:
+                logger.error(f"[任务同步] 获取今日完成任务失败: {ce}")
+                completed_tasks = []
 
             result = []
             today_cst = datetime.now(CST).date()
@@ -220,6 +239,21 @@ class TickTickSyncWorker(QObject):
             previous_map = getattr(self, '_raw_task_map', {})
             self._raw_task_map = {}
 
+            # 1. 首先处理专门获取到的已完成任务（用于发放奖励）
+            for t in completed_tasks:
+                task_id = t["id"]
+                title = t.get("title", "未知任务")
+                # 只有状态为 2 且完成时间是今天北京时间的才发奖
+                if t.get("status") == 2 and self._is_time_today_cst(t.get("completedTime")):
+                    reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
+                    coins = reward_cfg['reward']
+                    ext_id = f"task_{task_id}"
+                    # 数据库 INSERT OR IGNORE 保证金币不重发
+                    self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
+                    # 同时更新本地任务状态为已完成，防止 UI 列表残留
+                    self.db_logger.update_task_status(task_id, 2)
+
+            # 2. 处理各项目返回的活跃任务数据（用于 UI 展示）
             for data in tasks_data:
                 p_id = data.get("project", {}).get("id")
                 p_name = self._project_map.get(p_id, "收集箱")
@@ -228,37 +262,29 @@ class TickTickSyncWorker(QObject):
                     title = t.get("title", "未知任务")
                     status = t.get("status", 0)
 
-                    # --- 新增逻辑：处理外部直接完成的任务奖励 ---
-                    if status == 2:
-                        completed_time_str = t.get("completedTime")
-                        if self._is_time_today_cst(completed_time_str):
-                            # 奖励逻辑：同步外部完成奖励
-                            reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
-                            coins = reward_cfg['reward']
-                            ext_id = f"task_{task_id}"
-                            # 数据库 INSERT OR IGNORE 保证幂等性
-                            self.db_logger.add_external_reward(ext_id, 'task', title, coins, status=0)
-                        continue
-
-                    # --- 原有逻辑：处理未完成任务用于 UI 展示 ---
-                    if status != 0: continue
-                    
-                    self._raw_task_map[task_id] = t  # 缓存原始数据用于后续“消失检查”
-                    
-                    due_date_str = t.get("dueDate")
-                    if not due_date_str: 
-                        # 如果没有截止日期，不显示在“今天”列表，但如果用户在外部点完成，上面 status==2 的逻辑仍能抓到奖励
-                        continue
-                    
-                    try:
-                        clean_date = due_date_str.replace("+0000", "Z")
-                        due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
-                        due_cst = due_dt.astimezone(CST).date()
-                    except:
-                        continue
+                    # 如果是活跃任务，进入待展示列表
+                    if status == 0:
+                        self._raw_task_map[task_id] = t  # 缓存用于后续消失检查
                         
-                    if due_cst <= today_cst:  # 今日及过期任务展示在 UI
-                        result.append(self._task_to_dict(t, p_name))
+                        due_date_str = t.get("dueDate")
+                        if not due_date_str: continue # UI 列表仅展示有截止日期的
+                        
+                        try:
+                            clean_date = due_date_str.replace("+0000", "Z")
+                            due_dt = datetime.fromisoformat(clean_date.replace("Z", "+00:00"))
+                            due_cst = due_dt.astimezone(CST).date()
+                            if due_cst <= today_cst:
+                                result.append(self._task_to_dict(t, p_name))
+                        except:
+                            continue
+                    elif status == 2:
+                        # 兜底：如果项目数据里带了已完成任务，同样尝试发奖
+                        if self._is_time_today_cst(t.get("completedTime")):
+                            reward_cfg = self.db_logger.get_item_reward('task', task_id, 0.1)
+                            self.db_logger.add_external_reward(f"task_{task_id}", 'task', title, reward_cfg['reward'], status=0)
+
+            # 3. 检查消失的任务（针对之前在列表里但突然查不到的任务）
+
 
             # 检查消失的任务，通过 API 二次确认是否真正完成
             if previous_map:
