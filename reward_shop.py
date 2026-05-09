@@ -19,9 +19,9 @@ import re
 
 def format_ledger_desc(desc):
     """仅凭描述文本判断类型（无 source_id 时使用）"""
-    # 移除旧格式统一前缀 "领取奖励: "（7个字符）
+    # 移除旧格式统一前缀 "领取奖励: "（6个字符含空格）
     if desc.startswith("领取奖励: "):
-        desc = desc[7:]
+        desc = desc[6:]
 
     # 处理合并进来的奖励标记 (支持多个)
     reward_suffix = ""
