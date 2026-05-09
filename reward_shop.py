@@ -18,70 +18,62 @@ from datetime import datetime, timedelta
 import re
 
 def format_ledger_desc(desc):
-    # 移除统一的“领取奖励: ”前缀
+    """仅凭描述文本判断类型（无 source_id 时使用）"""
+    # 移除旧格式统一前缀 "领取奖励: "（7个字符）
     if desc.startswith("领取奖励: "):
-        desc = desc[6:]
-    
+        desc = desc[7:]
+
     # 处理合并进来的奖励标记 (支持多个)
     reward_suffix = ""
     reward_names = []
     matches = re.findall(r" 🎁\[解锁奖励:(.+?)\]", desc)
     if matches:
         reward_names = matches
-        # 移除所有标记以获得纯净的描述
         desc = re.sub(r" 🎁\[解锁奖励:.+?\]", "", desc)
         reward_suffix = f" 🎁已获:{', '.join(reward_names)}"
 
-    # 目标
+    # 目标（通过描述关键词识别）
     if "目标达成" in desc or "达成目标奖励" in desc or "目标未达标" in desc or "目标挑战失败" in desc:
         from datetime import date
         yesterday_str = (date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-        
         is_fail = "未达标" in desc or "失败" in desc
         status = "失败" if is_fail else "完成"
-        
-        # 提取日期标记 [YYYY-MM-DD]
         date_mark = ""
         if "[" in desc and "]:" in desc:
             d_part = desc.split("[")[1].split("]")[0]
-            if d_part == yesterday_str:
-                date_mark = "(昨日)"
-            else:
-                date_mark = f"({d_part})"
-        
-        # 提取名称
+            date_mark = "(昨日)" if d_part == yesterday_str else f"({d_part})"
         name = desc
         if "]: " in desc:
             name = desc.split("]: ")[1]
         if " (" in name:
             name = name.split(" (")[0]
-            
         return f"【目标】{date_mark}{name} {status}" + reward_suffix
 
-    # 习惯
+    # 习惯（描述前缀明确）
     if desc.startswith("习惯打卡:") or desc.startswith("习惯打卡完成:"):
-        name = desc.split(":")[-1].strip()
-        if " (" in name: name = name.split(" (")[0]
+        name = desc.split(":", 1)[-1].strip()
+        if " (" in name:
+            name = name.split(" (")[0]
         return f"【习惯】{name} 完成" + reward_suffix
-    
-    if desc.startswith("习惯判定失败"):
-        name = desc.split(":")[-1].strip()
+
+    if desc.startswith("习惯判定失败") or desc.startswith("超时未打卡:"):
+        name = desc.split(":", 1)[-1].strip() if ":" in desc else desc
         return f"【习惯】{name} 失败" + reward_suffix
 
-    # 清单（本地点击完成产生的外部任务记录）
+    # 清单（新格式，带明确前缀）
     if desc.startswith("任务完成:"):
         name = desc[5:].strip()
         return f"【清单】{name} 完成" + reward_suffix
 
-    # 清单/外部（旧格式兼容）
+    # 清单（旧格式兼容）
     if desc.startswith("领取外部奖励:"):
-        content = desc[8:]
+        content = desc[7:]
         status = "失败" if ("未达标" in content or "失败" in content) else "完成"
         return f"【清单】{content} {status}" + reward_suffix
 
-    # 解锁型奖励兑换（任务/目标达成自动入背包）
+    # 解锁型奖励兑换
     if desc.startswith("任务解锁兑换:"):
-        rest = desc[7:].strip()  # 去掉「任务解锁兑换: 」前缀
+        rest = desc[7:].strip()
         if ' [来自: ' in rest:
             parts = rest.split(' [来自: ', 1)
             reward_name = parts[0].strip()
@@ -89,25 +81,64 @@ def format_ledger_desc(desc):
             return f"【奖励】完成「{source_name}」→ 获得「{reward_name}」"
         return f"【奖励】{rest} 已入背包"
 
-    # 兜底：如果是习惯打卡产生的（通过 re 匹配）
+    # 习惯打卡 re 兜底
     m = re.match(r'^习惯打卡:\s*(.+?)\s*(\(🔥\d+\))?$', desc)
     if m:
-        return f"【习惯】{m.group(1)} 完成".strip()
-        
-    # 如果没有标签，根据关键词尝试补全
-    if "打卡" in desc or "习惯" in desc:
-        return f"【习惯】{desc} 完成"
-    if "清单" in desc or "任务" in desc:
-        return f"【清单】{desc} 完成"
-    if "目标" in desc:
-        return f"【目标】{desc} 完成"
+        return f"【习惯】{m.group(1)} 完成".strip() + reward_suffix
 
-    # 旧版"领取奖励: xxx"格式：无法判断类型，展示名称
-    if desc.startswith("领取奖励:"):
-        return desc[5:].strip() + reward_suffix
+    # 已有【】标签直接放行
+    if desc.startswith("【"):
+        return desc + reward_suffix
 
-    # 终极兜底：原样返回
-    return (desc if desc.startswith("【") else desc) + reward_suffix
+    # 终极兜底：原样返回（不猜测类型，避免误标签）
+    return desc + reward_suffix
+
+
+def format_ledger_desc_with_source(desc, source_id=''):
+    """
+    带 source_id 的版本：优先用 source_id 前缀精准判断类型。
+    habit_xxx_yyyymmdd → 【习惯】
+    task_xxx           → 【清单】
+    其余               → 回退到 format_ledger_desc
+    """
+    sid = str(source_id or '')
+
+    # 处理奖励标记（先提取，避免影响名称）
+    reward_suffix = ""
+    matches = re.findall(r" 🎁\[解锁奖励:(.+?)\]", desc)
+    if matches:
+        desc = re.sub(r" 🎁\[解锁奖励:.+?\]", "", desc)
+        reward_suffix = f" 🎁已获:{', '.join(matches)}"
+
+    # 先去掉旧格式前缀（新格式已写入带前缀的描述，无影响）
+    if desc.startswith('领取奖励: '):
+        desc = desc[6:]
+
+    # source_id 精准判断：habit_ → 【习惯】
+    if sid.startswith('habit_'):
+        name = desc
+        for prefix in ("习惯打卡:", "习惯打卡完成:", "打卡完成:"):
+            if desc.startswith(prefix):
+                name = desc[len(prefix):].strip()
+                break
+        if " (" in name:
+            name = name.split(" (")[0]
+        is_fail = "失败" in name or "未打卡" in name
+        return f"【习惯】{name} {'失败' if is_fail else '完成'}" + reward_suffix
+
+    # source_id 精准判断：task_ → 【清单】
+    if sid.startswith('task_'):
+        name = desc
+        for prefix in ("任务完成:", "任务完成 :"):
+            if desc.startswith(prefix):
+                name = desc[len(prefix):].strip()
+                break
+        return f"【清单】{name} 完成" + reward_suffix
+
+    # 无 source_id / goal_ / 其他：回退到文本匹配
+    base = format_ledger_desc(desc)
+    return base + reward_suffix if reward_suffix and not base.endswith(reward_suffix) else base
+
 
 from database import StudyLogger
 
@@ -540,7 +571,7 @@ class RewardShopWindow(QWidget):
                 amt_disp = f"{round(amt, 2):g}"
                 sign = '+' if amt > 0 else ''
                 color = RED_ACCENT if amt > 0 else GREEN_ACCENT
-                desc = format_ledger_desc(entry.get('description', ''))
+                desc = format_ledger_desc_with_source(entry.get('description', ''), entry.get('source_id', ''))
                 time_str = ''
                 try:
                     dt = datetime.strptime(entry['created_at'], '%Y-%m-%d %H:%M:%S')
@@ -1075,7 +1106,7 @@ class FullLedgerDialog(QDialog):
                 self.list_widget.setItemWidget(h_item, hw)
             
             amt = entry['amount']
-            desc = format_ledger_desc(entry.get('description', '未知流水'))
+            desc = format_ledger_desc_with_source(entry.get('description', '未知流水'), entry.get('source_id', ''))
             is_last = (i == len(filtered) - 1)
             
             iw = TimelineItemWidget(time_only_str, desc, amt, is_last)
