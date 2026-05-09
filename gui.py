@@ -58,7 +58,6 @@ class MyTimeLoggerGUI(QWidget):
         self.hotkey_manager.start_triggered.connect(self.logic.start_only)
         self.hotkey_manager.toggle_pause_triggered.connect(self.logic.toggle_pause)
         self.hotkey_manager.reset_cycle_triggered.connect(self.logic.reset_cycle)
-        self.hotkey_manager.toggle_checklist_triggered.connect(self.toggle_daily_checklist)
         self.hotkey_manager.toggle_activity_panel_triggered.connect(self.toggle_activity_panel)
         QTimer.singleShot(1000, self.hotkey_manager.start)
 
