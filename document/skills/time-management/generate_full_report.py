@@ -20,6 +20,11 @@ from pathlib import Path
 # 工作空间根目录
 WORKSPACE_ROOT = r"D:\WorkBuddySpace\000"
 
+# 睡眠数据目录（优先读技能目录，与 sleep_statistics.py 对齐）
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
+SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
+LEGACY_SLEEP_DATA_DIR = os.path.join(WORKSPACE_ROOT, "huawei_health_data")
+
 def generate_comprehensive_report(date_str):
     """生成综合分析报告"""
     
@@ -46,13 +51,35 @@ def generate_comprehensive_report(date_str):
     # 3. 加载华为健康睡眠数据
     print("\n⌚ 加载华为运动健康睡眠数据...")
     sleep_data = None
-    sleep_file = os.path.join(WORKSPACE_ROOT, 'huawei_health_data', f'sleep_{date_str}.json')
+    # 优先读技能目录（sleep_statistics.py 实际写入位置）
+    sleep_file = os.path.join(SLEEP_DATA_DIR, f'sleep_{date_str}.json')
+    if not os.path.exists(sleep_file):
+        sleep_file = os.path.join(LEGACY_SLEEP_DATA_DIR, f'sleep_{date_str}.json')
     
     if os.path.exists(sleep_file):
         with open(sleep_file, 'r', encoding='utf-8') as f:
             sleep_data = json.load(f)
-        print(f"✅ 已加载睡眠数据")
-        
+        print(f"✅ 已加载睡眠数据（来源: {sleep_file}）")
+
+        # ── 字段兼容归一化：新格式(分钟制) → 旧格式(秒制) ──
+        # sleep_statistics.py 保存的是新格式，generate_full_report 原来按旧格式读
+        if 'total_sleep_min' in sleep_data and not sleep_data.get('night_sleep_duration'):
+            total_min = sleep_data.get('total_sleep_min', 0)
+            sleep_data['night_sleep_duration']     = total_min * 60
+            sleep_data['night_sleep_duration_min'] = float(total_min)
+        if 'deep_sleep_min' in sleep_data and not sleep_data.get('deep_sleep'):
+            sleep_data['deep_sleep']  = sleep_data['deep_sleep_min'] * 60
+        if 'light_sleep_min' in sleep_data and not sleep_data.get('light_sleep'):
+            sleep_data['light_sleep'] = sleep_data['light_sleep_min'] * 60
+        if 'rem_sleep_min' in sleep_data and not sleep_data.get('rem_sleep'):
+            sleep_data['rem_sleep']   = sleep_data['rem_sleep_min'] * 60
+        if not sleep_data.get('sleep_cycles') and sleep_data.get('night_sleep_duration_min'):
+            sleep_data['sleep_cycles'] = round(sleep_data['night_sleep_duration_min'] / 90, 2)
+        if 'sleep_continuity' in sleep_data and not sleep_data.get('deep_sleep_continuity'):
+            sleep_data['deep_sleep_continuity'] = sleep_data['sleep_continuity']
+        if 'breathing_score' in sleep_data and not sleep_data.get('breath_quality'):
+            sleep_data['breath_quality'] = sleep_data['breathing_score']
+
         # 4. 重新计算清醒时长
         print("\n🧮 计算睡眠数据...")
         parser = ScreenshotParser()
