@@ -117,9 +117,25 @@ def generate_comprehensive_report(date_str):
     print("\n📝 生成完整报告...")
     report_path = generate_full_report_file(combined_data, ai_analysis, date_str)
     
+    # 7. 将完整报告写入睡眠数据（如果存在），使其在UI中显示
+    if sleep_data and os.path.exists(report_path):
+        with open(report_path, 'r', encoding='utf-8') as f:
+            report_content = f.read()
+        
+        if 'analysis' not in sleep_data:
+            sleep_data['analysis'] = {}
+        # 将原始的 AI 建议保留，如果有的话
+        old_summary = sleep_data['analysis'].get('summary', '')
+        # 将新的完整报告写入 summary
+        sleep_data['analysis']['summary'] = report_content
+        
+        with open(sleep_file, 'w', encoding='utf-8') as f:
+            json.dump(sleep_data, f, ensure_ascii=False, indent=2)
+        print("✅ 完整报告已同步写入睡眠数据文件 (UI可见)")
+    
     print(f"\n{'='*70}")
     print(f"✅ 报告生成完成!")
-    print(f"📄 报告路径: {report_path}")
+    print(f"📄 报告备份路径: {report_path}")
     print(f"{'='*70}\n")
     
     return report_path
@@ -628,7 +644,11 @@ def generate_report_filename(date_str):
     filename = f"{date_str} {weekday_cn} w{week_number:02d}.md"
     
     # 完整路径
-    report_path = Path(WORKSPACE_ROOT) / filename
+    project_root = os.path.abspath(os.path.join(SKILL_DIR, "..", "..", ".."))
+    reports_dir = os.path.join(project_root, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    
+    report_path = Path(reports_dir) / filename
     
     return report_path
 
