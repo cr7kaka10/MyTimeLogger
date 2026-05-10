@@ -490,18 +490,19 @@ class SleepStatisticsWindow(QWidget):
         self.grid = QGridLayout()
         self.grid.setSpacing(15)
         self.metrics = {}
+        # 新的排列顺序与重点指标高亮设定
         metric_names = [
-            ("深睡", "deep_sleep_min", " min"),
-            ("浅睡", "light_sleep_min", " min"),
-            ("快速眼动", "rem_sleep_min", " min"),
-            ("清醒时长", "awake_duration", " min"), # 计算项
-            ("深睡比例", "deep_sleep_ratio", "%"),
-            ("清醒次数", "awake_count", " 次"),
-            ("睡眠连续性", "sleep_continuity", " 分"),
-            ("呼吸质量", "breathing_score", " 分")
+            ("睡眠周期", "sleep_cycles", " 个", True),
+            ("深睡时长", "deep_sleep_min", " min", True),
+            ("入睡用时", "fall_asleep_time", " min", False),
+            ("起床用时", "wake_up_time", " min", False),
+            ("清醒次数", "awake_count", " 次", False),
+            ("清醒时长", "awake_duration", " min", False),
+            ("浅睡", "light_sleep_min", " min", False),
+            ("快速眼动", "rem_sleep_min", " min", False)
         ]
-        for i, (label, key, unit) in enumerate(metric_names):
-            card = self._create_metric_card(label)
+        for i, (label, key, unit, highlight) in enumerate(metric_names):
+            card = self._create_metric_card(label, highlight)
             # 使用 2x4 布局 (i // 4 行, i % 4 列)
             self.grid.addWidget(card, i // 4, i % 4)
             self.metrics[key] = (card.findChild(QLabel, "val"), unit)
@@ -599,15 +600,25 @@ class SleepStatisticsWindow(QWidget):
 
         main_layout.addWidget(content)
 
-    def _create_metric_card(self, title):
+    def _create_metric_card(self, title, highlight=False):
         card = QFrame()
-        card.setStyleSheet(f"background: {CARD_BG}; border: none; border-radius: 10px;")
+        if highlight:
+            # 高亮样式：淡蓝/绿背景 + 加粗主题色文字
+            card.setStyleSheet(f"background: #EBF5FF; border: 1px solid #81A1C1; border-radius: 10px;")
+        else:
+            card.setStyleSheet(f"background: {CARD_BG}; border: none; border-radius: 10px;")
+            
         layout = QVBoxLayout(card)
-        l_title = QLabel(title)
-        l_title.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 500;")
+        l_title = QLabel(f"🌟 {title}" if highlight else title)
+        title_color = "#5E81AC" if highlight else TEXT_SECONDARY
+        title_weight = "bold" if highlight else "500"
+        l_title.setStyleSheet(f"color: {title_color}; font-size: 11px; font-weight: {title_weight};")
+        
         l_val = QLabel("--")
         l_val.setObjectName("val")
-        l_val.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: bold;")
+        val_color = "#2E3440" if highlight else TEXT_PRIMARY
+        l_val.setStyleSheet(f"color: {val_color}; font-size: 18px; font-weight: bold;")
+        
         layout.addWidget(l_title)
         layout.addWidget(l_val)
         return card
@@ -669,6 +680,11 @@ class SleepStatisticsWindow(QWidget):
             val = FALLBACKS.get(key, lambda d: d.get(key))(data)
             if val is None:
                 label.setText("--")
+            elif key == "sleep_cycles" and isinstance(val, (int, float, str)):
+                try:
+                    label.setText(f"{float(val):.1f}{unit}")
+                except ValueError:
+                    label.setText(f"{val}{unit}")
             elif isinstance(val, (int, float)):
                 label.setText(f"{val:.0f}{unit}")
             else:
