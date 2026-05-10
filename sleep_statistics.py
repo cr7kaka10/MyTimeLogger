@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
     QPushButton, QFrame, QStackedWidget, QGridLayout,
     QLineEdit, QTextEdit, QTabWidget, QGraphicsOpacityEffect,
-    QMessageBox, QFileDialog
+    QMessageBox, QFileDialog, QSplitter
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QThread
 from PyQt6.QtGui import QFont, QColor
