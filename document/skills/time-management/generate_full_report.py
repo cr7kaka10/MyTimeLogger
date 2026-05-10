@@ -6,6 +6,18 @@
 
 import sys
 import os
+
+def format_val(v):
+    """格式化数值：如果是整数则不显示小数点，否则保留两位小数并去除末尾多余的0"""
+    if v is None: return "N/A"
+    try:
+        fv = float(v)
+        if fv == int(fv):
+            return str(int(fv))
+        return f"{fv:.2f}".rstrip('0').rstrip('.')
+    except:
+        return str(v)
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from modules.atimelogger_extractor import AtimeloggerExtractor
@@ -18,7 +30,6 @@ from collections import defaultdict
 from pathlib import Path
 
 # 将项目根目录添加到路径以便导入数据库等模块
-import sys
 project_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
@@ -36,7 +47,7 @@ SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
 LEGACY_SLEEP_DATA_DIR = os.path.join(WORKSPACE_ROOT, "huawei_health_data")
 
-def generate_comprehensive_report(date_str, injected_sleep_data=None):
+def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull=False):
     """生成综合分析报告"""
     
     print(f"\n{'='*70}")
@@ -52,24 +63,28 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
     print("📱 提取 aTimeLogger 数据...")
     atimelogger_data = None
     
-    # 首先尝试从数据库中获取
-    if StudyLogger:
+    # 首先尝试从数据库中获取 (除非指定了 force_pull)
+    if StudyLogger and not force_pull:
         try:
-            db = StudyLogger()
+            db = StudyLogger(config)
             atimelogger_data = db.get_atm_data(date_str)
             if atimelogger_data:
                 print("✅ 成功从本地数据库读取 aTimeLogger 缓存数据")
         except Exception as e:
             print(f"⚠️ 从数据库读取缓存失败: {e}")
             
-    # 若缓存不存在或失败，调用API拉取
+    # 若缓存不存在、拉取失败或指定了 force_pull，调用API拉取
     if not atimelogger_data:
-        print("🌐 正在从 API 提取最新 aTimeLogger 数据...")
+        if force_pull:
+            print("🔄 强制拉取模式：正在绕过缓存获取最新 aTimeLogger 数据...")
+        else:
+            print("🌐 正在从 API 提取最新 aTimeLogger 数据...")
         atimelogger = AtimeloggerExtractor(config.get('atimelogger', {}))
         atimelogger_data = atimelogger.extract_daily_data(date_str)
         
         if atimelogger_data and StudyLogger:
             try:
+                db = StudyLogger(config)
                 db.save_atm_data(date_str, atimelogger_data)
                 print("✅ 已将最新数据存入本地数据库缓存")
             except Exception as e:
@@ -92,7 +107,7 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
         # 首先尝试从数据库中获取
         if StudyLogger:
             try:
-                db = StudyLogger()
+                db = StudyLogger(config)
                 sleep_data = db.get_huawei_sleep_data(date_str)
                 if sleep_data:
                     # 还原字段名以兼容后续逻辑 (数据库存的是归一化后的键名，或部分不同)
@@ -116,31 +131,32 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
     
     if sleep_data:
 
-        # ── 字段兼容归一化：新格式(分钟制) → 旧格式(秒制) ──
-        # sleep_statistics.py 保存的是新格式，generate_full_report 原来按旧格式读
-        if 'total_sleep_min' in sleep_data and not sleep_data.get('night_sleep_duration'):
-            total_min = sleep_data.get('total_sleep_min', 0)
-            sleep_data['night_sleep_duration']     = total_min * 60
-            sleep_data['night_sleep_duration_min'] = float(total_min)
-        if 'deep_sleep_min' in sleep_data and not sleep_data.get('deep_sleep'):
-            sleep_data['deep_sleep']  = sleep_data['deep_sleep_min'] * 60
-        if 'light_sleep_min' in sleep_data and not sleep_data.get('light_sleep'):
+        # ── 字段兼容归一化与计算 ──
+        total_min = float(sleep_data.get('total_sleep_min', 0))
+        if total_min > 0:
+            sleep_data['sleep_cycles'] = round(total_min / 90.0, 2)
+            sleep_data['night_sleep_duration_min'] = total_min
+            sleep_data['night_sleep_duration'] = total_min * 60
+            
+        if 'deep_sleep_min' in sleep_data:
+            sleep_data['deep_sleep'] = sleep_data['deep_sleep_min'] * 60
+        if 'light_sleep_min' in sleep_data:
             sleep_data['light_sleep'] = sleep_data['light_sleep_min'] * 60
-        if 'rem_sleep_min' in sleep_data and not sleep_data.get('rem_sleep'):
-            sleep_data['rem_sleep']   = sleep_data['rem_sleep_min'] * 60
-        if not sleep_data.get('sleep_cycles') and sleep_data.get('night_sleep_duration_min'):
-            sleep_data['sleep_cycles'] = round(sleep_data['night_sleep_duration_min'] / 90, 2)
-        if 'sleep_continuity' in sleep_data and not sleep_data.get('deep_sleep_continuity'):
+        if 'rem_sleep_min' in sleep_data:
+            sleep_data['rem_sleep'] = sleep_data['rem_sleep_min'] * 60
+            
+        if 'sleep_continuity' in sleep_data:
             sleep_data['deep_sleep_continuity'] = sleep_data['sleep_continuity']
-        if 'breathing_score' in sleep_data and not sleep_data.get('breath_quality'):
+        if 'breathing_score' in sleep_data:
             sleep_data['breath_quality'] = sleep_data['breathing_score']
 
-        # 4. 重新计算清醒时长
+        # 4. 计算清醒时长
         print("\n🧮 计算睡眠数据...")
         parser = ScreenshotParser()
-        awake_time = parser._calculate_awake_time(sleep_data)
-        sleep_data['awake_time'] = awake_time
-        print(f"  清醒时长: {awake_time / 60:.0f} 分钟")
+        awake_time_sec = parser._calculate_awake_time(sleep_data)
+        sleep_data['awake_min'] = round(awake_time_sec / 60.0, 2)
+        sleep_data['awake_time'] = awake_time_sec
+        print(f"  清醒时长: {sleep_data['awake_min']} 分钟")
         
         # 5. 计算入睡用时和起床用时
         activities = atimelogger_data.get('activities', [])
@@ -148,11 +164,15 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
             sleep_data['date'] = date_str
         fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
         
-        # 更新睡眠数据
-        sleep_data['fall_asleep_time'] = fall_asleep_min
-        sleep_data['wake_up_time'] = wake_up_min
-        print(f"  入睡用时: {fall_asleep_min} 分钟")
-        print(f"  起床用时: {wake_up_min} 分钟")
+        # 更新睡眠数据并保持两位小数
+        sleep_data['fall_asleep_min'] = round(float(fall_asleep_min), 2)
+        sleep_data['wake_up_min'] = round(float(wake_up_min), 2)
+        # 兼容旧代码字段名
+        sleep_data['fall_asleep_time'] = sleep_data['fall_asleep_min']
+        sleep_data['wake_up_time'] = sleep_data['wake_up_min']
+        
+        print(f"  入睡用时: {sleep_data['fall_asleep_min']} 分钟")
+        print(f"  起床用时: {sleep_data['wake_up_min']} 分钟")
     else:
         print(f"⚠️ 未找到睡眠数据（数据库或文件均无记录）")
     
@@ -180,7 +200,7 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
         # 保存到数据库
         if StudyLogger:
             try:
-                db = StudyLogger()
+                db = StudyLogger(config)
                 db_data = sleep_data.copy()
                 db_data["analysis_report"] = report_content
                 db.save_huawei_sleep_data(date_str, db_data)
@@ -472,32 +492,28 @@ def generate_full_report_file(data, analysis, date_str):
         except (ValueError, TypeError):
             night_sleep_hours = sleep_score = sleep_cycles = awake_time = fall_asleep_time = wake_up_time = 0
             
-        lines.append(f"| 夜间睡眠 | {night_sleep_hours:.1f} 小时 | {'充足' if night_sleep_hours >= 7 else '不足' if night_sleep_hours < 6 else '正常'} |")
+        lines.append(f"| 夜间睡眠 | {format_val(night_sleep_hours)} 小时 | {'充足' if night_sleep_hours >= 7 else '不足' if night_sleep_hours < 6 else '正常'} |")
         lines.append(f"| 睡眠评分 | {sleep_score} 分 | {'优秀' if sleep_score >= 85 else '良好' if sleep_score >= 70 else '一般'} |")
-        lines.append(f"| 睡眠周期数 | {sleep_cycles:.1f} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |")
-        lines.append(f"| 清醒时长 | {awake_time:.0f} 分钟 | {'✅ 正常' if awake_time <= 20 else '⚠️ 略长' if awake_time <= 40 else '❌ 过长'} |")
+        lines.append(f"| 睡眠周期数 | {format_val(sleep_cycles)} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |")
+        lines.append(f"| 清醒时长 | {format_val(awake_time)} 分钟 | {'✅ 正常' if awake_time <= 20 else '⚠️ 略长' if awake_time <= 40 else '❌ 过长'} |")
         # 入睡用时评价（支持负数）
         if fall_asleep_time < 0:
-            fall_asleep_eval = "⚠️ 延迟入睡"
-        elif fall_asleep_time <= 20:
+            fall_asleep_eval = "✅ 快速入睡"
+        elif fall_asleep_time <= 15:
             fall_asleep_eval = "✅ 正常"
-        elif fall_asleep_time <= 40:
-            fall_asleep_eval = "⚠️ 较长"
         else:
-            fall_asleep_eval = "❌ 过长"
-        
+            fall_asleep_eval = "⚠️ 较长"
+            
         # 起床用时评价（支持负数）
         if wake_up_time < 0:
-            wake_up_eval = "✅ 早起"
-        elif wake_up_time <= 10:
+            wake_up_eval = "✅ 快速起床"
+        elif wake_up_time <= 15:
             wake_up_eval = "✅ 正常"
-        elif wake_up_time <= 20:
-            wake_up_eval = "⚠️ 较长"
         else:
             wake_up_eval = "❌ 过长"
-        
-        lines.append(f"| 入睡用时 | {fall_asleep_time} 分钟 | {fall_asleep_eval} |")
-        lines.append(f"| 起床用时 | {wake_up_time} 分钟 | {wake_up_eval} |")
+
+        lines.append(f"| 入睡用时 | {format_val(fall_asleep_time)} 分钟 | {fall_asleep_eval} |")
+        lines.append(f"| 起床用时 | {format_val(wake_up_time)} 分钟 | {wake_up_eval} |")
     
     lines.extend([
         "",
@@ -529,16 +545,16 @@ def generate_full_report_file(data, analysis, date_str):
             "|------|------|------|",
             f"| 入睡时间 | {sleep.get('sleep_start', 'N/A')} | - |",
             f"| 醒来时间 | {sleep.get('sleep_end', 'N/A')} | - |",
-            f"| 夜间睡眠 | {night_sleep_dur:.1f} 小时 | {sleep_analysis.get('duration_status', 'N/A')} |",
-            f"| 深睡时长 | {deep_sleep:.0f} 分钟 | - |",
-            f"| 浅睡时长 | {light_sleep:.0f} 分钟 | - |",
-            f"| REM睡眠 | {rem_sleep:.0f} 分钟 | - |",
-            f"| 清醒时长 | {awake_time:.0f} 分钟 | - |",
+            f"| 夜间睡眠 | {format_val(night_sleep_dur)} 小时 | {sleep_analysis.get('duration_status', 'N/A')} |",
+            f"| 深睡时长 | {format_val(deep_sleep)} 分钟 | - |",
+            f"| 浅睡时长 | {format_val(light_sleep)} 分钟 | - |",
+            f"| REM睡眠 | {format_val(rem_sleep)} 分钟 | - |",
+            f"| 清醒时长 | {format_val(awake_time)} 分钟 | - |",
             f"| 清醒次数 | {awake_count} 次 | {sleep_analysis.get('continuity_status', 'N/A')} |",
             f"| 睡眠评分 | {sleep.get('sleep_score', 'N/A')} 分 | {sleep_analysis.get('quality_status', 'N/A')} |",
-            f"| 睡眠周期 | {sleep_cycles:.1f} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |",
-            f"| 入睡用时 | {fall_asleep_time:.0f} 分钟 | {'⚠️ 延迟入睡' if fall_asleep_time < 0 else '✅ 正常' if fall_asleep_time <= 20 else '⚠️ 较长' if fall_asleep_time <= 40 else '❌ 过长'} |",
-            f"| 起床用时 | {wake_up_time:.0f} 分钟 | {'✅ 早起' if wake_up_time < 0 else '✅ 正常' if wake_up_time <= 10 else '⚠️ 较长' if wake_up_time <= 20 else '❌ 过长'} |",
+            f"| 睡眠周期 | {format_val(sleep_cycles)} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |",
+            f"| 入睡用时 | {format_val(fall_asleep_time)} 分钟 | {'✅ 快速入睡' if fall_asleep_time < 0 else '✅ 正常' if fall_asleep_time <= 15 else '⚠️ 较长'} |",
+            f"| 起床用时 | {format_val(wake_up_time)} 分钟 | {'✅ 快速起床' if wake_up_time < 0 else '✅ 正常' if wake_up_time <= 15 else '❌ 过长'} |",
             "",
             "### 睡眠质量评估",
             "",

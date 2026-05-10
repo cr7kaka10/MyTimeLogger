@@ -11,11 +11,12 @@ from PyQt6.QtWidgets import (
     QLineEdit, QTextEdit, QTabWidget, QGraphicsOpacityEffect,
     QMessageBox, QFileDialog, QSplitter
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QThread
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QThread, QRectF, QPointF
+from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QBrush, QLinearGradient, QPainterPath
 
 from config import save_config
 from utils import resource_path
+from database import StudyLogger
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +80,13 @@ class AIWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, ai_cfg, image_path=None, sleep_data=None):
+    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None):
         super().__init__()
         self.ai_cfg = ai_cfg
         self.image_path = image_path
         self.sleep_data = sleep_data
+        self.force_pull = force_pull
+        self.date_str = date_str  # 明确传入目标日期，不再猜测
 
     def run(self):
         try:
@@ -192,15 +195,24 @@ official_interpretation (截图底部的官方解读与建议原文, 字符串).
             # ── 步骤 2: 生成完整时间管理报告 ──
             self.progress.emit("🌐 正在拉取 aTimeLogger 数据并生成综合报告...")
             
-            # 解析日期
-            sleep_date = self.sleep_data.get("sleep_date", "")
-            # 处理日期格式，例如 "5月9日" -> "2026-05-09"
-            target_date = datetime.now().strftime("%Y-%m-%d")
-            import re
-            match = re.search(r"(\d+)月(\d+)日", sleep_date)
-            if match:
-                month, day = match.groups()
-                target_date = f"{datetime.now().year}-{int(month):02d}-{int(day):02d}"
+            # 解析目标日期：优先使用调用方明确传入的 date_str
+            if self.date_str:
+                target_date = self.date_str
+            else:
+                # 兜底：从 sleep_data 中尝试解析
+                sleep_date = self.sleep_data.get("sleep_date", "") if self.sleep_data else ""
+                target_date = datetime.now().strftime("%Y-%m-%d")
+                if sleep_date:
+                    import re as _re
+                    # 已是 YYYY-MM-DD 格式，直接用
+                    if _re.match(r'\d{4}-\d{2}-\d{2}', sleep_date):
+                        target_date = sleep_date
+                    else:
+                        # 解析 M月D日 格式
+                        m = _re.search(r'(\d+)月(\d+)日', sleep_date)
+                        if m:
+                            month, day = m.groups()
+                            target_date = f"{datetime.now().year}-{int(month):02d}-{int(day):02d}"
             
             # 将生成的完整报告写入 UI 的 analysis.summary 字段中
             self.sleep_data['date'] = target_date
@@ -213,7 +225,11 @@ official_interpretation (截图底部的官方解读与建议原文, 字符串).
             from generate_full_report import generate_comprehensive_report
             
             # 直接调用并注入睡眠数据
-            report_path = generate_comprehensive_report(target_date, injected_sleep_data=self.sleep_data)
+            report_path = generate_comprehensive_report(
+                target_date, 
+                injected_sleep_data=self.sleep_data,
+                force_pull=self.force_pull
+            )
             
             if report_path and os.path.exists(report_path):
                 with open(report_path, "r", encoding="utf-8") as f:
@@ -227,6 +243,163 @@ official_interpretation (截图底部的官方解读与建议原文, 字符串).
 
         except Exception as e:
             self.error.emit(f"❌ 分析失败：{e}")
+
+
+class SleepTrendChart(QWidget):
+    """
+    自定义睡眠趋势图表组件 (QPainter 纯绘图实现)
+    支持切换：入睡/起床用时、评分、周期、深睡时长
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.history = []  # 存储最近 N 天的记录
+        self.current_metric = "fall_asleep_min" # 默认显示入睡用时
+        self.metric_map = {
+            "sleep_score": ("睡眠评分", "分", "#81A1C1"),
+            "total_sleep_min": ("总时长", "h", "#88C0D0"),
+            "deep_sleep_min": ("深睡时长", "min", "#B48EAD"),
+            "sleep_cycles": ("睡眠周期", "个", "#A3BE8C"),
+            "fall_asleep_min": ("入睡用时", "min", "#EBCB8B"),
+            "wake_up_min": ("起床用时", "min", "#D08770")
+        }
+        self.setMouseTracking(True)
+        self.hover_index = -1
+        self.setFixedHeight(220)
+
+    def set_data(self, history_data):
+        self.history = history_data
+        self.update()
+
+    def set_metric(self, metric_key):
+        if metric_key in self.metric_map:
+            self.current_metric = metric_key
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        if not self.history:
+            painter.setPen(QColor(TEXT_SECONDARY))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "暂无历史趋势数据，请先分析几天记录")
+            return
+
+        w, h = self.width(), self.height()
+        padding_l, padding_r = 45, 25
+        padding_t, padding_b = 40, 40
+        
+        chart_w = w - padding_l - padding_r
+        chart_h = h - padding_t - padding_b
+        
+        # 1. 准备数据
+        vals = []
+        for d in self.history:
+            v = d.get(self.current_metric, 0)
+            if self.current_metric == "total_sleep_min":
+                v = (v or 0) / 60.0 # 分钟转小时
+            vals.append(float(v or 0))
+            
+        max_val = max(vals) if vals else 1
+        if max_val <= 0: max_val = 1
+        max_val *= 1.3 # 留出顶部空间显示文字
+        
+        count = len(vals)
+        step_x = chart_w / (count - 1) if count > 1 else chart_w
+        
+        # 2. 绘制背景参考线
+        painter.setPen(QPen(QColor("#EDF1F7"), 1, Qt.PenStyle.DashLine))
+        for i in range(4):
+            y_line = h - padding_b - (i * 0.33 * chart_h)
+            painter.drawLine(padding_l, int(y_line), w - padding_r, int(y_line))
+            
+        # 3. 绘制平滑曲线
+        points = []
+        for i, v in enumerate(vals):
+            x = padding_l + i * step_x
+            y = h - padding_b - (v / max_val * chart_h)
+            points.append(QPointF(x, y))
+            
+        color_hex = self.metric_map[self.current_metric][2]
+        main_color = QColor(color_hex)
+
+        if len(points) > 1:
+            # 绘制面积填充
+            grad_path = QPainterPath()
+            grad_path.moveTo(points[0].x(), h - padding_b)
+            for p in points:
+                grad_path.lineTo(p)
+            grad_path.lineTo(points[-1].x(), h - padding_b)
+            grad_path.closeSubpath()
+            
+            gradient = QLinearGradient(0, padding_t, 0, h - padding_b)
+            fill_color = QColor(main_color)
+            fill_color.setAlpha(50)
+            gradient.setColorAt(0, fill_color)
+            fill_color.setAlpha(0)
+            gradient.setColorAt(1, fill_color)
+            painter.fillPath(grad_path, QBrush(gradient))
+            
+            # 绘制主曲线 (贝塞尔平滑)
+            painter.setPen(QPen(main_color, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            path = QPainterPath()
+            path.moveTo(points[0])
+            for i in range(len(points)-1):
+                p1 = points[i]
+                p2 = points[i+1]
+                dx = (p2.x() - p1.x()) / 2
+                path.cubicTo(p1.x() + dx, p1.y(), p2.x() - dx, p2.y(), p2.x(), p2.y())
+            painter.drawPath(path)
+            
+            # 4. 绘制数据点与日期
+            for i, p in enumerate(points):
+                is_hover = (i == self.hover_index)
+                
+                # 日期标签
+                painter.setPen(QColor(TEXT_SECONDARY))
+                painter.setFont(QFont("Segoe UI", 8))
+                date_str = self.history[i]['date'][-5:] # MM-DD
+                painter.drawText(QRectF(p.x()-20, h-padding_b+10, 40, 20), Qt.AlignmentFlag.AlignCenter, date_str)
+                
+                # 数据点
+                painter.setBrush(BG_LIGHT)
+                painter.setPen(QPen(main_color, 2))
+                radius = 5 if is_hover else 3
+                painter.drawEllipse(p, radius, radius)
+                
+                if is_hover:
+                    # 悬停框
+                    val = vals[i]
+                    unit = self.metric_map[self.current_metric][1]
+                    tip = f"{val:.1f}{unit}" if val != int(val) else f"{int(val)}{unit}"
+                    
+                    painter.setBrush(QColor(TEXT_PRIMARY))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    tip_rect = QRectF(p.x() - 35, p.y() - 35, 70, 24)
+                    painter.drawRoundedRect(tip_rect, 5, 5)
+                    painter.setPen(QColor("white"))
+                    painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                    painter.drawText(tip_rect, Qt.AlignmentFlag.AlignCenter, tip)
+
+    def mouseMoveEvent(self, event):
+        if not self.history: return
+        padding_l, padding_r = 45, 25
+        chart_w = self.width() - padding_l - padding_r
+        count = len(self.history)
+        step_x = chart_w / (count - 1) if count > 1 else chart_w
+        
+        idx = round((event.pos().x() - padding_l) / step_x)
+        if 0 <= idx < count:
+            if idx != self.hover_index:
+                self.hover_index = idx
+                self.update()
+        else:
+            if self.hover_index != -1:
+                self.hover_index = -1
+                self.update()
+
+    def leaveEvent(self, event):
+        self.hover_index = -1
+        self.update()
 
 
 class AIConfigWidget(QWidget):
@@ -365,6 +538,7 @@ class SleepStatisticsWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.dragPos = None
         self.current_date = datetime.now(CST).date()
+        self.db = StudyLogger(self.config)
         self._selected_image = None   # 用户选择的截图路径
         self._ai_worker = None        # AIWorker 线程引用
         self._current_sleep_data = None  # 当前加载的 JSON 数据
@@ -489,20 +663,19 @@ class SleepStatisticsWindow(QWidget):
         self.grid = QGridLayout()
         self.grid.setSpacing(15)
         self.metrics = {}
-        # 新的排列顺序与重点指标高亮设定
+        # 重新定义高亮指标：将用户最看重的“入睡/起床用时”设为重点高亮
         metric_names = [
-            ("睡眠周期", "sleep_cycles", " 个", True),
-            ("深睡时长", "deep_sleep_min", " min", True),
-            ("入睡用时", "fall_asleep_time", " min", False),
-            ("起床用时", "wake_up_time", " min", False),
+            ("入睡用时", "fall_asleep_min", " min", True),
+            ("起床用时", "wake_up_min", " min", True),
+            ("睡眠周期", "sleep_cycles", " 个", False),
+            ("深睡时长", "deep_sleep_min", " min", False),
             ("清醒次数", "awake_count", " 次", False),
-            ("清醒时长", "awake_duration", " min", False),
+            ("清醒时长", "awake_min", " min", False),
             ("浅睡", "light_sleep_min", " min", False),
             ("快速眼动", "rem_sleep_min", " min", False)
         ]
         for i, (label, key, unit, highlight) in enumerate(metric_names):
             card = self._create_metric_card(label, highlight)
-            # 使用 2x4 布局 (i // 4 行, i % 4 列)
             self.grid.addWidget(card, i // 4, i % 4)
             self.metrics[key] = (card.findChild(QLabel, "val"), unit)
         
@@ -584,11 +757,54 @@ class SleepStatisticsWindow(QWidget):
             QPushButton {{ background: #D8DEE9; color: {TEXT_PRIMARY}; border-radius: 6px; font-size: 12px; }}
             QPushButton:hover {{ background: #C4CDD9; }}
         """)
-        self.refresh_btn.clicked.connect(self.load_data)
+        self.refresh_btn.clicked.connect(self.force_refresh_data)
         btn_row.addWidget(self.refresh_btn)
 
         analysis_layout.addLayout(btn_row)
         self.tabs.addTab(analysis_page, "分析建议")
+
+        # --- 趋势统计页 ---
+        trend_page = QWidget()
+        trend_layout = QVBoxLayout(trend_page)
+        trend_layout.setContentsMargins(15, 15, 15, 15)
+        trend_layout.setSpacing(10)
+        
+        # 指标切换切换按钮行
+        self.chart_btn_row = QHBoxLayout()
+        self.chart_btn_row.setSpacing(5)
+        self.trend_btns = {}
+        metric_btns = [
+            ("入睡", "fall_asleep_min"),
+            ("起床", "wake_up_min"),
+            ("得分", "sleep_score"),
+            ("周期", "sleep_cycles"),
+            ("深睡", "deep_sleep_min")
+        ]
+        for name, key in metric_btns:
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setFixedSize(55, 26)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, k=key: self._switch_trend_metric(k))
+            self.chart_btn_row.addWidget(btn)
+            self.trend_btns[key] = btn
+        
+        self.chart_btn_row.addStretch()
+        trend_layout.addLayout(self.chart_btn_row)
+        
+        # 趋势图表实例
+        self.trend_chart = SleepTrendChart()
+        trend_layout.addWidget(self.trend_chart)
+        
+        # 底部简单统计文本
+        self.trend_info = QLabel("提示：点击上方按钮切换查看不同指标的趋势走势")
+        self.trend_info.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px;")
+        self.trend_info.setWordWrap(True)
+        trend_layout.addWidget(self.trend_info)
+        trend_layout.addStretch()
+        
+        self.tabs.addTab(trend_page, "趋势统计")
+        self.trend_btns["fall_asleep_min"].setChecked(True)
 
         # 配置页
         self.config_page = AIConfigWidget(self.config)
@@ -655,6 +871,77 @@ class SleepStatisticsWindow(QWidget):
                     self._clear_ui()
             else:
                 self._clear_ui()
+        
+        # 3. 加载趋势统计数据
+        self._refresh_trend_data()
+    
+    def _refresh_trend_data(self):
+        """刷新趋势图表数据"""
+        try:
+            history = self.db.get_sleep_history(days=14)
+            if history:
+                self.trend_chart.set_data(history)
+                # 更新统计文本
+                avg_fall = sum(d.get('fall_asleep_min', 0) or 0 for d in history) / len(history)
+                avg_wake = sum(d.get('wake_up_min', 0) or 0 for d in history) / len(history)
+                self.trend_info.setText(f"最近 {len(history)} 天平均：入睡 {avg_fall:.1f}分，起床 {avg_wake:.1f}分")
+        except Exception as e:
+            logger.error(f"刷新趋势图表失败: {e}")
+
+    def _switch_trend_metric(self, key):
+        """切换趋势图显示的指标"""
+        for k, btn in self.trend_btns.items():
+            btn.setChecked(k == key)
+        self.trend_chart.set_metric(key)
+
+    def force_refresh_data(self):
+        """强制重新拉取网站数据并更新报告"""
+        date_str = self.current_date.strftime("%Y-%m-%d")
+        
+        # 1. 尝试从数据库获取现有的睡眠基础数据
+        sleep_data = self.db.get_huawei_sleep_data(date_str)
+        
+        # 还原 analysis 结构
+        if sleep_data:
+            report_content = sleep_data.pop("analysis_report", "")
+            sleep_data["analysis"] = {"summary": report_content}
+        
+        if not sleep_data:
+            # 如果数据库没有，再看看有没有旧 JSON
+            data_path = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
+            if os.path.exists(data_path):
+                try:
+                    with open(data_path, 'r', encoding='utf-8') as f:
+                        sleep_data = json.load(f)
+                except: pass
+        
+        if not sleep_data:
+            QMessageBox.information(self, "无法刷新", "该日期暂无睡眠基础数据，请先上传截图进行 AI 分析。")
+            return
+
+        # 2. 启动 AI Worker 进行强制同步
+        self.ai_btn.setEnabled(False)
+        self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setText("⏳ 同步中...")
+        self.analysis_text.setText("🔄 正在强制同步 aTimeLogger 网站最新数据并重新生成报告...")
+
+        ai_cfg = self.config.get("ai_model_config", {})
+        self._ai_worker = AIWorker(
+            ai_cfg=ai_cfg,
+            image_path=None,
+            sleep_data=sleep_data,
+            force_pull=True,
+            date_str=self.current_date.strftime("%Y-%m-%d")
+        )
+        self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
+        self._ai_worker.finished.connect(self._on_ai_finished)
+        self._ai_worker.error.connect(self._on_ai_error)
+        # 无论成功失败都恢复按钮
+        self._ai_worker.finished.connect(lambda: self.refresh_btn.setEnabled(True))
+        self._ai_worker.finished.connect(lambda: self.refresh_btn.setText("🔄 刷新"))
+        self._ai_worker.error.connect(lambda: self.refresh_btn.setEnabled(True))
+        self._ai_worker.error.connect(lambda: self.refresh_btn.setText("🔄 刷新"))
+        self._ai_worker.start()
 
     def _update_ui_with_data(self, data):
         score = data.get("sleep_score", 0)
@@ -664,44 +951,24 @@ class SleepStatisticsWindow(QWidget):
         else: color = RED_ACCENT
         self.score_val.setStyleSheet(f"font-size: 48px; font-weight: bold; color: {color};")
 
-        # --- 智能计算：清醒时长 ---
-        # 醒来时间 - 入睡时间 - 实际睡眠总时长
-        try:
-            start_str = data.get("sleep_start")
-            end_str = data.get("sleep_end")
-            total_sleep = data.get("total_sleep_min")
-            
-            if start_str and end_str and total_sleep:
-                fmt = "%H:%M"
-                t_start = datetime.strptime(start_str, fmt)
-                t_end = datetime.strptime(end_str, fmt)
-                if t_end < t_start: t_end += timedelta(days=1)
-                in_bed_min = int((t_end - t_start).total_seconds() / 60)
-                awake_min = max(0, in_bed_min - int(total_sleep))
-                data["awake_duration"] = awake_min
-        except Exception as e:
-            logger.warning(f"清醒时长计算失败: {e}")
+        # 辅助函数：智能格式化数值
+        def format_val(v):
+            try:
+                fv = float(v)
+                if fv == int(fv):
+                    return str(int(fv))
+                # 保留最多两位小数，并去掉末尾多余的0
+                return f"{fv:.2f}".rstrip('0').rstrip('.')
+            except:
+                return str(v)
 
-        # 兼容新旧字段名
-        FALLBACKS = {
-            "deep_sleep_min": lambda d: d.get("deep_sleep_min") or (d.get("deep_sleep", 0) / 60 if d.get("deep_sleep") else None),
-            "light_sleep_min": lambda d: d.get("light_sleep_min") or (d.get("light_sleep", 0) / 60 if d.get("light_sleep") else None),
-            "rem_sleep_min": lambda d: d.get("rem_sleep_min") or (d.get("rem_sleep", 0) / 60 if d.get("rem_sleep") else None),
-        }
-
+        # 遍历指标项，格式化显示
         for key, (label, unit) in self.metrics.items():
-            val = FALLBACKS.get(key, lambda d: d.get(key))(data)
-            if val is None:
-                label.setText("--")
-            elif key == "sleep_cycles" and isinstance(val, (int, float, str)):
-                try:
-                    label.setText(f"{float(val):.2f}{unit}")
-                except ValueError:
-                    label.setText(f"{val}{unit}")
-            elif isinstance(val, (int, float)):
-                label.setText(f"{val:.0f}{unit}")
+            val = data.get(key)
+            if val is not None and val != "":
+                label.setText(f"{format_val(val)}{unit}")
             else:
-                label.setText(f"{val}{unit}")
+                label.setText(f"--{unit}")
 
         # 时间显示
         bed = data.get("sleep_start", "")
@@ -718,7 +985,7 @@ class SleepStatisticsWindow(QWidget):
             report = str(analysis) if analysis else ""
         
         if report:
-            self.analysis_text.setMarkdown(report)
+            self.analysis_text.setMarkdown(str(report))
         else:
             self.analysis_text.setText("数据已加载，点击《🚀 AI 分析》生成智能报告。")
             
@@ -787,7 +1054,8 @@ class SleepStatisticsWindow(QWidget):
         self._ai_worker = AIWorker(
             ai_cfg=ai_cfg,
             image_path=self._selected_image if has_image else None,
-            sleep_data=None if has_image else self._current_sleep_data
+            sleep_data=None if has_image else self._current_sleep_data,
+            date_str=self.current_date.strftime("%Y-%m-%d")
         )
         self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
         self._ai_worker.finished.connect(self._on_ai_finished)
@@ -803,13 +1071,18 @@ class SleepStatisticsWindow(QWidget):
         
         # 1. 智能识别日期逻辑
         target_date = self.current_date
-        date_str_extracted = sleep_data.get("sleep_date") # 例如 "5月8日"
+        date_str_extracted = sleep_data.get("sleep_date") # 例如 "5月8日" 或 "2026-05-08"
         if date_str_extracted:
             try:
-                # 尝试解析 M月D日，年份默认为当前 UI 年份
+                import re as _re
                 current_year = self.current_date.year
-                clean_date = date_str_extracted.replace("月", "-").replace("日", "")
-                parsed_date = datetime.strptime(f"{current_year}-{clean_date}", "%Y-%m-%d")
+                # 已经是 YYYY-MM-DD 格式，直接解析
+                if _re.match(r'\d{4}-\d{2}-\d{2}', str(date_str_extracted)):
+                    parsed_date = datetime.strptime(str(date_str_extracted), "%Y-%m-%d")
+                else:
+                    # 解析 M月D日 格式
+                    clean_date = str(date_str_extracted).replace("月", "-").replace("日", "")
+                    parsed_date = datetime.strptime(f"{current_year}-{clean_date}", "%Y-%m-%d")
                 
                 # 如果解析出的日期和当前 UI 日期不符，更新 target_date 并提醒
                 if parsed_date.date() != self.current_date:
@@ -839,6 +1112,9 @@ class SleepStatisticsWindow(QWidget):
         self._update_ui_with_data(sleep_data)
         self.analysis_text.setMarkdown(report) # 使用 Markdown 渲染
         self.analysis_text.setStyleSheet(f"border: none; background: transparent; color: {TEXT_PRIMARY}; font-size: 13px; line-height: 1.5;")
+        
+        # 5. 刷新趋势数据
+        self._refresh_trend_data()
 
     def _on_ai_error(self, msg):
         self.analysis_text.setText(msg)

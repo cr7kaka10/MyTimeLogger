@@ -148,6 +148,10 @@ class StudyLogger:
                         deep_sleep_ratio INT,
                         sleep_continuity INT,
                         breathing_score INT,
+                        sleep_cycles FLOAT,
+                        awake_min INT,
+                        fall_asleep_min INT,
+                        wake_up_min INT,
                         analysis_report TEXT,
                         updated_at DATETIME
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -226,6 +230,10 @@ class StudyLogger:
                         deep_sleep_ratio INTEGER,
                         sleep_continuity INTEGER,
                         breathing_score INTEGER,
+                        sleep_cycles FLOAT,
+                        awake_min INTEGER,
+                        fall_asleep_min INTEGER,
+                        wake_up_min INTEGER,
                         analysis_report TEXT,
                         updated_at TIMESTAMP
                     )
@@ -1721,6 +1729,10 @@ class StudyLogger:
                 data.get('deep_sleep_ratio'),
                 data.get('sleep_continuity'),
                 data.get('breathing_score'),
+                data.get('sleep_cycles'),
+                data.get('awake_min'),
+                data.get('fall_asleep_min'),
+                data.get('wake_up_min'),
                 data.get('analysis_report'),
                 now_str
             )
@@ -1730,15 +1742,18 @@ class StudyLogger:
                     INSERT INTO huawei_sleep_data (
                         date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
-                        sleep_continuity, breathing_score, analysis_report, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        sleep_continuity, breathing_score, sleep_cycles, awake_min, 
+                        fall_asleep_min, wake_up_min, analysis_report, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE 
                         sleep_score=VALUES(sleep_score), total_sleep_min=VALUES(total_sleep_min),
                         deep_sleep_min=VALUES(deep_sleep_min), light_sleep_min=VALUES(light_sleep_min),
                         rem_sleep_min=VALUES(rem_sleep_min), awake_count=VALUES(awake_count),
                         sleep_start=VALUES(sleep_start), sleep_end=VALUES(sleep_end),
                         deep_sleep_ratio=VALUES(deep_sleep_ratio), sleep_continuity=VALUES(sleep_continuity),
-                        breathing_score=VALUES(breathing_score), analysis_report=VALUES(analysis_report),
+                        breathing_score=VALUES(breathing_score), sleep_cycles=VALUES(sleep_cycles),
+                        awake_min=VALUES(awake_min), fall_asleep_min=VALUES(fall_asleep_min),
+                        wake_up_min=VALUES(wake_up_min), analysis_report=VALUES(analysis_report),
                         updated_at=VALUES(updated_at)
                 ''', fields)
             else:
@@ -1746,15 +1761,18 @@ class StudyLogger:
                     INSERT INTO huawei_sleep_data (
                         date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
-                        sleep_continuity, breathing_score, analysis_report, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        sleep_continuity, breathing_score, sleep_cycles, awake_min, 
+                        fall_asleep_min, wake_up_min, analysis_report, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(date) DO UPDATE SET 
                         sleep_score=excluded.sleep_score, total_sleep_min=excluded.total_sleep_min,
                         deep_sleep_min=excluded.deep_sleep_min, light_sleep_min=excluded.light_sleep_min,
                         rem_sleep_min=excluded.rem_sleep_min, awake_count=excluded.awake_count,
                         sleep_start=excluded.sleep_start, sleep_end=excluded.sleep_end,
                         deep_sleep_ratio=excluded.deep_sleep_ratio, sleep_continuity=excluded.sleep_continuity,
-                        breathing_score=excluded.breathing_score, analysis_report=excluded.analysis_report,
+                        breathing_score=excluded.breathing_score, sleep_cycles=excluded.sleep_cycles,
+                        awake_min=excluded.awake_min, fall_asleep_min=excluded.fall_asleep_min,
+                        wake_up_min=excluded.wake_up_min, analysis_report=excluded.analysis_report,
                         updated_at=excluded.updated_at
                 ''', fields)
             
@@ -1770,10 +1788,16 @@ class StudyLogger:
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            cols = (
+                "date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, "
+                "rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, "
+                "sleep_continuity, breathing_score, sleep_cycles, awake_min, "
+                "fall_asleep_min, wake_up_min, analysis_report, updated_at"
+            )
             if self.db_type == "mysql":
-                cursor.execute("SELECT * FROM huawei_sleep_data WHERE date = %s", (date_str,))
+                cursor.execute(f"SELECT {cols} FROM huawei_sleep_data WHERE date = %s", (date_str,))
             else:
-                cursor.execute("SELECT * FROM huawei_sleep_data WHERE date = ?", (date_str,))
+                cursor.execute(f"SELECT {cols} FROM huawei_sleep_data WHERE date = ?", (date_str,))
             
             row = cursor.fetchone()
             conn.close()
@@ -1793,12 +1817,52 @@ class StudyLogger:
                 "deep_sleep_ratio": row[9],
                 "sleep_continuity": row[10],
                 "breathing_score": row[11],
-                "analysis_report": row[12],
-                "updated_at": row[13]
+                "sleep_cycles": row[12],
+                "awake_min": row[13],
+                "fall_asleep_min": row[14],
+                "wake_up_min": row[15],
+                "analysis_report": row[16],
+                "updated_at": row[17]
             }
         except Exception as e:
             logging.error(f"获取华为睡眠数据失败: {e}")
             return None
+
+    def get_sleep_history(self, days=14):
+        """获取最近 N 天的睡眠历史数据"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cols = (
+                "date, sleep_score, total_sleep_min, deep_sleep_min, "
+                "sleep_cycles, fall_asleep_min, wake_up_min"
+            )
+            # 按日期倒序排列取最近 N 条
+            if self.db_type == "mysql":
+                cursor.execute(f"SELECT {cols} FROM huawei_sleep_data ORDER BY date DESC LIMIT %s", (days,))
+            else:
+                cursor.execute(f"SELECT {cols} FROM huawei_sleep_data ORDER BY date DESC LIMIT ?", (days,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            history = []
+            for row in rows:
+                history.append({
+                    "date": row[0],
+                    "sleep_score": row[1],
+                    "total_sleep_min": row[2],
+                    "deep_sleep_min": row[3],
+                    "sleep_cycles": row[4],
+                    "fall_asleep_min": row[5],
+                    "wake_up_min": row[6]
+                })
+            
+            # 返回正序排列（从旧到新）以便画图
+            return sorted(history, key=lambda x: x['date'])
+        except Exception as e:
+            logging.error(f"获取睡眠历史失败: {e}")
+            return []
 
 
 class DatabaseWorker(QObject):

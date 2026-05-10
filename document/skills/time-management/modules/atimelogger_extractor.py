@@ -33,6 +33,9 @@ class AtimeloggerExtractor:
         self.types_map = {}
         self.china_tz = timezone(timedelta(hours=8))
         
+        # 睡眠相关关键字
+        self.sleep_keywords = ['睡觉', '睡眠', '上床', '起床', 'Sleep', 'Bed', 'Wake']
+        
     def _login(self):
         """登录获取token"""
         if self.token:
@@ -199,27 +202,23 @@ class AtimeloggerExtractor:
                     'comment': interval.get('comment', ''),
                     'tags': interval.get('tags', [])
                 }
+            # 特殊逻辑：如果是“上床”记录且发生在前一天晚上（18:00后），也包含进来用于计算
+            if type_info['name'] in ['上床', 'Bed'] and start_date == (target_date - timedelta(days=1)) and start.hour >= 18:
+                return {
+                    'type': type_info['name'],
+                    'start': start,
+                    'finish': finish,
+                    'duration': duration,
+                    'comment': interval.get('comment', ''),
+                    'tags': interval.get('tags', [])
+                }
         else:
-            # 跨天记录，按时间更长的一天归属
-            midnight = datetime.combine(finish_date, datetime.min.time()).replace(tzinfo=self.china_tz)
+            # 跨天记录，判定归属
+            # 核心修正：如果是睡眠相关活动，一律以结束日期（起床日期）为准
+            is_sleep_related = any(kw in type_info['name'] for kw in self.sleep_keywords)
             
-            first_day_seconds = (midnight - start).total_seconds()
-            second_day_seconds = (finish - midnight).total_seconds()
-            
-            # 判断归属哪一天
-            if first_day_seconds >= second_day_seconds:
-                # 归属到第一天
-                if start_date == target_date:
-                    return {
-                        'type': type_info['name'],
-                        'start': start,
-                        'finish': finish,
-                        'duration': duration,
-                        'comment': interval.get('comment', ''),
-                        'tags': interval.get('tags', [])
-                    }
-            else:
-                # 归属到第二天
+            if is_sleep_related:
+                # 睡眠数据归属于结束日期
                 if finish_date == target_date:
                     return {
                         'type': type_info['name'],
@@ -229,5 +228,34 @@ class AtimeloggerExtractor:
                         'comment': interval.get('comment', ''),
                         'tags': interval.get('tags', [])
                     }
+            else:
+                # 普通活动：按时间更长的一天归属
+                midnight = datetime.combine(finish_date, datetime.min.time()).replace(tzinfo=self.china_tz)
+                
+                first_day_seconds = (midnight - start).total_seconds()
+                second_day_seconds = (finish - midnight).total_seconds()
+                
+                if first_day_seconds >= second_day_seconds:
+                    # 归属到第一天
+                    if start_date == target_date:
+                        return {
+                            'type': type_info['name'],
+                            'start': start,
+                            'finish': finish,
+                            'duration': duration,
+                            'comment': interval.get('comment', ''),
+                            'tags': interval.get('tags', [])
+                        }
+                else:
+                    # 归属到第二天
+                    if finish_date == target_date:
+                        return {
+                            'type': type_info['name'],
+                            'start': start,
+                            'finish': finish,
+                            'duration': duration,
+                            'comment': interval.get('comment', ''),
+                            'tags': interval.get('tags', [])
+                        }
         
         return None
