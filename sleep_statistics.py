@@ -356,7 +356,8 @@ class SleepStatisticsWindow(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self.setFixedSize(800, 600)
+        self.resize(800, 600)
+        self.setMinimumSize(800, 600)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.Tool
@@ -372,9 +373,14 @@ class SleepStatisticsWindow(QWidget):
         self.load_data()
 
     def _build_ui(self):
+        # 允许内部框架自适应
+        wrapper_layout = QVBoxLayout(self)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        
         # 背景卡片
         self.bg = QFrame(self)
-        self.bg.setGeometry(0, 0, 800, 600)
+        wrapper_layout.addWidget(self.bg)
+        
         self.bg.setStyleSheet(f"""
             QFrame {{
                 background-color: {BG_LIGHT};
@@ -397,6 +403,23 @@ class SleepStatisticsWindow(QWidget):
         title.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: bold;")
         header_layout.addWidget(title)
         header_layout.addStretch()
+
+        max_btn = QPushButton("□")
+        max_btn.setFixedSize(30, 30)
+        max_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        max_btn.setStyleSheet(f"""
+            QPushButton {{ color: {TEXT_SECONDARY}; font-size: 16px; border: none; background: transparent; }}
+            QPushButton:hover {{ color: {TEXT_PRIMARY}; }}
+        """)
+        def toggle_maximize():
+            if self.isMaximized():
+                self.showNormal()
+                max_btn.setText("□")
+            else:
+                self.showMaximized()
+                max_btn.setText("❐")
+        max_btn.clicked.connect(toggle_maximize)
+        header_layout.addWidget(max_btn)
 
         close_btn = QPushButton("×")
         close_btn.setFixedSize(30, 30)
@@ -691,12 +714,17 @@ class SleepStatisticsWindow(QWidget):
 
     def _pick_image(self):
         """打开文件选择器选择截图"""
+        from PyQt6.QtCore import QSettings
+        settings = QSettings("MyTimeLogger", "SleepAnalysis")
+        last_dir = settings.value("last_image_dir", os.path.expanduser("~"))
+        
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择半华健康睡眠截图",
-            os.path.expanduser("~"),
+            self, "选择华为运动健康睡眠截图",
+            last_dir,
             "图片文件 (*.png *.jpg *.jpeg *.bmp *.webp)"
         )
         if path:
+            settings.setValue("last_image_dir", os.path.dirname(path))
             self._selected_image = path
             fname = os.path.basename(path)
             self.img_path_label.setText(f"✅ 已选择: {fname}")

@@ -1547,29 +1547,55 @@ class StudyLogger:
             return False
 
     def save_atm_data(self, date_str, data_dict):
-        """保存 aTimeLogger 数据"""
+        """保存 aTimeLogger 数据，拆分为明细和汇总"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            def json_default(obj):
-                if isinstance(obj, datetime):
-                    return obj.isoformat()
-                raise TypeError(f"Type {type(obj)} not serializable")
-            raw_json = json.dumps(data_dict, ensure_ascii=False, default=json_default)
             
+            # 1. 尝试删除旧的明细（保证幂等）
             if self.db_type == "mysql":
+                cursor.execute("DELETE FROM atm_activities WHERE date = %s", (date_str,))
+                # 2. 更新汇总记录
                 cursor.execute('''
-                    INSERT INTO atm (date, raw_json, updated_at)
-                    VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE raw_json=%s, updated_at=%s
-                ''', (date_str, raw_json, now_str, raw_json, now_str))
+                    INSERT INTO atm_summary (date, updated_at)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE updated_at=%s
+                ''', (date_str, now_str, now_str))
             else:
+                cursor.execute("DELETE FROM atm_activities WHERE date = ?", (date_str,))
                 cursor.execute('''
-                    INSERT INTO atm (date, raw_json, updated_at)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(date) DO UPDATE SET raw_json=?, updated_at=?
-                ''', (date_str, raw_json, now_str, raw_json, now_str))
+                    INSERT INTO atm_summary (date, updated_at)
+                    VALUES (?, ?)
+                    ON CONFLICT(date) DO UPDATE SET updated_at=?
+                ''', (date_str, now_str, now_str))
+                
+            # 3. 循环插入活动明细
+            activities = data_dict.get('activities', [])
+            for act in activities:
+                start_t = act.get('start', '')
+                end_t = act.get('finish', '')
+                if isinstance(start_t, datetime):
+                    start_t = start_t.isoformat()
+                if isinstance(end_t, datetime):
+                    end_t = end_t.isoformat()
+                    
+                dur_sec = act.get('duration', 0)
+                dur_min = int(dur_sec / 60)
+                act_type = act.get('type', '未知')
+                comment = act.get('comment', '')
+                
+                if self.db_type == "mysql":
+                    cursor.execute('''
+                        INSERT INTO atm_activities (date, activity_type, start_time, end_time, duration_minutes, comment)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    ''', (date_str, act_type, start_t, end_t, dur_min, comment))
+                else:
+                    cursor.execute('''
+                        INSERT INTO atm_activities (date, activity_type, start_time, end_time, duration_minutes, comment)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (date_str, act_type, start_t, end_t, dur_min, comment))
+                    
             conn.commit()
             conn.close()
             return True
@@ -1578,21 +1604,46 @@ class StudyLogger:
             return False
 
     def get_atm_data(self, date_str):
-        """获取 aTimeLogger 数据"""
+        """获取 aTimeLogger 数据并还原为原有字典格式"""
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
+            
+            # 检查是否有汇总数据
             if self.db_type == "mysql":
-                cursor.execute("SELECT raw_json FROM atm WHERE date = %s", (date_str,))
+                cursor.execute("SELECT updated_at FROM atm_summary WHERE date = %s", (date_str,))
             else:
-                cursor.execute("SELECT raw_json FROM atm WHERE date = ?", (date_str,))
+                cursor.execute("SELECT updated_at FROM atm_summary WHERE date = ?", (date_str,))
             row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return None
+                
+            # 获取活动明细
+            if self.db_type == "mysql":
+                cursor.execute("SELECT activity_type, start_time, end_time, duration_minutes, comment FROM atm_activities WHERE date = %s ORDER BY start_time ASC", (date_str,))
+            else:
+                cursor.execute("SELECT activity_type, start_time, end_time, duration_minutes, comment FROM atm_activities WHERE date = ? ORDER BY start_time ASC", (date_str,))
+                
+            rows = cursor.fetchall()
+            activities = []
+            for r in rows:
+                act_type, st, et, dur_min, comment = r
+                activities.append({
+                    "type": act_type,
+                    "start": st,
+                    "finish": et,
+                    "duration": int(dur_min) * 60,  # 还原为秒
+                    "comment": comment
+                })
+                
             conn.close()
-            if row and row[0]:
-                return json.loads(row[0])
-            return None
+            return {
+                "date": date_str,
+                "activities": activities
+            }
         except Exception as e:
-            logging.error(f"读取 ATM 数据失败: {e}")
+            logging.error(f"获取 ATM 数据失败: {e}")
             return None
 
 
