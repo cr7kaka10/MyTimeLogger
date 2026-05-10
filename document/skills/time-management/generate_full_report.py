@@ -84,20 +84,35 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
     # 3. 加载华为健康睡眠数据
     print("\n⌚ 加载华为运动健康睡眠数据...")
     sleep_data = None
-    sleep_file = os.path.join(SLEEP_DATA_DIR, f'sleep_{date_str}.json')
     
     if injected_sleep_data:
         sleep_data = injected_sleep_data
         print("✅ 使用实时注入的睡眠数据")
     else:
-        # 优先读技能目录（sleep_statistics.py 实际写入位置）
-        if not os.path.exists(sleep_file):
-            sleep_file = os.path.join(LEGACY_SLEEP_DATA_DIR, f'sleep_{date_str}.json')
-        
-        if os.path.exists(sleep_file):
-            with open(sleep_file, 'r', encoding='utf-8') as f:
-                sleep_data = json.load(f)
-            print(f"✅ 已加载睡眠数据（来源: {sleep_file}）")
+        # 首先尝试从数据库中获取
+        if StudyLogger:
+            try:
+                db = StudyLogger()
+                sleep_data = db.get_huawei_sleep_data(date_str)
+                if sleep_data:
+                    # 还原字段名以兼容后续逻辑 (数据库存的是归一化后的键名，或部分不同)
+                    # 我们在 get_huawei_sleep_data 中返回的 key 已经基本对齐，但 analysis 需要还原
+                    report_content = sleep_data.pop("analysis_report", "")
+                    sleep_data["analysis"] = {"summary": report_content}
+                    print("✅ 成功从本地数据库读取华为睡眠缓存数据")
+            except Exception as e:
+                print(f"⚠️ 从数据库读取睡眠缓存失败: {e}")
+
+        # 若数据库没有，尝试从旧 JSON 文件加载
+        if not sleep_data:
+            sleep_file = os.path.join(SLEEP_DATA_DIR, f'sleep_{date_str}.json')
+            if not os.path.exists(sleep_file):
+                sleep_file = os.path.join(LEGACY_SLEEP_DATA_DIR, f'sleep_{date_str}.json')
+            
+            if os.path.exists(sleep_file):
+                with open(sleep_file, 'r', encoding='utf-8') as f:
+                    sleep_data = json.load(f)
+                print(f"✅ 已从 JSON 文件加载睡眠数据（来源: {sleep_file}）")
     
     if sleep_data:
 
@@ -138,12 +153,8 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
         sleep_data['wake_up_time'] = wake_up_min
         print(f"  入睡用时: {fall_asleep_min} 分钟")
         print(f"  起床用时: {wake_up_min} 分钟")
-        
-        # 保存更新后的睡眠数据
-        with open(sleep_file, 'w', encoding='utf-8') as f:
-            json.dump(sleep_data, f, ensure_ascii=False, indent=2)
     else:
-        print(f"⚠️ 未找到睡眠数据文件: {sleep_file}")
+        print(f"⚠️ 未找到睡眠数据（数据库或文件均无记录）")
     
     # 4. 合并数据
     print("\n🔄 合并数据...")
@@ -157,21 +168,25 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None):
     print("\n📝 生成完整报告...")
     report_path = generate_full_report_file(combined_data, ai_analysis, date_str)
     
-    # 7. 将完整报告写入睡眠数据（如果存在），使其在UI中显示
+    # 7. 将完整报告回写数据库，使其在 UI 中显示
     if sleep_data and os.path.exists(report_path):
         with open(report_path, 'r', encoding='utf-8') as f:
             report_content = f.read()
         
         if 'analysis' not in sleep_data:
             sleep_data['analysis'] = {}
-        # 将原始的 AI 建议保留，如果有的话
-        old_summary = sleep_data['analysis'].get('summary', '')
-        # 将新的完整报告写入 summary
         sleep_data['analysis']['summary'] = report_content
         
-        with open(sleep_file, 'w', encoding='utf-8') as f:
-            json.dump(sleep_data, f, ensure_ascii=False, indent=2)
-        print("✅ 完整报告已同步写入睡眠数据文件 (UI可见)")
+        # 保存到数据库
+        if StudyLogger:
+            try:
+                db = StudyLogger()
+                db_data = sleep_data.copy()
+                db_data["analysis_report"] = report_content
+                db.save_huawei_sleep_data(date_str, db_data)
+                print("✅ 完整报告已同步写入数据库缓存 (UI可见)")
+            except Exception as e:
+                print(f"⚠️ 同步报告到数据库失败: {e}")
     
     print(f"\n{'='*70}")
     print(f"✅ 报告生成完成!")

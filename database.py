@@ -134,6 +134,24 @@ class StudyLogger:
                         KEY idx_atm_date (date)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS huawei_sleep_data (
+                        date VARCHAR(20) PRIMARY KEY,
+                        sleep_score INT,
+                        total_sleep_min INT,
+                        deep_sleep_min INT,
+                        light_sleep_min INT,
+                        rem_sleep_min INT,
+                        awake_count INT,
+                        sleep_start VARCHAR(10),
+                        sleep_end VARCHAR(10),
+                        deep_sleep_ratio INT,
+                        sleep_continuity INT,
+                        breathing_score INT,
+                        analysis_report TEXT,
+                        updated_at DATETIME
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ''')
             else:
                 # SQLite
                 cursor.execute('''
@@ -192,6 +210,24 @@ class StudyLogger:
                         end_time TIMESTAMP NOT NULL,
                         duration_minutes INTEGER NOT NULL,
                         comment TEXT
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS huawei_sleep_data (
+                        date TEXT PRIMARY KEY,
+                        sleep_score INTEGER,
+                        total_sleep_min INTEGER,
+                        deep_sleep_min INTEGER,
+                        light_sleep_min INTEGER,
+                        rem_sleep_min INTEGER,
+                        awake_count INTEGER,
+                        sleep_start TEXT,
+                        sleep_end TEXT,
+                        deep_sleep_ratio INTEGER,
+                        sleep_continuity INTEGER,
+                        breathing_score INTEGER,
+                        analysis_report TEXT,
+                        updated_at TIMESTAMP
                     )
                 ''')
                 cursor.execute('''
@@ -1663,6 +1699,105 @@ class StudyLogger:
             }
         except Exception as e:
             logging.error(f"获取 ATM 数据失败: {e}")
+            return None
+
+    def save_huawei_sleep_data(self, date_str, data):
+        """保存华为睡眠 OCR 解析数据到数据库"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            fields = (
+                date_str, 
+                data.get('sleep_score'),
+                data.get('total_sleep_min'),
+                data.get('deep_sleep_min'),
+                data.get('light_sleep_min'),
+                data.get('rem_sleep_min'),
+                data.get('awake_count'),
+                data.get('sleep_start'),
+                data.get('sleep_end'),
+                data.get('deep_sleep_ratio'),
+                data.get('sleep_continuity'),
+                data.get('breathing_score'),
+                data.get('analysis_report'),
+                now_str
+            )
+            
+            if self.db_type == "mysql":
+                cursor.execute('''
+                    INSERT INTO huawei_sleep_data (
+                        date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
+                        rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
+                        sleep_continuity, breathing_score, analysis_report, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE 
+                        sleep_score=VALUES(sleep_score), total_sleep_min=VALUES(total_sleep_min),
+                        deep_sleep_min=VALUES(deep_sleep_min), light_sleep_min=VALUES(light_sleep_min),
+                        rem_sleep_min=VALUES(rem_sleep_min), awake_count=VALUES(awake_count),
+                        sleep_start=VALUES(sleep_start), sleep_end=VALUES(sleep_end),
+                        deep_sleep_ratio=VALUES(deep_sleep_ratio), sleep_continuity=VALUES(sleep_continuity),
+                        breathing_score=VALUES(breathing_score), analysis_report=VALUES(analysis_report),
+                        updated_at=VALUES(updated_at)
+                ''', fields)
+            else:
+                cursor.execute('''
+                    INSERT INTO huawei_sleep_data (
+                        date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
+                        rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
+                        sleep_continuity, breathing_score, analysis_report, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(date) DO UPDATE SET 
+                        sleep_score=excluded.sleep_score, total_sleep_min=excluded.total_sleep_min,
+                        deep_sleep_min=excluded.deep_sleep_min, light_sleep_min=excluded.light_sleep_min,
+                        rem_sleep_min=excluded.rem_sleep_min, awake_count=excluded.awake_count,
+                        sleep_start=excluded.sleep_start, sleep_end=excluded.sleep_end,
+                        deep_sleep_ratio=excluded.deep_sleep_ratio, sleep_continuity=excluded.sleep_continuity,
+                        breathing_score=excluded.breathing_score, analysis_report=excluded.analysis_report,
+                        updated_at=excluded.updated_at
+                ''', fields)
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"保存华为睡眠数据失败: {e}")
+            return False
+
+    def get_huawei_sleep_data(self, date_str):
+        """从数据库读取华为睡眠数据"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            if self.db_type == "mysql":
+                cursor.execute("SELECT * FROM huawei_sleep_data WHERE date = %s", (date_str,))
+            else:
+                cursor.execute("SELECT * FROM huawei_sleep_data WHERE date = ?", (date_str,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            if not row:
+                return None
+                
+            return {
+                "sleep_date": row[0],
+                "sleep_score": row[1],
+                "total_sleep_min": row[2],
+                "deep_sleep_min": row[3],
+                "light_sleep_min": row[4],
+                "rem_sleep_min": row[5],
+                "awake_count": row[6],
+                "sleep_start": row[7],
+                "sleep_end": row[8],
+                "deep_sleep_ratio": row[9],
+                "sleep_continuity": row[10],
+                "breathing_score": row[11],
+                "analysis_report": row[12],
+                "updated_at": row[13]
+            }
+        except Exception as e:
+            logging.error(f"获取华为睡眠数据失败: {e}")
             return None
 
 

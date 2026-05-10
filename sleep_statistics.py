@@ -630,18 +630,31 @@ class SleepStatisticsWindow(QWidget):
 
     def load_data(self):
         date_str = self.current_date.strftime("%Y-%m-%d")
-        data_path = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
         
-        if os.path.exists(data_path):
-            try:
-                with open(data_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self._update_ui_with_data(data)
-            except Exception as e:
-                logger.error(f"加载睡眠数据失败: {e}")
-                self._clear_ui()
+        # 1. 优先尝试从数据库加载
+        data = self.db.get_huawei_sleep_data(date_str)
+        
+        if data:
+            # 还原 analysis 结构
+            report_content = data.pop("analysis_report", "")
+            data["analysis"] = {"summary": report_content}
+            self._update_ui_with_data(data)
+            self.analysis_text.setMarkdown(report_content)
         else:
-            self._clear_ui()
+            # 2. 备选：尝试从旧 JSON 文件加载（向下兼容）
+            data_path = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
+            if os.path.exists(data_path):
+                try:
+                    with open(data_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        self._update_ui_with_data(data)
+                        report_content = data.get("analysis", {}).get("summary", "")
+                        self.analysis_text.setMarkdown(report_content)
+                except Exception as e:
+                    logger.error(f"加载睡眠数据失败: {e}")
+                    self._clear_ui()
+            else:
+                self._clear_ui()
 
     def _update_ui_with_data(self, data):
         score = data.get("sleep_score", 0)
@@ -811,18 +824,16 @@ class SleepStatisticsWindow(QWidget):
         sleep_data["analysis"] = {"summary": report}
         self._current_sleep_data = sleep_data
         
-        # 3. 自动保存到对应的日期文件
+        # 3. 保存到数据库
         try:
             save_date_str = target_date.strftime("%Y-%m-%d")
-            save_dir = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data"))
-            os.makedirs(save_dir, exist_ok=True)
-            data_path = os.path.join(save_dir, f"sleep_{save_date_str}.json")
-            
-            with open(data_path, 'w', encoding='utf-8') as f:
-                json.dump(sleep_data, f, ensure_ascii=False, indent=2)
-            logger.info(f"睡眠数据已保存至: {data_path}")
+            # 同时将 report 提出来存入 analysis_report 字段
+            db_data = sleep_data.copy()
+            db_data["analysis_report"] = report
+            self.db.save_huawei_sleep_data(save_date_str, db_data)
+            logger.info(f"睡眠数据已保存至数据库 (日期: {save_date_str})")
         except Exception as e:
-            logger.error(f"保存睡眠数据失败: {e}")
+            logger.error(f"保存睡眠数据到数据库失败: {e}")
 
         # 4. 刷新 UI 指标并渲染 Markdown 报告
         self._update_ui_with_data(sleep_data)
