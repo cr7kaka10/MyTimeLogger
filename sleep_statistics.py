@@ -439,10 +439,9 @@ class SleepStatisticsWindow(QWidget):
         main_layout.addWidget(line)
 
         # ====== 内容区 ======
-        content = QWidget()
-        content_layout = QHBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
+        content = QSplitter(Qt.Orientation.Horizontal)
+        content.setChildrenCollapsible(False)
+        content.setStyleSheet("QSplitter::handle { background: transparent; width: 6px; }")
 
         # --- 左侧: 数据面板 (60%) ---
         left_panel = QWidget()
@@ -510,7 +509,7 @@ class SleepStatisticsWindow(QWidget):
         left_layout.addLayout(self.grid)
         left_layout.addStretch()
 
-        content_layout.addWidget(left_panel, 6)
+        content.addWidget(left_panel)
 
         # --- 右侧: AI 与分析 (40%) ---
         right_panel = QWidget()
@@ -596,7 +595,8 @@ class SleepStatisticsWindow(QWidget):
         self.tabs.addTab(self.config_page, "AI 配置")
 
         right_layout.addWidget(self.tabs)
-        content_layout.addWidget(right_panel, 4)
+        content.addWidget(right_panel)
+        content.setSizes([480, 320])
 
         main_layout.addWidget(content)
 
@@ -604,7 +604,7 @@ class SleepStatisticsWindow(QWidget):
         card = QFrame()
         if highlight:
             # 高亮样式：淡蓝/绿背景 + 加粗主题色文字
-            card.setStyleSheet(f"background: #EBF5FF; border: 1px solid #81A1C1; border-radius: 10px;")
+            card.setStyleSheet(f"background: #EBF5FF; border: none; border-radius: 10px;")
         else:
             card.setStyleSheet(f"background: {CARD_BG}; border: none; border-radius: 10px;")
             
@@ -682,7 +682,7 @@ class SleepStatisticsWindow(QWidget):
                 label.setText("--")
             elif key == "sleep_cycles" and isinstance(val, (int, float, str)):
                 try:
-                    label.setText(f"{float(val):.1f}{unit}")
+                    label.setText(f"{float(val):.2f}{unit}")
                 except ValueError:
                     label.setText(f"{val}{unit}")
             elif isinstance(val, (int, float)):
