@@ -117,11 +117,21 @@ class StudyLogger:
                 ''')
                 # 4. atm (aTimeLogger) 持久化表
                 cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS atm (
-                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                        date VARCHAR(20) UNIQUE NOT NULL,
-                        raw_json JSON,
+                    CREATE TABLE IF NOT EXISTS atm_summary (
+                        date VARCHAR(20) PRIMARY KEY,
                         updated_at DATETIME
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS atm_activities (
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        date VARCHAR(20) NOT NULL,
+                        activity_type VARCHAR(50) NOT NULL,
+                        start_time DATETIME NOT NULL,
+                        end_time DATETIME NOT NULL,
+                        duration_minutes INT NOT NULL,
+                        comment TEXT,
+                        KEY idx_atm_date (date)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
             else:
@@ -168,11 +178,20 @@ class StudyLogger:
                     )
                 ''')
                 cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS atm (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TEXT UNIQUE NOT NULL,
-                        raw_json TEXT,
+                    CREATE TABLE IF NOT EXISTS atm_summary (
+                        date TEXT PRIMARY KEY,
                         updated_at TIMESTAMP
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS atm_activities (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT NOT NULL,
+                        activity_type TEXT NOT NULL,
+                        start_time TIMESTAMP NOT NULL,
+                        end_time TIMESTAMP NOT NULL,
+                        duration_minutes INTEGER NOT NULL,
+                        comment TEXT
                     )
                 ''')
                 cursor.execute('''
