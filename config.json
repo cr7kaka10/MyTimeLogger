@@ -42,7 +42,11 @@
         "api_key": "",
         "model_name": "qwen-vl-max",
         "vision_model": "glm-4.6v-flash",
-        "text_model": "glm-4.7-flash"
+        "text_model": "glm-4.6v-flash",
+        "vision_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "vision_api_key": "4d5ba3e66af04c6db476f94b7506be36.dd05X0p66QBAARgx",
+        "text_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "text_api_key": "4d5ba3e66af04c6db476f94b7506be36.dd05X0p66QBAARgx"
     },
     "last_reset_time": "2026-05-06 16:18:22"
 }

@@ -562,9 +562,6 @@ class DailyChecklistWindow(QWidget):
             coins = reward_cfg['reward']
             db.add_external_reward(f"task_{tid}", 'task', title, coins, status=1)
             db.add_ledger_entry(coins, 'task_complete', f"task_{tid}", f'任务完成: {title}')
-            
-            from particle_effect import show_success_effect
-            show_success_effect(self)
         except Exception as e:
             logger.error(f"任务积分入账失败: {e}")
         
@@ -581,9 +578,6 @@ class DailyChecklistWindow(QWidget):
             reward_cfg = task_data.get('reward_cfg', db.get_item_reward('task', tid, 0.1))
             penalty = reward_cfg['penalty']
             db.add_ledger_entry(-penalty, 'task_fail', None, f'任务失败: {title}')
-            
-            from particle_effect import show_failure_effect
-            show_failure_effect(self)
         except Exception as e:
             logger.error(f"任务惩罚入账失败: {e}")
         

@@ -55,11 +55,14 @@ DEFAULT_CONFIG = {
         "password": "",
         "sync_interval": 300
     },
-    "ai_model_config": {               # AI 模型配置 (用于睡眠分析等)
-        "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "api_key": "",
-        "vision_model": "glm-4.6v-flash",  # 视觉模型：截图解析
-        "text_model": "glm-4.7-flash"      # 文本模型：报告生成
+    "ai_model_config": {               # AI 模型配置
+        "vision_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "vision_api_key": "",
+        "vision_model": "glm-4v-flash",
+        
+        "text_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "text_api_key": "",
+        "text_model": "glm-4-flash"
     }
 }
 

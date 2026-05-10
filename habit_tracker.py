@@ -733,15 +733,9 @@ class HabitTrackerWindow(QWidget):
             # 传入 ext_id 作为 source_id，防止同一天重复打卡重复计分
             self.db.add_ledger_entry(coins, 'habit_complete', ext_id, f"习惯打卡完成: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(coins)
-            if show_effect:
-                from particle_effect import show_success_effect
-                show_success_effect(self)
         elif new_status == 1:
             self.db.add_ledger_entry(-penalty, 'habit_fail', ext_id, f"习惯判定失败: {habit_name}{display_suffix}", created_at=ledger_date)
             self._show_coin_toast(-penalty)
-            if show_effect:
-                from particle_effect import show_failure_effect
-                show_failure_effect(self)
         elif new_status == 0:
             # 取消操作，撤回之前的积分，不触发动画
             self.db.remove_external_reward(ext_id)

@@ -623,7 +623,7 @@ class MyTimeLoggerGUI(QWidget):
     def _on_tray_activated(self, reason):
         """托盘图标点击事件处理"""
         if reason in [QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick]:
-            # 仅唤出当前处于活动状态的界面，不进行模式切换
+            # 1. 恢复主要界面
             if getattr(self, 'is_mini_mode', True):
                 self.show()
                 self.activateWindow()
@@ -633,6 +633,21 @@ class MyTimeLoggerGUI(QWidget):
                 win.show()
                 win.activateWindow()
                 win.raise_()
+                
+            # 2. 恢复所有已打开的子窗口
+            sub_windows = [
+                '_sleep_statistics_window', 
+                '_checklist_window', 
+                '_habit_tracker_window', 
+                '_goals_window', 
+                '_reward_shop_window'
+            ]
+            for attr in sub_windows:
+                win = getattr(self, attr, None)
+                if win and not win.isHidden():
+                    win.show()
+                    win.activateWindow()
+                    win.raise_()
 
     def update_tray_menu(self):
         self.populate_context_menu(self.tray_menu)

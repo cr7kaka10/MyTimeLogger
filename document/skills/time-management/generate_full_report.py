@@ -28,6 +28,9 @@ try:
 except ImportError:
     StudyLogger = None
 
+# 工作空间根目录
+WORKSPACE_ROOT = r"D:\WorkBuddySpace\000"
+
 # 睡眠数据目录（优先读技能目录，与 sleep_statistics.py 对齐）
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
@@ -241,17 +244,20 @@ def perform_deep_analysis(data):
     # 睡眠分析
     sleep_analysis = {}
     if sleep:
-        night_sleep_duration = sleep.get('night_sleep_duration_min', 0) / 60
-        sleep_score = sleep.get('sleep_score', 0)
-        awake_count = sleep.get('awake_count', 0)
-        sleep_cycles = sleep.get('sleep_cycles', 0)
-        
-        sleep_analysis = {
-            'duration_status': '充足' if night_sleep_duration >= 7 else '不足' if night_sleep_duration < 6 else '正常',
-            'quality_status': '优秀' if sleep_score >= 85 else '良好' if sleep_score >= 70 else '一般' if sleep_score >= 60 else '较差',
-            'continuity_status': '良好' if awake_count <= 1 else '一般' if awake_count <= 3 else '较差',
-            'cycles_status': '✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'
-        }
+        try:
+            night_sleep_duration = float(sleep.get('night_sleep_duration_min', 0) or 0) / 60
+            sleep_score = int(sleep.get('sleep_score', 0) or 0)
+            awake_count = int(sleep.get('awake_count', 0) or 0)
+            sleep_cycles = float(sleep.get('sleep_cycles', 0) or 0)
+            
+            sleep_analysis = {
+                'duration_status': '充足' if night_sleep_duration >= 7 else '不足' if night_sleep_duration < 6 else '正常',
+                'quality_status': '优秀' if sleep_score >= 85 else '良好' if sleep_score >= 70 else '一般' if sleep_score >= 60 else '较差',
+                'continuity_status': '良好' if awake_count <= 1 else '一般' if awake_count <= 3 else '较差',
+                'cycles_status': '✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'
+            }
+        except (ValueError, TypeError):
+            sleep_analysis = {}
     
     # 生成洞察
     insights = []
@@ -441,13 +447,16 @@ def generate_full_report_file(data, analysis, date_str):
     lines.append(f"| 家庭时间 | {summary_data['family_hours']:.1f} 小时 | - |")
     
     if sleep:
-        night_sleep_hours = sleep.get('night_sleep_duration_min', 0) / 60
-        sleep_score = sleep.get('sleep_score', 'N/A')
-        sleep_cycles = sleep.get('sleep_cycles', 0)
-        awake_time = sleep.get('awake_time', 0) / 60  # 转换为分钟
-        fall_asleep_time = sleep.get('fall_asleep_time', 0)
-        wake_up_time = sleep.get('wake_up_time', 0)
-        
+        try:
+            night_sleep_hours = float(sleep.get('night_sleep_duration_min', 0) or 0) / 60
+            sleep_score = int(sleep.get('sleep_score', 0) or 0)
+            sleep_cycles = float(sleep.get('sleep_cycles', 0) or 0)
+            awake_time = float(sleep.get('awake_time', 0) or 0) / 60  # 转换为分钟
+            fall_asleep_time = float(sleep.get('fall_asleep_time', 0) or 0)
+            wake_up_time = float(sleep.get('wake_up_time', 0) or 0)
+        except (ValueError, TypeError):
+            night_sleep_hours = sleep_score = sleep_cycles = awake_time = fall_asleep_time = wake_up_time = 0
+            
         lines.append(f"| 夜间睡眠 | {night_sleep_hours:.1f} 小时 | {'充足' if night_sleep_hours >= 7 else '不足' if night_sleep_hours < 6 else '正常'} |")
         lines.append(f"| 睡眠评分 | {sleep_score} 分 | {'优秀' if sleep_score >= 85 else '良好' if sleep_score >= 70 else '一般'} |")
         lines.append(f"| 睡眠周期数 | {sleep_cycles:.1f} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |")
@@ -485,7 +494,19 @@ def generate_full_report_file(data, analysis, date_str):
     
     if sleep:
         sleep_analysis = analysis.get('sleep_analysis', {})
-        
+        try:
+            night_sleep_dur = float(sleep.get('night_sleep_duration_min', 0) or 0) / 60
+            deep_sleep = float(sleep.get('deep_sleep', 0) or 0) / 60
+            light_sleep = float(sleep.get('light_sleep', 0) or 0) / 60
+            rem_sleep = float(sleep.get('rem_sleep', 0) or 0) / 60
+            awake_time = float(sleep.get('awake_time', 0) or 0) / 60
+            awake_count = int(sleep.get('awake_count', 0) or 0)
+            sleep_cycles = float(sleep.get('sleep_cycles', 0) or 0)
+            fall_asleep_time = float(sleep.get('fall_asleep_time', 0) or 0)
+            wake_up_time = float(sleep.get('wake_up_time', 0) or 0)
+        except (ValueError, TypeError):
+            night_sleep_dur = deep_sleep = light_sleep = rem_sleep = awake_time = awake_count = sleep_cycles = fall_asleep_time = wake_up_time = 0
+            
         lines.extend([
             "### 睡眠数据概览",
             "",
@@ -493,16 +514,16 @@ def generate_full_report_file(data, analysis, date_str):
             "|------|------|------|",
             f"| 入睡时间 | {sleep.get('sleep_start', 'N/A')} | - |",
             f"| 醒来时间 | {sleep.get('sleep_end', 'N/A')} | - |",
-            f"| 夜间睡眠 | {sleep.get('night_sleep_duration_min', 0)/60:.1f} 小时 | {sleep_analysis.get('duration_status', 'N/A')} |",
-            f"| 深睡时长 | {sleep.get('deep_sleep', 0)/60:.0f} 分钟 | - |",
-            f"| 浅睡时长 | {sleep.get('light_sleep', 0)/60:.0f} 分钟 | - |",
-            f"| REM睡眠 | {sleep.get('rem_sleep', 0)/60:.0f} 分钟 | - |",
-            f"| 清醒时长 | {sleep.get('awake_time', 0)/60:.0f} 分钟 | - |",
-            f"| 清醒次数 | {sleep.get('awake_count', 0)} 次 | {sleep_analysis.get('continuity_status', 'N/A')} |",
+            f"| 夜间睡眠 | {night_sleep_dur:.1f} 小时 | {sleep_analysis.get('duration_status', 'N/A')} |",
+            f"| 深睡时长 | {deep_sleep:.0f} 分钟 | - |",
+            f"| 浅睡时长 | {light_sleep:.0f} 分钟 | - |",
+            f"| REM睡眠 | {rem_sleep:.0f} 分钟 | - |",
+            f"| 清醒时长 | {awake_time:.0f} 分钟 | - |",
+            f"| 清醒次数 | {awake_count} 次 | {sleep_analysis.get('continuity_status', 'N/A')} |",
             f"| 睡眠评分 | {sleep.get('sleep_score', 'N/A')} 分 | {sleep_analysis.get('quality_status', 'N/A')} |",
-            f"| 睡眠周期 | {sleep.get('sleep_cycles', 0):.1f} 个 | {'✅ 合格' if sleep.get('sleep_cycles', 0) >= 5 else '⚠️ 接近合格' if sleep.get('sleep_cycles', 0) >= 4 else '❌ 不足'} |",
-            f"| 入睡用时 | {sleep.get('fall_asleep_time', 0)} 分钟 | {'⚠️ 延迟入睡' if sleep.get('fall_asleep_time', 0) < 0 else '✅ 正常' if sleep.get('fall_asleep_time', 0) <= 20 else '⚠️ 较长' if sleep.get('fall_asleep_time', 0) <= 40 else '❌ 过长'} |",
-            f"| 起床用时 | {sleep.get('wake_up_time', 0)} 分钟 | {'✅ 早起' if sleep.get('wake_up_time', 0) < 0 else '✅ 正常' if sleep.get('wake_up_time', 0) <= 10 else '⚠️ 较长' if sleep.get('wake_up_time', 0) <= 20 else '❌ 过长'} |",
+            f"| 睡眠周期 | {sleep_cycles:.1f} 个 | {'✅ 合格' if sleep_cycles >= 5 else '⚠️ 接近合格' if sleep_cycles >= 4 else '❌ 不足'} |",
+            f"| 入睡用时 | {fall_asleep_time:.0f} 分钟 | {'⚠️ 延迟入睡' if fall_asleep_time < 0 else '✅ 正常' if fall_asleep_time <= 20 else '⚠️ 较长' if fall_asleep_time <= 40 else '❌ 过长'} |",
+            f"| 起床用时 | {wake_up_time:.0f} 分钟 | {'✅ 早起' if wake_up_time < 0 else '✅ 正常' if wake_up_time <= 10 else '⚠️ 较长' if wake_up_time <= 20 else '❌ 过长'} |",
             "",
             "### 睡眠质量评估",
             "",
