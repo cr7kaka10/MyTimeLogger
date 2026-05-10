@@ -17,15 +17,23 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
 
-# 工作空间根目录
-WORKSPACE_ROOT = r"D:\WorkBuddySpace\000"
+# 将项目根目录添加到路径以便导入数据库等模块
+import sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+try:
+    from database import StudyLogger
+except ImportError:
+    StudyLogger = None
 
 # 睡眠数据目录（优先读技能目录，与 sleep_statistics.py 对齐）
 SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
 LEGACY_SLEEP_DATA_DIR = os.path.join(WORKSPACE_ROOT, "huawei_health_data")
 
-def generate_comprehensive_report(date_str):
+def generate_comprehensive_report(date_str, injected_sleep_data=None):
     """生成综合分析报告"""
     
     print(f"\n{'='*70}")
@@ -39,8 +47,30 @@ def generate_comprehensive_report(date_str):
     
     # 2. 提取 aTimeLogger 数据
     print("📱 提取 aTimeLogger 数据...")
-    atimelogger = AtimeloggerExtractor(config.get('atimelogger', {}))
-    atimelogger_data = atimelogger.extract_daily_data(date_str)
+    atimelogger_data = None
+    
+    # 首先尝试从数据库中获取
+    if StudyLogger:
+        try:
+            db = StudyLogger()
+            atimelogger_data = db.get_atm_data(date_str)
+            if atimelogger_data:
+                print("✅ 成功从本地数据库读取 aTimeLogger 缓存数据")
+        except Exception as e:
+            print(f"⚠️ 从数据库读取缓存失败: {e}")
+            
+    # 若缓存不存在或失败，调用API拉取
+    if not atimelogger_data:
+        print("🌐 正在从 API 提取最新 aTimeLogger 数据...")
+        atimelogger = AtimeloggerExtractor(config.get('atimelogger', {}))
+        atimelogger_data = atimelogger.extract_daily_data(date_str)
+        
+        if atimelogger_data and StudyLogger:
+            try:
+                db.save_atm_data(date_str, atimelogger_data)
+                print("✅ 已将最新数据存入本地数据库缓存")
+            except Exception as e:
+                print(f"⚠️ 保存数据到缓存失败: {e}")
     
     if not atimelogger_data:
         print(f"❌ 未获取到 {date_str} 的 aTimeLogger 数据")
@@ -51,15 +81,22 @@ def generate_comprehensive_report(date_str):
     # 3. 加载华为健康睡眠数据
     print("\n⌚ 加载华为运动健康睡眠数据...")
     sleep_data = None
-    # 优先读技能目录（sleep_statistics.py 实际写入位置）
     sleep_file = os.path.join(SLEEP_DATA_DIR, f'sleep_{date_str}.json')
-    if not os.path.exists(sleep_file):
-        sleep_file = os.path.join(LEGACY_SLEEP_DATA_DIR, f'sleep_{date_str}.json')
     
-    if os.path.exists(sleep_file):
-        with open(sleep_file, 'r', encoding='utf-8') as f:
-            sleep_data = json.load(f)
-        print(f"✅ 已加载睡眠数据（来源: {sleep_file}）")
+    if injected_sleep_data:
+        sleep_data = injected_sleep_data
+        print("✅ 使用实时注入的睡眠数据")
+    else:
+        # 优先读技能目录（sleep_statistics.py 实际写入位置）
+        if not os.path.exists(sleep_file):
+            sleep_file = os.path.join(LEGACY_SLEEP_DATA_DIR, f'sleep_{date_str}.json')
+        
+        if os.path.exists(sleep_file):
+            with open(sleep_file, 'r', encoding='utf-8') as f:
+                sleep_data = json.load(f)
+            print(f"✅ 已加载睡眠数据（来源: {sleep_file}）")
+    
+    if sleep_data:
 
         # ── 字段兼容归一化：新格式(分钟制) → 旧格式(秒制) ──
         # sleep_statistics.py 保存的是新格式，generate_full_report 原来按旧格式读

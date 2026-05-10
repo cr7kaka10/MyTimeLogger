@@ -115,6 +115,15 @@ class StudyLogger:
                         updated_at DATETIME
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
+                # 4. atm (aTimeLogger) 持久化表
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS atm (
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        date VARCHAR(20) UNIQUE NOT NULL,
+                        raw_json JSON,
+                        updated_at DATETIME
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                ''')
             else:
                 # SQLite
                 cursor.execute('''
@@ -156,6 +165,14 @@ class StudyLogger:
                         sort_order INTEGER NOT NULL DEFAULT 0,
                         is_active INTEGER NOT NULL DEFAULT 1,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS atm (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT UNIQUE NOT NULL,
+                        raw_json TEXT,
+                        updated_at TIMESTAMP
                     )
                 ''')
                 cursor.execute('''
@@ -1528,6 +1545,55 @@ class StudyLogger:
         except Exception as e:
             logging.error(f"重置专注记录失败: {e}")
             return False
+
+    def save_atm_data(self, date_str, data_dict):
+        """保存 aTimeLogger 数据"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            def json_default(obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(f"Type {type(obj)} not serializable")
+            raw_json = json.dumps(data_dict, ensure_ascii=False, default=json_default)
+            
+            if self.db_type == "mysql":
+                cursor.execute('''
+                    INSERT INTO atm (date, raw_json, updated_at)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE raw_json=%s, updated_at=%s
+                ''', (date_str, raw_json, now_str, raw_json, now_str))
+            else:
+                cursor.execute('''
+                    INSERT INTO atm (date, raw_json, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(date) DO UPDATE SET raw_json=?, updated_at=?
+                ''', (date_str, raw_json, now_str, raw_json, now_str))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            logging.error(f"保存 ATM 数据失败: {e}")
+            return False
+
+    def get_atm_data(self, date_str):
+        """获取 aTimeLogger 数据"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            if self.db_type == "mysql":
+                cursor.execute("SELECT raw_json FROM atm WHERE date = %s", (date_str,))
+            else:
+                cursor.execute("SELECT raw_json FROM atm WHERE date = ?", (date_str,))
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                return json.loads(row[0])
+            return None
+        except Exception as e:
+            logging.error(f"读取 ATM 数据失败: {e}")
+            return None
 
 
 class DatabaseWorker(QObject):
