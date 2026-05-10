@@ -87,17 +87,17 @@ def generate_comprehensive_report(date_str):
         sleep_data['awake_time'] = awake_time
         print(f"  清醒时长: {awake_time / 60:.0f} 分钟")
         
-        # 5. 计算入睡用时和醒来用时
+        # 5. 计算入睡用时和起床用时
         activities = atimelogger_data.get('activities', [])
+        if 'date' not in sleep_data:
+            sleep_data['date'] = date_str
         fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
         
         # 更新睡眠数据
-        if fall_asleep_min > 0:
-            sleep_data['fall_asleep_time'] = fall_asleep_min
-            print(f"  入睡需要的时间: {fall_asleep_min} 分钟")
-        if wake_up_min > 0:
-            sleep_data['wake_up_time'] = wake_up_min
-            print(f"  起床需要的时间: {wake_up_min} 分钟")
+        sleep_data['fall_asleep_time'] = fall_asleep_min
+        sleep_data['wake_up_time'] = wake_up_min
+        print(f"  入睡用时: {fall_asleep_min} 分钟")
+        print(f"  起床用时: {wake_up_min} 分钟")
         
         # 保存更新后的睡眠数据
         with open(sleep_file, 'w', encoding='utf-8') as f:
@@ -239,12 +239,12 @@ def perform_deep_analysis(data):
         elif fall_asleep_time > 0:
             insights.append(f"😴 入睡时间正常（{fall_asleep_time}分钟），上床后能较快入睡")
         
-        # 醒来时间分析
+        # 起床时间分析
         wake_up_time = sleep.get('wake_up_time', 0)
         if wake_up_time > 20:
-            insights.append(f"🛏️ 醒来需要的时间较长（{wake_up_time}分钟），醒来后赖床时间较长，建议设定闹钟后立刻起床")
+            insights.append(f"🛏️ 起床用时较长（{wake_up_time}分钟），醒来后赖床时间较长，建议设定闹钟后立刻起床")
         elif wake_up_time > 0:
-            insights.append(f"☀️ 醒来效率良好（{wake_up_time}分钟），醒来后能快速起床")
+            insights.append(f"☀️ 起床效率良好（{wake_up_time}分钟），醒来后能快速起床")
     
     # 生产时间洞察
     if productive_hours < 1:
@@ -284,7 +284,7 @@ def perform_deep_analysis(data):
     elif fall_asleep_time > 20:
         recommendations.append("📖 尝试建立睡前仪式（如泡脚、拉伸），帮助更快进入睡眠状态")
     
-    # 醒来时间建议
+    # 起床时间建议
     wake_up_time = sleep.get('wake_up_time', 0) if sleep else 0
     if wake_up_time > 20:
         recommendations.append("⏰ 建议将闹钟放在离床较远的地方，强迫自己起床关闭闹钟")
@@ -425,7 +425,7 @@ def generate_full_report_file(data, analysis, date_str):
         else:
             fall_asleep_eval = "❌ 过长"
         
-        # 醒来用时评价（支持负数）
+        # 起床用时评价（支持负数）
         if wake_up_time < 0:
             wake_up_eval = "✅ 早起"
         elif wake_up_time <= 10:
@@ -436,7 +436,7 @@ def generate_full_report_file(data, analysis, date_str):
             wake_up_eval = "❌ 过长"
         
         lines.append(f"| 入睡用时 | {fall_asleep_time} 分钟 | {fall_asleep_eval} |")
-        lines.append(f"| 醒来用时 | {wake_up_time} 分钟 | {wake_up_eval} |")
+        lines.append(f"| 起床用时 | {wake_up_time} 分钟 | {wake_up_eval} |")
     
     lines.extend([
         "",
@@ -465,7 +465,7 @@ def generate_full_report_file(data, analysis, date_str):
             f"| 睡眠评分 | {sleep.get('sleep_score', 'N/A')} 分 | {sleep_analysis.get('quality_status', 'N/A')} |",
             f"| 睡眠周期 | {sleep.get('sleep_cycles', 0):.1f} 个 | {'✅ 合格' if sleep.get('sleep_cycles', 0) >= 5 else '⚠️ 接近合格' if sleep.get('sleep_cycles', 0) >= 4 else '❌ 不足'} |",
             f"| 入睡用时 | {sleep.get('fall_asleep_time', 0)} 分钟 | {'⚠️ 延迟入睡' if sleep.get('fall_asleep_time', 0) < 0 else '✅ 正常' if sleep.get('fall_asleep_time', 0) <= 20 else '⚠️ 较长' if sleep.get('fall_asleep_time', 0) <= 40 else '❌ 过长'} |",
-            f"| 醒来用时 | {sleep.get('wake_up_time', 0)} 分钟 | {'✅ 早起' if sleep.get('wake_up_time', 0) < 0 else '✅ 正常' if sleep.get('wake_up_time', 0) <= 10 else '⚠️ 较长' if sleep.get('wake_up_time', 0) <= 20 else '❌ 过长'} |",
+            f"| 起床用时 | {sleep.get('wake_up_time', 0)} 分钟 | {'✅ 早起' if sleep.get('wake_up_time', 0) < 0 else '✅ 正常' if sleep.get('wake_up_time', 0) <= 10 else '⚠️ 较长' if sleep.get('wake_up_time', 0) <= 20 else '❌ 过长'} |",
             "",
             "### 睡眠质量评估",
             "",
@@ -474,8 +474,10 @@ def generate_full_report_file(data, analysis, date_str):
         # 添加睡眠分析
         if sleep.get('analysis'):
             sleep_ana = sleep.get('analysis', {})
-            if sleep_ana.get('summary'):
-                lines.append(f"**总结**: {sleep_ana['summary']}")
+            summary_text = sleep_ana.get('summary', '')
+            # 避免报告套娃：如果 summary 中已经包含了上次生成的报告，则过滤掉
+            if summary_text and not summary_text.startswith('# 📊 时间管理深度分析报告'):
+                lines.append(f"**总结**: {summary_text}")
                 lines.append("")
             
             if sleep_ana.get('issues'):
