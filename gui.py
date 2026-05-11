@@ -483,6 +483,7 @@ class MyTimeLoggerGUI(QWidget):
         else:
             self.logic.end_break_now()
 
+
     def _set_play_btn_state(self, mode):
         """设置播放/暂停按钮的外观。mode: 'play' | 'pause'"""
         self._play_btn_mode = mode

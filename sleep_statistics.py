@@ -969,7 +969,8 @@ class SleepStatisticsWindow(QWidget):
         self._ai_worker.start()
 
     def _update_ui_with_data(self, data):
-        score = data.get("sleep_score", 0)
+        score = data.get("sleep_score")
+        if score is None: score = 0
         self.score_val.setText(str(score))
         if score >= 85: color = GREEN_ACCENT
         elif score >= 70: color = "#81A1C1"
@@ -1151,28 +1152,38 @@ class SleepStatisticsWindow(QWidget):
 
     def _rename_pending_image(self, date_str):
         """
-        将 _selected_image 中的临时截图按日期重命名到 attachments/ 目录。
-        仅当文件名包含 'pending' 时才执行（避免对手动选择的文件操作）。
+        将 _selected_image 中的临时截图转换为 JPG 并归档到 attachments/ 目录，然后删除临时文件。
+        仅当文件名包含 'pending' 时才执行。
         """
         if not self._selected_image or not os.path.exists(self._selected_image):
             return
-        basename = os.path.basename(self._selected_image)
+        
+        old_path = os.path.abspath(self._selected_image)
+        basename = os.path.basename(old_path)
+        
         if "pending" not in basename:
             return  # 非临时文件，跳过
 
-        ext = os.path.splitext(basename)[1]
-        new_name = f"sleep_{date_str}{ext}"
+        new_name = f"sleep_{date_str}.jpg"
         attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attachments")
         os.makedirs(attachments_dir, exist_ok=True)
         new_path = os.path.join(attachments_dir, new_name)
 
         try:
-            # 如果目标已存在，覆盖
-            if os.path.exists(new_path):
-                os.remove(new_path)
-            os.rename(self._selected_image, new_path)
+            from PIL import Image
+            # 1. 转换并保存为 JPG
+            with Image.open(old_path) as img:
+                img.convert("RGB").save(new_path, "JPEG", quality=90)
+            
+            # 2. 删除临时原文件
+            if old_path != os.path.abspath(new_path):
+                try:
+                    os.remove(old_path)
+                except Exception as re:
+                    logger.warning(f"无法删除临时文件 {old_path}: {re}")
+            
             self._selected_image = new_path
             self.img_path_label.setText(f"📁 已归档: {new_name}")
-            logger.info(f"截图已重命名: {basename} → {new_name}")
+            logger.info(f"截图已转换并归档: {basename} → {new_name}")
         except Exception as e:
-            logger.error(f"重命名截图失败: {e}")
+            logger.error(f"转换并重命名截图失败: {e}")
