@@ -81,168 +81,137 @@ class AIWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None):
+    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None, session_id=None):
         super().__init__()
         self.ai_cfg = ai_cfg
         self.image_path = image_path
         self.sleep_data = sleep_data
         self.force_pull = force_pull
-        self.date_str = date_str  # 明确传入目标日期，不再猜测
+        self.date_str = date_str
+        self.session_id = session_id # 用于 SSE 推送
+
+    def update_progress(self, msg):
+        """同时更新本地 UI 和 Web 推送"""
+        self.progress.emit(msg)
+        if self.session_id:
+            try:
+                from sleep_server import broker
+                broker.push(self.session_id, {"status": "progress", "msg": msg})
+            except: pass
 
     def run(self):
         try:
             from openai import OpenAI
             import time
             
-            # ── 步骤 1: 视觉解析 ──
-            if self.image_path and os.path.exists(self.image_path):
-                self.progress.emit("📸 正在进行 4K 级高清采样...")
-                v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
-                v_key = self.ai_cfg.get("vision_api_key", "")
-                v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
-                
-                if not v_key:
-                    self.error.emit("⚠️ 未配置「视觉 API Key」，无法解析截图。")
-                    return
-                
-                client_v = OpenAI(api_key=v_key, base_url=v_url)
-                
-                # 图片预处理
-                final_img_path = self.image_path
-                temp_img_path = None
-                try:
-                    from PIL import Image
-                    with Image.open(self.image_path) as img:
-                        w, h = img.size
-                        if h > 2000:
-                            new_h = 4096 if h > 4096 else h
-                            new_w = int(w * (new_h / h))
-                            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                            temp_img_path = self.image_path + ".hd.jpg"
-                            img.convert("RGB").save(temp_img_path, "JPEG", quality=95)
-                            final_img_path = temp_img_path
-                except Exception as img_err:
-                    logger.warning(f"图片预处理失败: {img_err}")
+            # ── 步骤 1: 视觉解析（识图定日期） ──
+            if not self.image_path or not os.path.exists(self.image_path):
+                self.error.emit("❌ 未找到图片文件。")
+                return
 
-                with open(final_img_path, "rb") as f:
-                    img_b64 = base64.b64encode(f.read()).decode()
-                
-                if temp_img_path and os.path.exists(temp_img_path):
-                    try: os.remove(temp_img_path)
-                    except: pass
-
-                ext = os.path.splitext(final_img_path)[1].lower().lstrip(".")
-                mime = "image/jpeg" if ext in ("jpg", "jpeg", "hd.jpg") else f"image/{ext}"
-
-                prompt = """提取以下字段并以 JSON 返回：
-sleep_date (截图中的日期, 格式如 M月D日),
-sleep_score (睡眠得分, 整数), 
-sleep_start (入睡时间, HH:mm), 
-sleep_end (醒来时间, HH:mm), 
-total_sleep_min (总睡眠时长, 分钟), 
-deep_sleep_min (深睡时长, 分钟), 
-light_sleep_min (浅睡时长, 分钟), 
-rem_sleep_min (快速眼动时长, 分钟), 
-deep_sleep_ratio (深睡比例, 整数,不带%),
-awake_count (清醒次数, 整数),
-sleep_continuity (睡眠连续性得分, 整数),
-breathing_score (呼吸质量评分, 整数),
-official_interpretation (截图底部的官方解读与建议原文, 字符串).
-注意：只返回 JSON 代码块。"""
-
-                # 视觉重试机制
-                max_retries = 3
-                raw = ""
-                for attempt in range(max_retries):
-                    try:
-                        self.progress.emit(f"📸 视觉模型解析中 (第 {attempt+1} 次尝试)...")
-                        vision_resp = client_v.chat.completions.create(
-                            model=v_model,
-                            messages=[{
-                                "role": "user",
-                                "content": [
-                                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
-                                    {"type": "text", "text": prompt}
-                                ]
-                            }],
-                            max_tokens=1024,
-                            temperature=0.1
-                        )
-                        raw = vision_resp.choices[0].message.content.strip()
-                        if raw: break
-                    except Exception as ve:
-                        if attempt < max_retries - 1:
-                            time.sleep(2)
-                            continue
-                        raise ve
-
-                if "```" in raw:
-                    raw = raw.split("```")[1].replace("json", "").strip()
-                
-                if not raw or raw == "{}":
-                    self.error.emit("❌ 视觉模型未能提取到任何有效数据。")
-                    return
-
-                try:
-                    self.sleep_data = json.loads(raw)
-                    if self.sleep_data.get("sleep_score") or self.sleep_data.get("total_sleep_min"):
-                        self.progress.emit("✅ 截图数据提取成功")
-                    else:
-                        raise ValueError("Data incomplete")
-                except:
-                    self.sleep_data = {"raw_ocr": raw}
-                    self.progress.emit("⚠️ 提取到非标准数据，尝试智能匹配...")
-
-            # ── 步骤 2: 生成完整时间管理报告 ──
-            self.progress.emit("🌐 正在拉取 aTimeLogger 数据并生成综合报告...")
+            self.update_progress("📸 正在解析截图内容...")
+            v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
+            v_key = self.ai_cfg.get("vision_api_key", "")
+            v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
             
-            # 解析目标日期：优先使用调用方明确传入的 date_str
-            if self.date_str:
-                target_date = self.date_str
-            else:
-                # 兜底：从 sleep_data 中尝试解析
-                sleep_date = self.sleep_data.get("sleep_date", "") if self.sleep_data else ""
+            client_v = OpenAI(api_key=v_key, base_url=v_url)
+            
+            # 图片预处理 (HD 采样)
+            final_img_path = self.image_path
+            temp_img_path = None
+            try:
+                from PIL import Image
+                with Image.open(self.image_path) as img:
+                    w, h = img.size
+                    if h > 2048:
+                        new_h = 2048
+                        new_w = int(w * (new_h / h))
+                        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                        temp_img_path = self.image_path + ".v.jpg"
+                        img.convert("RGB").save(temp_img_path, "JPEG", quality=90)
+                        final_img_path = temp_img_path
+            except: pass
+
+            with open(final_img_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+            if temp_img_path and os.path.exists(temp_img_path): os.remove(temp_img_path)
+
+            # 视觉 Prompt (V4.0 增强版：锁定 6 大指标)
+            prompt = """提取以下字段并以 JSON 返回：
+1. sleep_date: 截图中的日期 (YYYY-MM-DD, 截图无年份则默认为 2026)
+2. sleep_score: 睡眠得分 (整数)
+3. sleep_cycles: 睡眠周期个数 (数字, 如 5.5)
+4. deep_sleep_min: 深睡时长 (分钟)
+5. fall_asleep_min: 入睡用时 (分钟)
+6. wake_up_min: 起床用时 (分钟)
+7. official_interpretation: 华为运动健康的解读与建议 (详细文本)
+8. sleep_start: 入睡时间 (HH:mm)
+9. sleep_end: 醒来时间 (HH:mm)
+10. total_sleep_min: 总睡眠时长 (分钟)
+注意：只返回 JSON 代码块，不要有其他描述。"""
+
+            vision_resp = client_v.chat.completions.create(
+                model=v_model,
+                messages=[{"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                    {"type": "text", "text": prompt}
+                ]}],
+                temperature=0.1
+            )
+            raw = vision_resp.choices[0].message.content.strip()
+            if "```" in raw: raw = raw.split("```")[1].replace("json", "").strip()
+            self.sleep_data = json.loads(raw)
+            
+            # ── 步骤 2: 定日期并实时同步数据 ──
+            target_date = self.sleep_data.get("sleep_date")
+            if not target_date or len(target_date) < 8:
                 target_date = datetime.now().strftime("%Y-%m-%d")
-                if sleep_date:
-                    import re as _re
-                    # 已是 YYYY-MM-DD 格式，直接用
-                    if _re.match(r'\d{4}-\d{2}-\d{2}', sleep_date):
-                        target_date = sleep_date
-                    else:
-                        # 解析 M月D日 格式
-                        m = _re.search(r'(\d+)月(\d+)日', sleep_date)
-                        if m:
-                            month, day = m.groups()
-                            target_date = f"{datetime.now().year}-{int(month):02d}-{int(day):02d}"
             
-            # 将生成的完整报告写入 UI 的 analysis.summary 字段中
             self.sleep_data['date'] = target_date
-            
-            # 引入 generate_full_report 模块
+            self.update_progress(f"📅 日期: {target_date}，正在拉取数据...")
+
+            # 引入同步与报告生成模块
             import sys
             skill_dir = os.path.join(os.path.dirname(__file__), "document", "skills", "time-management")
             if skill_dir not in sys.path:
                 sys.path.insert(0, skill_dir)
             from generate_full_report import generate_comprehensive_report
-            
-            # 直接调用并注入睡眠数据
+
+            # 核心改进：调用 report 生成时，它内部会自动调用 api 抓取指定日期的 aTimeLogger 数据
             report_path = generate_comprehensive_report(
                 target_date, 
                 injected_sleep_data=self.sleep_data,
-                force_pull=self.force_pull
+                force_pull=True # 强制实时同步该日期
             )
             
             if report_path and os.path.exists(report_path):
                 with open(report_path, "r", encoding="utf-8") as f:
                     report = f.read()
             else:
-                report = "生成报告失败，请检查终端日志。"
-                self.error.emit(report)
-                return
+                report = "生成报告失败，请检查同步配置。"
                 
+            # ── 步骤 3: 结果分发 ──
+            self.update_progress("✨ 分析完成，正在同步结果...")
+            
+            # 如果是从 Web 端发起的，将结果推送回 Web 端
+            if self.session_id:
+                try:
+                    from sleep_server import broker
+                    broker.push(self.session_id, {
+                        "status": "done",
+                        "result": self.sleep_data
+                    })
+                except: pass
+
             self.finished.emit(report, self.sleep_data)
 
         except Exception as e:
+            logger.error(f"AIWorker Error: {e}")
+            if self.session_id:
+                try:
+                    from sleep_server import broker
+                    broker.push(self.session_id, {"status": "progress", "msg": f"❌ 错误: {str(e)}"})
+                except: pass
             self.error.emit(f"❌ 分析失败：{e}")
 
 
@@ -549,18 +518,20 @@ class SleepStatisticsWindow(QWidget):
         self._build_ui()
         self.load_data()
 
-    def _on_image_received(self, temp_path):
-        """收到手机端上传的截图，自动触发 AI 分析"""
-        logger.info(f"📸 收到手机截图: {temp_path}")
-        self._selected_image = temp_path
+    def _on_image_received(self, temp_path, session_id="default"):
+        """当 HTTP 服务接收到图片时触发"""
+        logger.info(f"SleepStatisticsWindow: 收到图片信号 -> {temp_path} (Session: {session_id})")
+        self._run_ai_analysis(image_path=temp_path, session_id=session_id)
         fname = os.path.basename(temp_path)
         self.img_path_label.setText(f"📱 手机上传: {fname}")
-        # 确保窗口可见
+        
+        # 1. 确保窗口可见
         if not self.isVisible():
             self.show()
             self.raise_()
             self.activateWindow()
-        # 自动触发 AI 分析
+            
+        # 2. 自动触发 AI 分析 (内部会自动识别日期并同步数据)
         self._run_ai_analysis()
 
     def _build_ui(self):
@@ -1051,7 +1022,7 @@ class SleepStatisticsWindow(QWidget):
             fname = os.path.basename(path)
             self.img_path_label.setText(f"✅ 已选择: {fname}")
 
-    def _run_ai_analysis(self):
+    def _run_ai_analysis(self, force_sync=True, session_id=None):
         """启动 AI 分析线程"""
         if self._ai_worker and self._ai_worker.isRunning():
             return
@@ -1075,13 +1046,27 @@ class SleepStatisticsWindow(QWidget):
         self.ai_btn.setEnabled(False)
         self.ai_btn.setText("⏳ 分析中...")
         self.analysis_text.setPlaceholderText("")
-        self.analysis_text.setText("🔄 开始分析，请稍候...")
+        self.analysis_text.setText("🔄 正在同步最新时间数据并开始分析...")
 
+        # 1. 如果是自动触发或强制同步，先触发一次后台同步
+        if force_sync:
+            try:
+                # 尝试通过父窗口的 logic 触发同步
+                main_gui = self.window()
+                if hasattr(main_gui, 'logic'):
+                    logger.info("AI分析前：强制触发一次数据同步...")
+                    main_gui.logic.sync_ticktick_tasks() 
+            except Exception as e:
+                logger.warning(f"同步失败，将使用现有数据: {e}")
+
+        # 2. 启动线程 (AIWorker 内部会调用 generate_comprehensive_report)
         self._ai_worker = AIWorker(
             ai_cfg=ai_cfg,
             image_path=self._selected_image if has_image else None,
             sleep_data=None if has_image else self._current_sleep_data,
-            date_str=self.current_date.strftime("%Y-%m-%d")
+            date_str=self.current_date.strftime("%Y-%m-%d"),
+            force_pull=force_sync,
+            session_id=session_id
         )
         self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
         self._ai_worker.finished.connect(self._on_ai_finished)
