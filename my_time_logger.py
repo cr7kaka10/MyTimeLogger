@@ -80,7 +80,7 @@ if __name__ == "__main__":
     sleep_srv = SleepServer(port=config.get("sleep_server_port", 5055))
     sleep_srv.start()
 
-    window = MyTimeLoggerGUI(config)
+    window = MyTimeLoggerGUI(config, sleep_server=sleep_srv)
 
     if window._init_failed:
         sys.exit(1)

@@ -3,6 +3,7 @@ import os
 import json
 import base64
 import logging
+import shutil
 import traceback
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtWidgets import (
@@ -361,7 +362,7 @@ class SleepTrendChart(QWidget):
                 painter.drawText(QRectF(p.x()-20, h-padding_b+10, 40, 20), Qt.AlignmentFlag.AlignCenter, date_str)
                 
                 # 数据点
-                painter.setBrush(BG_LIGHT)
+                painter.setBrush(QColor(BG_LIGHT))
                 painter.setPen(QPen(main_color, 2))
                 radius = 5 if is_hover else 3
                 painter.drawEllipse(p, radius, radius)
@@ -526,7 +527,7 @@ class AIConfigWidget(QWidget):
 
 class SleepStatisticsWindow(QWidget):
     """睡眠与 AI 统计主窗口"""
-    def __init__(self, config, parent=None):
+    def __init__(self, config, parent=None, sleep_server=None):
         super().__init__(parent)
         self.config = config
         self.resize(800, 600)
@@ -543,8 +544,24 @@ class SleepStatisticsWindow(QWidget):
         self._ai_worker = None        # AIWorker 线程引用
         self._current_sleep_data = None  # 当前加载的 JSON 数据
 
+        # 注: 图片接收信号由 GUI._on_sleep_image_uploaded 统一管理，避免双重触发
+
         self._build_ui()
         self.load_data()
+
+    def _on_image_received(self, temp_path):
+        """收到手机端上传的截图，自动触发 AI 分析"""
+        logger.info(f"📸 收到手机截图: {temp_path}")
+        self._selected_image = temp_path
+        fname = os.path.basename(temp_path)
+        self.img_path_label.setText(f"📱 手机上传: {fname}")
+        # 确保窗口可见
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+            self.activateWindow()
+        # 自动触发 AI 分析
+        self._run_ai_analysis()
 
     def _build_ui(self):
         # 允许内部框架自适应
@@ -663,19 +680,19 @@ class SleepStatisticsWindow(QWidget):
         self.grid = QGridLayout()
         self.grid.setSpacing(15)
         self.metrics = {}
-        # 重新定义高亮指标：将用户最看重的“入睡/起床用时”设为重点高亮
+        # 重新定义指标顺序：周期和深睡排在最前面，并设为 priority (橙色)
         metric_names = [
-            ("入睡用时", "fall_asleep_min", " min", True),
-            ("起床用时", "wake_up_min", " min", True),
-            ("睡眠周期", "sleep_cycles", " 个", False),
-            ("深睡时长", "deep_sleep_min", " min", False),
-            ("清醒次数", "awake_count", " 次", False),
-            ("清醒时长", "awake_min", " min", False),
-            ("浅睡", "light_sleep_min", " min", False),
-            ("快速眼动", "rem_sleep_min", " min", False)
+            ("睡眠周期", "sleep_cycles", " 个", "priority"),
+            ("深睡时长", "deep_sleep_min", " min", "priority"),
+            ("入睡用时", "fall_asleep_min", " min", "highlight"),
+            ("起床用时", "wake_up_min", " min", "highlight"),
+            ("清醒次数", "awake_count", " 次", "normal"),
+            ("清醒时长", "awake_min", " min", "normal"),
+            ("浅睡", "light_sleep_min", " min", "normal"),
+            ("快速眼动", "rem_sleep_min", " min", "normal")
         ]
-        for i, (label, key, unit, highlight) in enumerate(metric_names):
-            card = self._create_metric_card(label, highlight)
+        for i, (label, key, unit, mode) in enumerate(metric_names):
+            card = self._create_metric_card(label, mode)
             self.grid.addWidget(card, i // 4, i % 4)
             self.metrics[key] = (card.findChild(QLabel, "val"), unit)
         
@@ -804,7 +821,8 @@ class SleepStatisticsWindow(QWidget):
         trend_layout.addStretch()
         
         self.tabs.addTab(trend_page, "趋势统计")
-        self.trend_btns["fall_asleep_min"].setChecked(True)
+        self.trend_btns["sleep_cycles"].setChecked(True)
+        self.trend_chart.set_metric("sleep_cycles")
 
         # 配置页
         self.config_page = AIConfigWidget(self.config)
@@ -816,24 +834,31 @@ class SleepStatisticsWindow(QWidget):
 
         main_layout.addWidget(content)
 
-    def _create_metric_card(self, title, highlight=False):
+    def _create_metric_card(self, title, mode="normal"):
         card = QFrame()
-        if highlight:
-            # 高亮样式：淡蓝/绿背景 + 加粗主题色文字
-            card.setStyleSheet(f"background: #EBF5FF; border: none; border-radius: 10px;")
+        if mode == "priority":
+            # 橙色模式：最高优先级
+            bg_color = "#FFF4E5" # 极淡橘背景
+            title_color = "#D08770" # 核心橘文字
+            icon = "🔥"
+        elif mode == "highlight":
+            # 蓝色模式：次高优先级
+            bg_color = "#EBF5FF"
+            title_color = "#5E81AC"
+            icon = "🌟"
         else:
-            card.setStyleSheet(f"background: {CARD_BG}; border: none; border-radius: 10px;")
+            bg_color = CARD_BG
+            title_color = TEXT_SECONDARY
+            icon = ""
             
+        card.setStyleSheet(f"background: {bg_color}; border: none; border-radius: 10px;")
         layout = QVBoxLayout(card)
-        l_title = QLabel(f"🌟 {title}" if highlight else title)
-        title_color = "#5E81AC" if highlight else TEXT_SECONDARY
-        title_weight = "bold" if highlight else "500"
-        l_title.setStyleSheet(f"color: {title_color}; font-size: 11px; font-weight: {title_weight};")
+        l_title = QLabel(f"{icon} {title}" if icon else title)
+        l_title.setStyleSheet(f"color: {title_color}; font-size: 11px; font-weight: bold;")
         
         l_val = QLabel("--")
         l_val.setObjectName("val")
-        val_color = "#2E3440" if highlight else TEXT_PRIMARY
-        l_val.setStyleSheet(f"color: {val_color}; font-size: 18px; font-weight: bold;")
+        l_val.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: bold;")
         
         layout.addWidget(l_title)
         layout.addWidget(l_val)
@@ -1098,8 +1123,8 @@ class SleepStatisticsWindow(QWidget):
         self._current_sleep_data = sleep_data
         
         # 3. 保存到数据库
+        save_date_str = target_date.strftime("%Y-%m-%d")
         try:
-            save_date_str = target_date.strftime("%Y-%m-%d")
             # 同时将 report 提出来存入 analysis_report 字段
             db_data = sleep_data.copy()
             db_data["analysis_report"] = report
@@ -1107,6 +1132,9 @@ class SleepStatisticsWindow(QWidget):
             logger.info(f"睡眠数据已保存至数据库 (日期: {save_date_str})")
         except Exception as e:
             logger.error(f"保存睡眠数据到数据库失败: {e}")
+
+        # 3.5 根据识别日期重命名临时截图 → attachments/sleep_YYYY-MM-DD.ext
+        self._rename_pending_image(save_date_str)
 
         # 4. 刷新 UI 指标并渲染 Markdown 报告
         self._update_ui_with_data(sleep_data)
@@ -1120,3 +1148,31 @@ class SleepStatisticsWindow(QWidget):
         self.analysis_text.setText(msg)
         self.ai_btn.setEnabled(True)
         self.ai_btn.setText("🚀 AI 分析")
+
+    def _rename_pending_image(self, date_str):
+        """
+        将 _selected_image 中的临时截图按日期重命名到 attachments/ 目录。
+        仅当文件名包含 'pending' 时才执行（避免对手动选择的文件操作）。
+        """
+        if not self._selected_image or not os.path.exists(self._selected_image):
+            return
+        basename = os.path.basename(self._selected_image)
+        if "pending" not in basename:
+            return  # 非临时文件，跳过
+
+        ext = os.path.splitext(basename)[1]
+        new_name = f"sleep_{date_str}{ext}"
+        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attachments")
+        os.makedirs(attachments_dir, exist_ok=True)
+        new_path = os.path.join(attachments_dir, new_name)
+
+        try:
+            # 如果目标已存在，覆盖
+            if os.path.exists(new_path):
+                os.remove(new_path)
+            os.rename(self._selected_image, new_path)
+            self._selected_image = new_path
+            self.img_path_label.setText(f"📁 已归档: {new_name}")
+            logger.info(f"截图已重命名: {basename} → {new_name}")
+        except Exception as e:
+            logger.error(f"重命名截图失败: {e}")

@@ -34,8 +34,9 @@ from activity_panel import ActivityPanel
 class MyTimeLoggerGUI(QWidget):
     """主窗口 GUI，桥接核心逻辑与用户交互"""
 
-    def __init__(self, config):
+    def __init__(self, config, sleep_server=None):
         super().__init__()
+        self._sleep_server = sleep_server
         self.config = config
 
         try:
@@ -66,6 +67,10 @@ class MyTimeLoggerGUI(QWidget):
         self._habit_tracker_window = None  # 习惯打卡窗口
         self._sleep_statistics_window = None # 睡眠统计窗口
         self.category_manager = CategoryManager()
+
+        # 连接 HTTP 图片接收信号：收到截图时自动创建并打开睡眠窗口
+        if self._sleep_server and hasattr(self._sleep_server, 'signal_bridge'):
+            self._sleep_server.signal_bridge.image_received.connect(self._on_sleep_image_uploaded)
 
         # 软件启动后延迟 100 毫秒，自动在后台同步今日清单（不打开窗口）
         tt_cfg = self.config.get("ticktick_config", {})
@@ -796,7 +801,7 @@ class MyTimeLoggerGUI(QWidget):
         """打开/关闭睡眠统计窗口"""
         if self._sleep_statistics_window is None:
             from sleep_statistics import SleepStatisticsWindow
-            self._sleep_statistics_window = SleepStatisticsWindow(self.config, self)
+            self._sleep_statistics_window = SleepStatisticsWindow(self.config, self, sleep_server=self._sleep_server)
             # 居中显示
             screen = QApplication.primaryScreen().geometry()
             self._sleep_statistics_window.move(
@@ -811,6 +816,19 @@ class MyTimeLoggerGUI(QWidget):
             self._sleep_statistics_window.show()
             self._sleep_statistics_window.raise_()
             self._sleep_statistics_window.activateWindow()
+
+    def _on_sleep_image_uploaded(self, temp_path):
+        """收到手机上传的截图，确保睡眠窗口已创建并触发分析"""
+        if self._sleep_statistics_window is None:
+            from sleep_statistics import SleepStatisticsWindow
+            self._sleep_statistics_window = SleepStatisticsWindow(self.config, self, sleep_server=self._sleep_server)
+            screen = QApplication.primaryScreen().geometry()
+            self._sleep_statistics_window.move(
+                (screen.width() - self._sleep_statistics_window.width()) // 2,
+                (screen.height() - self._sleep_statistics_window.height()) // 2
+            )
+        # 手动转发到窗口（因为窗口可能刚创建，没赶上本次信号）
+        self._sleep_statistics_window._on_image_received(temp_path)
 
     def toggle_daily_checklist(self):
         """切换日清单窗口显隐"""
