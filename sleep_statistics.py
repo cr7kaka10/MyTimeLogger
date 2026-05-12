@@ -557,7 +557,7 @@ class SleepStatisticsWindow(QWidget):
     def _on_image_received(self, temp_path, session_id="default"):
         """当 HTTP 服务接收到图片时触发"""
         logger.info(f"SleepStatisticsWindow: 收到图片信号 -> {temp_path} (Session: {session_id})")
-        # 核心修复：记录当前上传的路径，以便后续归档
+        # 核心绑定：确保归档函数能找到当前图片
         self._selected_image = temp_path
         self._run_ai_analysis(force_sync=True, image_path=temp_path, session_id=session_id)
         fname = os.path.basename(temp_path)

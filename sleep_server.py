@@ -366,24 +366,6 @@ class SleepDataHandler(BaseHTTPRequestHandler):
 class _SignalBridge(QObject):
     image_received = pyqtSignal(str, str) # path, session_id
 
-class QuietThreadingHTTPServer(ThreadingHTTPServer):
-    """自定义多线程服务器，静默处理客户端主动断开产生的报错"""
-    def handle_error(self, request, client_address):
-        import sys
-        import errno
-        exc_type, exc_value, _ = sys.exc_info()
-        
-        # 常见网络中断错误码：10053 (WSAECONNABORTED), 10054 (WSAECONNRESET)
-        stop_signals = (errno.WSAECONNABORTED, errno.WSAECONNRESET, errno.EPIPE)
-        
-        if exc_value and hasattr(exc_value, 'errno') and exc_value.errno in stop_signals:
-            logger.debug(f"SSE/HTTP Connection reset by client {client_address}")
-        elif exc_type and issubclass(exc_type, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
-            logger.debug(f"SSE/HTTP Client {client_address} closed connection.")
-        else:
-            # 只有真正的程序逻辑错误才会打印 Traceback
-            super().handle_error(request, client_address)
-
 class SleepServer:
     def __init__(self, port=5055):
         self.port = port
@@ -392,8 +374,17 @@ class SleepServer:
 
     def start(self):
         try:
-            # 使用自定义的 QuietThreadingHTTPServer 屏蔽底层 socket 报错
-            self.server = QuietThreadingHTTPServer(("0.0.0.0", self.port), SleepDataHandler)
+            # 升级为多线程服务器并重写错误处理逻辑
+            class SilentThreadingHTTPServer(ThreadingHTTPServer):
+                def handle_error(self, request, client_address):
+                    # 屏蔽常见的连接重置/中止报错 (WinError 10053/10054)
+                    import sys
+                    exctype, value = sys.exc_info()[:2]
+                    if exctype in (ConnectionAbortedError, ConnectionResetError) or (isinstance(value, OSError) and value.errno in (10053, 10054)):
+                        return # 静默处理
+                    super().handle_error(request, client_address)
+
+            self.server = SilentThreadingHTTPServer(("0.0.0.0", self.port), SleepDataHandler)
             self.server._signal_bridge = self.signal_bridge
             threading.Thread(target=self.server.serve_forever, daemon=True).start()
             logger.info(f"🌙 睡眠服务已启动推送模式 -> http://0.0.0.0:{self.port}")
