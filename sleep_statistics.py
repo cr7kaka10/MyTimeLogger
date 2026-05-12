@@ -201,7 +201,10 @@ class AIWorker(QThread):
                     self.update_progress(f"⚠️ 分析出错，正在进行第 {attempt} 次重试... ({loop_e})")
                     time.sleep(1)
 
-            # ── 步骤 2: 定日期并实时同步数据 ──
+            # ── 步骤 2: 定日期并实时同步数据 (移出循环，确保识别完成后执行) ──
+            if not self.sleep_data:
+                raise Exception("未获取到睡眠数据，分析中止。")
+
             target_date = self.sleep_data.get("sleep_date")
             if not target_date or len(target_date) < 8:
                 target_date = datetime.now().strftime("%Y-%m-%d")
@@ -215,10 +218,12 @@ class AIWorker(QThread):
                 sys.path.insert(0, skill_dir)
             from generate_full_report import generate_comprehensive_report
 
+            # 核心改进：即时分析不包含 Part 2
             report_path = generate_comprehensive_report(
                 target_date, 
                 injected_sleep_data=self.sleep_data,
-                force_pull=True
+                force_pull=True,
+                include_time_analysis=False
             )
             
             if report_path and os.path.exists(report_path):
@@ -240,6 +245,15 @@ class AIWorker(QThread):
                 except: pass
 
             self.finished.emit(report, self.sleep_data)
+
+        except Exception as e:
+            logger.error(f"AIWorker Error: {e}")
+            if self.session_id:
+                try:
+                    from sleep_server import broker
+                    broker.push(self.session_id, {"status": "progress", "msg": f"❌ 错误: {str(e)}"})
+                except: pass
+            self.error.emit(f"❌ 分析失败：{e}")
 
         except Exception as e:
             logger.error(f"AIWorker Error: {e}")

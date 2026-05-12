@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-生成完整的时间管理分析报告 (V4.1)
-结合 aTimeLogger 和华为运动健康数据，支持实时 Web 交互与主观评价。
+生成完整的时间管理分析报告 (V4.2)
+优化：支持仅生成睡眠报告模式。
 """
 
 import sys
 import os
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
 
@@ -36,43 +36,39 @@ from modules.screenshot_parser import ScreenshotParser
 
 SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
 
-def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull=False):
-    """生成综合分析报告"""
-    print(f"\n📊 开始生成 {date_str} 深度复盘报告...")
+def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull=False, include_time_analysis=True):
+    """
+    生成综合分析报告
+    include_time_analysis: 是否包含 Part 2 时间管理部分
+    """
+    print(f"\n📊 开始生成 {date_str} 深度复盘报告 (模式: {'完整' if include_time_analysis else '仅睡眠'})...")
     
-    # 1. 加载配置
     config_path = os.path.join(SKILL_DIR, 'config.json')
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
-    # 2. 提取 aTimeLogger 数据
     db = StudyLogger(config) if StudyLogger else None
+    
+    # 1. 提取 aTimeLogger 数据 (仅在需要时)
     atimelogger_data = None
+    if include_time_analysis:
+        if db and not force_pull:
+            atimelogger_data = db.get_atm_data(date_str)
+        
+        if not atimelogger_data:
+            extractor = AtimeloggerExtractor(config.get('atimelogger', {}))
+            atimelogger_data = extractor.extract_daily_data(date_str)
+            if atimelogger_data and db:
+                db.save_atm_data(date_str, atimelogger_data)
     
-    if db and not force_pull:
-        atimelogger_data = db.get_atm_data(date_str)
-    
-    if not atimelogger_data:
-        extractor = AtimeloggerExtractor(config.get('atimelogger', {}))
-        atimelogger_data = extractor.extract_daily_data(date_str)
-        if atimelogger_data and db:
-            db.save_atm_data(date_str, atimelogger_data)
-    
-    # 3. 加载华为健康睡眠数据 (含自我评价)
+    # 2. 加载华为健康睡眠数据
     sleep_data = injected_sleep_data
     if not sleep_data and db:
         sleep_data = db.get_huawei_sleep_data(date_str)
         if sleep_data:
-            # 兼容处理
             report_content = sleep_data.pop("analysis_report", "")
             sleep_data["analysis"] = {"summary": report_content}
     
-    if not sleep_data:
-        sleep_file = os.path.join(SLEEP_DATA_DIR, f'sleep_{date_str}.json')
-        if os.path.exists(sleep_file):
-            with open(sleep_file, 'r', encoding='utf-8') as f:
-                sleep_data = json.load(f)
-
     if sleep_data:
         # 归一化计算
         total_min = float(sleep_data.get('total_sleep_min', 0))
@@ -85,14 +81,14 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
         sleep_data['fall_asleep_min'] = round(float(fall_asleep_min), 2)
         sleep_data['wake_up_min'] = round(float(wake_up_min), 2)
 
-    # 4. 合并并分析
+    # 3. 分析
     combined_data = combine_data(atimelogger_data, sleep_data, date_str)
     analysis = perform_deep_analysis(combined_data)
     
-    # 5. 生成报告文件
-    report_path = generate_full_report_file(combined_data, analysis, date_str)
+    # 4. 生成报告文件
+    report_path = generate_full_report_file(combined_data, analysis, date_str, include_time_analysis)
     
-    # 6. 回写数据库
+    # 5. 回写数据库
     if sleep_data and db and os.path.exists(report_path):
         with open(report_path, 'r', encoding='utf-8') as f:
             full_content = f.read()
@@ -119,8 +115,6 @@ def combine_data(atimelogger_data, sleep_data, date_str):
     }
 
 def perform_deep_analysis(data):
-    # 这里保持原有 AI 分析逻辑，为简洁起见暂略，重点在 report_file
-    # 假设返回一个基础的分析字典
     summary = data.get('summary', {})
     activity_breakdown = summary.get('activity_breakdown', {})
     productive_hrs = activity_breakdown.get('生产', 0) / 3600
@@ -135,8 +129,8 @@ def perform_deep_analysis(data):
         'recommendations': ["建议睡前 1 小时放下手机。"]
     }
 
-def generate_full_report_file(data, analysis, date_str):
-    """生成完整报告文件 (V4.1 板块化精简版)"""
+def generate_full_report_file(data, analysis, date_str, include_time_analysis=True):
+    """生成完整报告文件"""
     sleep = data.get('sleep', {})
     summary = data.get('summary', {})
     activities = data.get('atimelogger', {}).get('activities', []) if data.get('atimelogger') else []
@@ -144,7 +138,7 @@ def generate_full_report_file(data, analysis, date_str):
     lines = [
         f"# 📔 深度复盘报告 - {date_str}",
         "",
-        f"> **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | **综合评分**: `{analysis['summary']['efficiency_score']}`",
+        f"> **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | **状态**: `{'全天复盘' if include_time_analysis else '晨间速报'}`",
         "",
         "---",
         "",
@@ -153,7 +147,6 @@ def generate_full_report_file(data, analysis, date_str):
     ]
     
     if sleep:
-        # 6 大核心指标卡片
         lines.extend([
             "### 1.1 核心数据",
             "",
@@ -181,40 +174,41 @@ def generate_full_report_file(data, analysis, date_str):
     else:
         lines.append("> ⚠️ 今日未同步睡眠数据\n")
 
-    lines.extend([
-        "---",
-        "",
-        "## ⏱️ [Part 2: 时间管理报告]",
-        "",
-        "### 2.1 时间分配图",
-        "",
-    ])
-    
-    activity_breakdown = summary.get('activity_breakdown', {})
-    total_seconds = sum(activity_breakdown.values())
-    if total_seconds > 0:
-        lines.append("```")
-        for activity_type, seconds in sorted(activity_breakdown.items(), key=lambda x: x[1], reverse=True):
-            percentage = (seconds / total_seconds) * 100
-            bar = '█' * int(percentage / 3)
-            lines.append(f"{activity_type:8s} {bar:30s} {seconds/3600:5.1f}h ({percentage:4.1f}%)")
-        lines.append("```")
+    if include_time_analysis:
+        lines.extend([
+            "---",
+            "",
+            "## ⏱️ [Part 2: 时间管理报告]",
+            "",
+            "### 2.1 时间分配图",
+            "",
+        ])
         
-    lines.extend([
-        "",
-        "### 2.2 详细时间记录",
-        "",
-        "| # | 类别 | 时间段 | 时长 | 备注 |",
-        "| :-- | :--- | :--- | :--- | :--- |",
-    ])
-    
-    for i, act in enumerate(activities, 1):
-        st = str(act.get('start'))
-        st = st.split(' ')[1][:5] if ' ' in st else (st.split('T')[1][:5] if 'T' in st else st[:5])
-        et = str(act.get('finish'))
-        et = et.split(' ')[1][:5] if ' ' in et else (et.split('T')[1][:5] if 'T' in et else et[:5])
-        dur = f"{act.get('duration', 0)//3600:02d}:{(act.get('duration', 0)%3600)//60:02d}"
-        lines.append(f"| {i} | {act.get('type')} | {st} - {et} | {dur} | {act.get('comment', '')} |")
+        activity_breakdown = summary.get('activity_breakdown', {})
+        total_seconds = sum(activity_breakdown.values())
+        if total_seconds > 0:
+            lines.append("```")
+            for activity_type, seconds in sorted(activity_breakdown.items(), key=lambda x: x[1], reverse=True):
+                percentage = (seconds / total_seconds) * 100
+                bar = '█' * int(percentage / 3)
+                lines.append(f"{activity_type:8s} {bar:30s} {seconds/3600:5.1f}h ({percentage:4.1f}%)")
+            lines.append("```")
+            
+        lines.extend([
+            "",
+            "### 2.2 详细时间记录",
+            "",
+            "| # | 类别 | 时间段 | 时长 | 备注 |",
+            "| :-- | :--- | :--- | :--- | :--- |",
+        ])
+        
+        for i, act in enumerate(activities, 1):
+            st = str(act.get('start'))
+            st = st.split(' ')[1][:5] if ' ' in st else (st.split('T')[1][:5] if 'T' in st else st[:5])
+            et = str(act.get('finish'))
+            et = et.split(' ')[1][:5] if ' ' in et else (et.split('T')[1][:5] if 'T' in et else et[:5])
+            dur = f"{act.get('duration', 0)//3600:02d}:{(act.get('duration', 0)%3600)//60:02d}"
+            lines.append(f"| {i} | {act.get('type')} | {st} - {et} | {dur} | {act.get('comment', '')} |")
 
     lines.extend([
         "",
@@ -226,7 +220,7 @@ def generate_full_report_file(data, analysis, date_str):
     for insight in analysis.get('insights', []): lines.append(f"- {insight}")
     for rec in analysis.get('recommendations', []): lines.append(f"- {rec}")
 
-    lines.append(f"\n\n---\n*Generated by MyTimeLogger v4.1*")
+    lines.append(f"\n\n---\n*Generated by MyTimeLogger v4.2*")
 
     report_path = generate_report_filename(date_str)
     with open(report_path, 'w', encoding='utf-8') as f:
