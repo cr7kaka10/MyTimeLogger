@@ -574,6 +574,8 @@ class SleepStatisticsWindow(QWidget):
 
         self._build_ui()
         self.load_data()
+        # 启动时自动清理残留临时文件
+        self._cleanup_all_pending_images()
 
     def _on_image_received(self, temp_path, session_id="default"):
         """当 HTTP 服务接收到图片时触发"""
@@ -1218,12 +1220,34 @@ class SleepStatisticsWindow(QWidget):
         self.analysis_text.setText(msg)
         self.ai_btn.setEnabled(True)
         self.ai_btn.setText("🚀 AI 分析")
+        # 失败时也尝试清理临时文件
+        self._cleanup_all_pending_images()
+
+    def _cleanup_all_pending_images(self, exclude_path=None):
+        """扫描并删除所有 sleep_pending_ 开头的临时文件"""
+        try:
+            attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attachments")
+            if not os.path.exists(attachments_dir): return
+            
+            for f in os.listdir(attachments_dir):
+                if f.startswith("sleep_pending_") and f.endswith(".jpg"):
+                    p = os.path.abspath(os.path.join(attachments_dir, f))
+                    if exclude_path and p == os.path.abspath(exclude_path):
+                        continue
+                    try:
+                        os.remove(p)
+                        logger.info(f"🧹 自动清理残留临时文件: {f}")
+                    except: pass
+        except Exception as e:
+            logger.debug(f"清理临时文件失败: {e}")
 
     def _rename_pending_image(self, date_str):
         """
         将 _selected_image 中的临时截图转换为 JPG 并归档到 attachments/ 目录，然后清理所有临时文件。
         """
         if not self._selected_image or not os.path.exists(self._selected_image):
+            # 即使没选中，也尝试清理一下可能存在的残留
+            self._cleanup_all_pending_images()
             return
         
         old_path = os.path.abspath(self._selected_image)
@@ -1249,17 +1273,8 @@ class SleepStatisticsWindow(QWidget):
                     os.remove(old_path)
                 except: pass
             
-            # 3. 强力清理：扫描 attachments 目录，删除所有多余的 pending 临时文件
-            try:
-                for f in os.listdir(attachments_dir):
-                    if f.startswith("sleep_pending_") and f.endswith(".jpg"):
-                        p = os.path.join(attachments_dir, f)
-                        # 只要不是刚生成的新文件，全部删掉
-                        if os.path.abspath(p) != os.path.abspath(new_path):
-                            os.remove(p)
-                            logger.info(f"🧹 自动清理残留临时文件: {f}")
-            except Exception as ce:
-                logger.debug(f"清理临时文件时出现小插曲: {ce}")
+            # 3. 强力清理所有残留
+            self._cleanup_all_pending_images(exclude_path=new_path)
 
             self._selected_image = new_path
             self.img_path_label.setText(f"📁 已归档: {new_name}")

@@ -223,10 +223,16 @@ class SleepDataHandler(BaseHTTPRequestHandler):
                     fetch('/upload?session_id=' + sessionId, { method: 'POST', body: formData })
                     .then(res => res.json())
                     .then(data => {
-                        if (data.status !== 'ok') {
-                            alert('上传失败: ' + data.error);
+                        if (data.status === 'ok') {
+                            document.getElementById('progText').innerText = '✅ 上传成功，正在准备 AI 分析...';
+                        } else {
+                            alert('上传失败: ' + (data.error || '未知错误'));
                             resetUI();
                         }
+                    })
+                    .catch(err => {
+                        alert('网络错误: ' + err.message);
+                        resetUI();
                     });
                 }
 
