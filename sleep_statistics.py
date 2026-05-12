@@ -521,7 +521,7 @@ class SleepStatisticsWindow(QWidget):
     def _on_image_received(self, temp_path, session_id="default"):
         """当 HTTP 服务接收到图片时触发"""
         logger.info(f"SleepStatisticsWindow: 收到图片信号 -> {temp_path} (Session: {session_id})")
-        self._run_ai_analysis(image_path=temp_path, session_id=session_id)
+        self._run_ai_analysis(force_sync=True, image_path=temp_path, session_id=session_id)
         fname = os.path.basename(temp_path)
         self.img_path_label.setText(f"📱 手机上传: {fname}")
         
@@ -1022,8 +1022,8 @@ class SleepStatisticsWindow(QWidget):
             fname = os.path.basename(path)
             self.img_path_label.setText(f"✅ 已选择: {fname}")
 
-    def _run_ai_analysis(self, force_sync=True, session_id=None):
-        """启动 AI 分析线程"""
+    def _run_ai_analysis(self, force_sync=True, image_path=None, session_id=None):
+        """执行 AI 分析逻辑。若提供了 image_path，则先进行视觉日期解析"""
         if self._ai_worker and self._ai_worker.isRunning():
             return
 
@@ -1037,10 +1037,17 @@ class SleepStatisticsWindow(QWidget):
             return
 
         # 准备的数据：截图或已加载的 JSON
-        has_image = self._selected_image and os.path.exists(self._selected_image)
+        # 优先使用传入的 image_path (来自手机上传)，否则使用本地手动选择的
+        # 注意：PyQt 信号可能会传递布尔值，这里需要做类型检查
+        real_img_path = image_path if isinstance(image_path, str) else None
+        img_to_use = real_img_path if real_img_path else self._selected_image
+        
+        has_image = img_to_use and os.path.exists(img_to_use)
         has_data  = bool(self._current_sleep_data)
+        
         if not has_image and not has_data:
-            QMessageBox.information(self, "无数据", "请先选择截图，或切换日期使 JSON 数据加载。")
+            if not session_id: # 只有本地手动触发且没数据才弹窗
+                QMessageBox.information(self, "无数据", "请先选择截图，或切换日期使 JSON 数据加载。")
             return
 
         self.ai_btn.setEnabled(False)
@@ -1062,7 +1069,7 @@ class SleepStatisticsWindow(QWidget):
         # 2. 启动线程 (AIWorker 内部会调用 generate_comprehensive_report)
         self._ai_worker = AIWorker(
             ai_cfg=ai_cfg,
-            image_path=self._selected_image if has_image else None,
+            image_path=img_to_use if has_image else None,
             sleep_data=None if has_image else self._current_sleep_data,
             date_str=self.current_date.strftime("%Y-%m-%d"),
             force_pull=force_sync,

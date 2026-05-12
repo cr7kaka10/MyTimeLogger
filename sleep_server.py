@@ -7,7 +7,7 @@ import shutil
 import threading
 import time
 import queue
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -370,7 +370,8 @@ class SleepServer:
 
     def start(self):
         try:
-            self.server = HTTPServer(("0.0.0.0", self.port), SleepDataHandler)
+            # 使用 ThreadingHTTPServer 支持并发处理（解决 SSE 阻塞上传的问题）
+            self.server = ThreadingHTTPServer(("0.0.0.0", self.port), SleepDataHandler)
             self.server._signal_bridge = self.signal_bridge
             threading.Thread(target=self.server.serve_forever, daemon=True).start()
             logger.info(f"🌙 睡眠服务已启动推送模式 -> http://0.0.0.0:{self.port}")
