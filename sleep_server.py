@@ -318,8 +318,8 @@ class SleepDataHandler(BaseHTTPRequestHandler):
             broker.cleanup(session_id)
 
     def do_POST(self):
-        if self.path == "/upload": self._handle_upload()
-        elif self.path == "/submit_evaluation": self._handle_evaluation()
+        if self.path.startswith("/upload"): self._handle_upload()
+        elif self.path.startswith("/submit_evaluation"): self._handle_evaluation()
         else: self._set_headers(404)
 
     def _handle_upload(self):

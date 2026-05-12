@@ -574,6 +574,8 @@ class SleepStatisticsWindow(QWidget):
 
         self._build_ui()
         self.load_data()
+        # 启动时更新按钮状态
+        self._update_nav_buttons()
         # 启动时自动清理残留临时文件
         self._cleanup_all_pending_images()
 
@@ -898,7 +900,23 @@ class SleepStatisticsWindow(QWidget):
     def change_date(self, delta):
         self.current_date += timedelta(days=delta)
         self.date_label.setText(self.current_date.strftime("%Y-%m-%d"))
+        self._update_nav_buttons()
         self.load_data()
+
+    def _update_nav_buttons(self):
+        """根据当前日期更新导航按钮状态"""
+        today = datetime.now().date()
+        # 禁止点向未来
+        is_today_or_future = self.current_date >= today
+        self.next_btn.setEnabled(not is_today_or_future)
+        
+        # 更新样式以示区分
+        if is_today_or_future:
+            self.next_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_COLOR}; border-radius: 15px; color: #D8DEE9; background: transparent; }}")
+            self.next_btn.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            self.next_btn.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_COLOR}; border-radius: 15px; color: {TEXT_PRIMARY}; }} QPushButton:hover {{ background: #F0F2F5; }}")
+            self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def load_data(self):
         """加载数据：数据库优先 -> 本地 JSON 兜底"""
