@@ -1160,6 +1160,14 @@ class SleepStatisticsWindow(QWidget):
                 # 已经是 YYYY-MM-DD 格式，直接解析
                 if _re.match(r'\d{4}-\d{2}-\d{2}', str(date_str_extracted)):
                     parsed_date = datetime.strptime(str(date_str_extracted), "%Y-%m-%d")
+                    # 核心防幻觉补丁：如果 AI 胡编乱造了历史年份（比如图片只有5月12日，AI非要说是2024年），直接拍死，换成本年
+                    if parsed_date.year != current_year:
+                        logger.warning(f"检测到 AI 提取年份异常({parsed_date.year})，强制修正为本年({current_year})")
+                        # 处理闰年2月29日的边缘情况
+                        try:
+                            parsed_date = parsed_date.replace(year=current_year)
+                        except ValueError:
+                            parsed_date = parsed_date.replace(year=current_year, day=28)
                 else:
                     # 解析 M月D日 格式
                     clean_date = str(date_str_extracted).replace("月", "-").replace("日", "")
