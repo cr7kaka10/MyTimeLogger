@@ -198,6 +198,10 @@ class SleepDataHandler(BaseHTTPRequestHandler):
                         progText.innerText = data.msg;
                     } else if (data.status === 'done') {
                         showResults(data.result);
+                    } else if (data.status === 'error') {
+                        progText.innerText = data.msg;
+                        document.getElementById('pulse').style.display = 'none';
+                        setTimeout(() => resetUI(), 3000);
                     }
                 };
 

@@ -252,16 +252,7 @@ class AIWorker(QThread):
             if self.session_id:
                 try:
                     from sleep_server import broker
-                    broker.push(self.session_id, {"status": "progress", "msg": f"❌ 错误: {str(e)}"})
-                except: pass
-            self.error.emit(f"❌ 分析失败：{e}")
-
-        except Exception as e:
-            logger.error(f"AIWorker Error: {e}")
-            if self.session_id:
-                try:
-                    from sleep_server import broker
-                    broker.push(self.session_id, {"status": "progress", "msg": f"❌ 错误: {str(e)}"})
+                    broker.push(self.session_id, {"status": "error", "msg": f"❌ 错误: {str(e)}"})
                 except: pass
             self.error.emit(f"❌ 分析失败：{e}")
 
