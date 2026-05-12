@@ -220,7 +220,7 @@ class SleepDataHandler(BaseHTTPRequestHandler):
                     formData.append('file', file);
                     formData.append('session_id', sessionId);
                     
-                    fetch('/upload', { method: 'POST', body: formData })
+                    fetch('/upload?session_id=' + sessionId, { method: 'POST', body: formData })
                     .then(res => res.json())
                     .then(data => {
                         if (data.status !== 'ok') {
@@ -318,12 +318,19 @@ class SleepDataHandler(BaseHTTPRequestHandler):
 
     def _handle_upload(self):
         try:
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            
+            # 优先从 URL 参数中提取 session_id，这是最可靠的
+            session_id = query.get("session_id", [None])[0]
+            
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length)
             files = _parse_multipart(self.headers, body)
             
-            # 提取 session_id，若无则默认为 'default'
-            session_id = files.get("session_id", "default")
+            # 如果 URL 没带，再看正文里有没有
+            if not session_id:
+                session_id = files.get("session_id", "default")
 
             if "file" not in files or not isinstance(files["file"], tuple):
                 self._set_headers(400); return

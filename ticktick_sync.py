@@ -228,7 +228,12 @@ class TickTickSyncWorker(QObject):
             utc_start_str = today_start_cst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000")
             try:
                 completed_tasks = await client.get_completed_tasks(utc_start_str)
-                logger.info(f"[任务同步] 已获取到今日完成任务: {len(completed_tasks)} 个")
+                # 过滤出今天北京时间完成的任务
+                today_completed = [t for t in completed_tasks if self._is_time_today_cst(t.get("completedTime"))]
+                logger.info(f"[任务同步] 已获取到今日完成任务: {len(today_completed)} 个")
+                # 后续逻辑使用原始列表以确保兼容性，或者使用过滤后的？
+                # 这里保持 completed_tasks 变量名，但内容改为过滤后的，因为后续循环逻辑也只需要今天的
+                completed_tasks = today_completed
             except Exception as ce:
                 logger.error(f"[任务同步] 获取今日完成任务失败: {ce}")
                 completed_tasks = []

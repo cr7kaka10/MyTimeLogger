@@ -54,7 +54,10 @@ class AITestWorker(QThread):
     def run(self):
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            import httpx
+            # 自定义 httpx 客户端：放宽 SSL 并增加超时
+            http_client = httpx.Client(verify=False, timeout=httpx.Timeout(30.0, connect=10.0))
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url, http_client=http_client)
             
             test_content = "hi"
             messages = [{"role": "user", "content": test_content}]
@@ -134,7 +137,15 @@ class AIWorker(QThread):
                     v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
                     v_key = self.ai_cfg.get("vision_api_key", "")
                     v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
-                    client_v = OpenAI(api_key=v_key, base_url=v_url)
+                    
+                    import httpx
+                    # 关键改进：针对国内网络不稳，使用自定义客户端并禁用 SSL 强校验，增加超时至 60s
+                    http_client = httpx.Client(
+                        verify=False, 
+                        timeout=httpx.Timeout(60.0, connect=10.0),
+                        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+                    )
+                    client_v = OpenAI(api_key=v_key, base_url=v_url, http_client=http_client)
                     
                     # 图片预处理
                     final_img_path = self.image_path
@@ -192,15 +203,19 @@ class AIWorker(QThread):
                     
                     if attempt <= max_retries:
                         self.update_progress(f"⚠️ 提取不完整，正在进行第 {attempt} 次重试...")
-                        time.sleep(1)
+                        time.sleep(2) # 增加退避间隔
                     else:
                         self.update_progress("⚠️ 已达到最大重试次数，将使用现有提取结果。")
                         
                 except Exception as loop_e:
                     if attempt > max_retries:
                         raise loop_e
-                    self.update_progress(f"⚠️ 分析出错，正在进行第 {attempt} 次重试... ({loop_e})")
-                    time.sleep(1)
+                    # 针对连接错误做特殊提示
+                    err_msg = str(loop_e)
+                    if "Connection error" in err_msg:
+                        err_msg = "网络连接失败，请检查 API 地址或网络环境"
+                    self.update_progress(f"⚠️ 分析出错，正在重试({attempt})... {err_msg}")
+                    time.sleep(3) # 遇到网络问题多等一会儿
 
             # ── 步骤 2: 定日期并实时同步数据 (移出循环，确保识别完成后执行) ──
             if not self.sleep_data:
