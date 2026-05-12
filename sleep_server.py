@@ -71,7 +71,6 @@ def _parse_multipart(headers, body_bytes):
         header_section, file_data = part.split(sep, 1)
         if file_data.endswith(b"\r\n"): file_data = file_data[:-2]
         header_text = header_section.decode("utf-8", errors="replace")
-        if "filename=" not in header_text: continue
         name, filename = "", ""
         for line in header_text.split("\r\n"):
             if "Content-Disposition" in line:
@@ -79,7 +78,11 @@ def _parse_multipart(headers, body_bytes):
                     token = token.strip()
                     if token.startswith("name="): name = token.split("=", 1)[1].strip('"')
                     elif token.startswith("filename="): filename = token.split("=", 1)[1].strip('"')
-        if name and filename: result[name] = (filename, file_data)
+        if name:
+            if filename:
+                result[name] = (filename, file_data)
+            else:
+                result[name] = file_data.decode("utf-8", errors="replace").strip()
     return result
 
 class SleepDataHandler(BaseHTTPRequestHandler):
@@ -319,15 +322,10 @@ class SleepDataHandler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length)
             files = _parse_multipart(self.headers, body)
             
-            # 解析 session_id
-            session_id = "default"
-            content_type = self.headers.get("Content-Type", "")
-            boundary = content_type.split("boundary=")[-1].strip().strip('"')
-            for part in body.split(f"--{boundary}".encode()):
-                if b'name="session_id"' in part:
-                    session_id = part.split(b"\r\n\r\n")[1].strip().decode()
+            # 提取 session_id，若无则默认为 'default'
+            session_id = files.get("session_id", "default")
 
-            if "file" not in files:
+            if "file" not in files or not isinstance(files["file"], tuple):
                 self._set_headers(400); return
             
             orig_filename, file_data = files["file"]
