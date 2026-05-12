@@ -118,7 +118,8 @@ class StudyLogger:
                 # 4. atm (aTimeLogger) 持久化表
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS atm_summary (
-                        date VARCHAR(20) PRIMARY KEY,
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        date VARCHAR(20) UNIQUE,
                         updated_at DATETIME
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ''')
@@ -136,7 +137,8 @@ class StudyLogger:
                 ''')
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS huawei_sleep_data (
-                        date VARCHAR(20) PRIMARY KEY,
+                        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        date VARCHAR(20) UNIQUE,
                         sleep_score INT,
                         total_sleep_min INT,
                         deep_sleep_min INT,
@@ -202,7 +204,8 @@ class StudyLogger:
                 ''')
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS atm_summary (
-                        date TEXT PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT UNIQUE,
                         updated_at TIMESTAMP
                     )
                 ''')
@@ -219,7 +222,8 @@ class StudyLogger:
                 ''')
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS huawei_sleep_data (
-                        date TEXT PRIMARY KEY,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TEXT UNIQUE,
                         sleep_score INTEGER,
                         total_sleep_min INTEGER,
                         deep_sleep_min INTEGER,
