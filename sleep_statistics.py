@@ -20,6 +20,7 @@ from utils import resource_path
 from database import StudyLogger
 
 logger = logging.getLogger(__name__)
+SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==================== 配色与常量 (同步项目风格) ====================
 TEXT_PRIMARY = "#2E3440"
@@ -571,20 +572,19 @@ class SleepStatisticsWindow(QWidget):
     def _on_image_received(self, temp_path, session_id="default"):
         """当 HTTP 服务接收到图片时触发"""
         logger.info(f"SleepStatisticsWindow: 收到图片信号 -> {temp_path} (Session: {session_id})")
-        # 核心绑定：确保归档函数能找到当前图片
+        # 1. 记录当前上传的路径，以便后续归档
         self._selected_image = temp_path
-        self._run_ai_analysis(force_sync=True, image_path=temp_path, session_id=session_id)
         fname = os.path.basename(temp_path)
         self.img_path_label.setText(f"📱 手机上传: {fname}")
         
-        # 1. 确保窗口可见
+        # 2. 确保窗口可见
         if not self.isVisible():
             self.show()
             self.raise_()
             self.activateWindow()
             
-        # 2. 自动触发 AI 分析 (内部会自动识别日期并同步数据)
-        self._run_ai_analysis()
+        # 3. 触发 AI 分析 (内部会自动识别日期、落库并同步数据)
+        self._run_ai_analysis(force_sync=True, image_path=temp_path, session_id=session_id)
 
     def _build_ui(self):
         # 允许内部框架自适应
@@ -893,32 +893,43 @@ class SleepStatisticsWindow(QWidget):
         self.load_data()
 
     def load_data(self):
+        """加载数据：数据库优先 -> 本地 JSON 兜底"""
         date_str = self.current_date.strftime("%Y-%m-%d")
+        logger.info(f"正在加载 {date_str} 的数据...")
         
-        # 1. 优先尝试从数据库加载
-        data = self.db.get_huawei_sleep_data(date_str)
-        
-        if data:
-            # 还原 analysis 结构
-            report_content = data.pop("analysis_report", "")
-            data["analysis"] = {"summary": report_content}
-            self._update_ui_with_data(data)
+        # 1. 优先从数据库读取 (真理来源)
+        db_data = self.db.get_huawei_sleep_data(date_str)
+        if db_data:
+            logger.info(f"✅ 从数据库加载成功: {date_str}")
+            report_content = db_data.get("analysis_report", "")
+            # 兼容旧代码，确保内部有 analysis 结构
+            db_data["analysis"] = {"summary": report_content}
+            self._current_sleep_data = db_data
+            self._update_ui_with_data(db_data)
             self.analysis_text.setMarkdown(report_content)
-        else:
-            # 2. 备选：尝试从旧 JSON 文件加载（向下兼容）
-            data_path = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
-            if os.path.exists(data_path):
-                try:
-                    with open(data_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        self._update_ui_with_data(data)
-                        report_content = data.get("analysis", {}).get("summary", "")
-                        self.analysis_text.setMarkdown(report_content)
-                except Exception as e:
-                    logger.error(f"加载睡眠数据失败: {e}")
-                    self._clear_ui()
-            else:
-                self._clear_ui()
+            self._refresh_trend_data()
+            return
+
+        # 2. 备选：尝试从旧 JSON 文件加载（向下兼容）
+        json_path = os.path.join(SKILL_DIR, "huawei_health_data", f"sleep_{date_str}.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self._current_sleep_data = data
+                    self._update_ui_with_data(data)
+                    report_content = data.get("analysis", {}).get("summary", "")
+                    self.analysis_text.setMarkdown(report_content)
+                    logger.info(f"✅ 从本地 JSON 加载成功: {date_str}")
+                    self._refresh_trend_data()
+                    return
+            except Exception as e:
+                logger.error(f"解析本地 JSON 失败: {e}")
+
+        # 3. 都没有，清空显示
+        self._current_sleep_data = None
+        self._clear_ui()
+        logger.info(f"❓ {date_str} 尚无睡眠记录")
         
         # 3. 加载趋势统计数据
         self._refresh_trend_data()
