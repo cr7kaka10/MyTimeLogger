@@ -291,12 +291,16 @@ class SleepDataHandler(BaseHTTPRequestHandler):
                     msg = f"data: {json.dumps(data)}\n\n"
                     self.wfile.write(msg.encode())
                     self.wfile.flush()
-                except queue.Empty:
-                    # Keep-alive
-                    self.wfile.write(b": keep-alive\n\n")
-                    self.wfile.flush()
+                except (queue.Empty, ConnectionAbortedError, ConnectionResetError):
+                    # 处理连接中断或超时，静默继续或退出循环
+                    if not q.empty(): continue 
+                    try:
+                        self.wfile.write(b": keep-alive\n\n")
+                        self.wfile.flush()
+                    except:
+                        break # 连接彻底断开，跳出循环
         except Exception as e:
-            logger.info(f"SSE: 连接中断 {session_id}: {e}")
+            logger.info(f"SSE: 连接已安全关闭 {session_id}")
         finally:
             broker.cleanup(session_id)
 

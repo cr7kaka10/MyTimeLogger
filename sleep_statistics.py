@@ -99,69 +99,108 @@ class AIWorker(QThread):
                 broker.push(self.session_id, {"status": "progress", "msg": msg})
             except: pass
 
+    def validate_data(self, data):
+        """校验华为睡眠数据完整性"""
+        required = ["sleep_score", "deep_sleep_min", "sleep_cycles"]
+        for key in required:
+            val = data.get(key)
+            if val is None or (isinstance(val, (int, float)) and val <= 0):
+                return False
+        # 检查额外指标是否大部分提取成功 (允许部分缺失但不能全是0)
+        extra = ["light_sleep_min", "rem_sleep_min", "awake_count"]
+        extracted_count = sum(1 for k in extra if data.get(k) and data.get(k) > 0)
+        return extracted_count >= 1
+
     def run(self):
+        max_retries = 2
+        attempt = 0
+        
         try:
-            from openai import OpenAI
-            import time
-            
-            # ── 步骤 1: 视觉解析（识图定日期） ──
-            if not self.image_path or not os.path.exists(self.image_path):
-                self.error.emit("❌ 未找到图片文件。")
-                return
+            while attempt <= max_retries:
+                attempt += 1
+                try:
+                    from openai import OpenAI
+                    import time
+                    
+                    # ── 步骤 1: 视觉解析 ──
+                    if not self.image_path or not os.path.exists(self.image_path):
+                        self.error.emit("❌ 未找到图片文件。")
+                        return
 
-            self.update_progress("📸 正在解析截图内容...")
-            v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
-            v_key = self.ai_cfg.get("vision_api_key", "")
-            v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
-            
-            client_v = OpenAI(api_key=v_key, base_url=v_url)
-            
-            # 图片预处理 (HD 采样)
-            final_img_path = self.image_path
-            temp_img_path = None
-            try:
-                from PIL import Image
-                with Image.open(self.image_path) as img:
-                    w, h = img.size
-                    if h > 2048:
-                        new_h = 2048
-                        new_w = int(w * (new_h / h))
-                        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                        temp_img_path = self.image_path + ".v.jpg"
-                        img.convert("RGB").save(temp_img_path, "JPEG", quality=90)
-                        final_img_path = temp_img_path
-            except: pass
+                    msg_prefix = f"📸 正在解析截图 ({attempt}/{max_retries+1})..." if attempt > 1 else "📸 正在解析截图内容..."
+                    self.update_progress(msg_prefix)
+                    
+                    v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
+                    v_key = self.ai_cfg.get("vision_api_key", "")
+                    v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
+                    client_v = OpenAI(api_key=v_key, base_url=v_url)
+                    
+                    # 图片预处理
+                    final_img_path = self.image_path
+                    temp_img_path = None
+                    try:
+                        from PIL import Image
+                        with Image.open(self.image_path) as img:
+                            w, h = img.size
+                            if h > 2048:
+                                new_h = 2048
+                                new_w = int(w * (new_h / h))
+                                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                                temp_img_path = self.image_path + ".v.jpg"
+                                img.convert("RGB").save(temp_img_path, "JPEG", quality=90)
+                                final_img_path = temp_img_path
+                    except: pass
 
-            with open(final_img_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode()
-            if temp_img_path and os.path.exists(temp_img_path): os.remove(temp_img_path)
+                    with open(final_img_path, "rb") as f:
+                        img_b64 = base64.b64encode(f.read()).decode()
+                    if temp_img_path and os.path.exists(temp_img_path): os.remove(temp_img_path)
 
-            # 视觉 Prompt (V4.0 增强版：锁定 6 大指标)
-            prompt = """提取以下字段并以 JSON 返回：
-1. sleep_date: 截图中的日期 (YYYY-MM-DD, 截图无年份则默认为 2026)
+                    # 视觉 Prompt (V4.2 完整版)
+                    prompt = """提取以下字段并以 JSON 返回：
+1. sleep_date: 截图中的日期 (YYYY-MM-DD)
 2. sleep_score: 睡眠得分 (整数)
-3. sleep_cycles: 睡眠周期个数 (数字, 如 5.5)
+3. sleep_cycles: 睡眠周期个数 (数字)
 4. deep_sleep_min: 深睡时长 (分钟)
-5. fall_asleep_min: 入睡用时 (分钟)
-6. wake_up_min: 起床用时 (分钟)
-7. official_interpretation: 华为运动健康的解读与建议 (详细文本)
-8. sleep_start: 入睡时间 (HH:mm)
-9. sleep_end: 醒来时间 (HH:mm)
-10. total_sleep_min: 总睡眠时长 (分钟)
-注意：只返回 JSON 代码块，不要有其他描述。"""
+5. light_sleep_min: 浅睡时长 (分钟)
+6. rem_sleep_min: 快速眼动时长 (分钟)
+7. awake_count: 清醒次数 (整数)
+8. awake_time_min: 清醒时长 (分钟)
+9. fall_asleep_min: 入睡用时 (分钟)
+10. wake_up_min: 起床用时 (分钟)
+11. official_interpretation: 华为运动健康的解读与建议 (详细文本)
+12. sleep_start: 入睡时间 (HH:mm)
+13. sleep_end: 醒来时间 (HH:mm)
+14. total_sleep_min: 总睡眠时长 (分钟)
+注意：务必提取完整。只返回纯 JSON 块。"""
 
-            vision_resp = client_v.chat.completions.create(
-                model=v_model,
-                messages=[{"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                    {"type": "text", "text": prompt}
-                ]}],
-                temperature=0.1
-            )
-            raw = vision_resp.choices[0].message.content.strip()
-            if "```" in raw: raw = raw.split("```")[1].replace("json", "").strip()
-            self.sleep_data = json.loads(raw)
-            
+                    vision_resp = client_v.chat.completions.create(
+                        model=v_model,
+                        messages=[{"role": "user", "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                            {"type": "text", "text": prompt}
+                        ]}],
+                        temperature=0.1
+                    )
+                    raw = vision_resp.choices[0].message.content.strip()
+                    if "```" in raw: raw = raw.split("```")[1].replace("json", "").strip()
+                    self.sleep_data = json.loads(raw)
+                    
+                    # 数据校验
+                    if self.validate_data(self.sleep_data):
+                        break # 校验通过，退出重试循环
+                    
+                    if attempt <= max_retries:
+                        self.update_progress(f"⚠️ 提取不完整，正在进行第 {attempt} 次重试...")
+                        time.sleep(1)
+                    else:
+                        self.update_progress("⚠️ 已达到最大重试次数，将使用现有提取结果。")
+                        
+                except Exception as loop_e:
+                    if attempt > max_retries:
+                        raise loop_e
+                    self.update_progress(f"⚠️ 分析出错，正在进行第 {attempt} 次重试... ({loop_e})")
+                    time.sleep(1)
+
             # ── 步骤 2: 定日期并实时同步数据 ──
             target_date = self.sleep_data.get("sleep_date")
             if not target_date or len(target_date) < 8:
@@ -170,18 +209,16 @@ class AIWorker(QThread):
             self.sleep_data['date'] = target_date
             self.update_progress(f"📅 日期: {target_date}，正在拉取数据...")
 
-            # 引入同步与报告生成模块
             import sys
             skill_dir = os.path.join(os.path.dirname(__file__), "document", "skills", "time-management")
             if skill_dir not in sys.path:
                 sys.path.insert(0, skill_dir)
             from generate_full_report import generate_comprehensive_report
 
-            # 核心改进：调用 report 生成时，它内部会自动调用 api 抓取指定日期的 aTimeLogger 数据
             report_path = generate_comprehensive_report(
                 target_date, 
                 injected_sleep_data=self.sleep_data,
-                force_pull=True # 强制实时同步该日期
+                force_pull=True
             )
             
             if report_path and os.path.exists(report_path):
@@ -193,7 +230,6 @@ class AIWorker(QThread):
             # ── 步骤 3: 结果分发 ──
             self.update_progress("✨ 分析完成，正在同步结果...")
             
-            # 如果是从 Web 端发起的，将结果推送回 Web 端
             if self.session_id:
                 try:
                     from sleep_server import broker
