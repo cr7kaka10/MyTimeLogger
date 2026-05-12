@@ -720,7 +720,7 @@ class SleepStatisticsWindow(QWidget):
             ("入睡用时", "fall_asleep_min", " min", "highlight"),
             ("起床用时", "wake_up_min", " min", "highlight"),
             ("清醒次数", "awake_count", " 次", "normal"),
-            ("清醒时长", "awake_min", " min", "normal"),
+            ("清醒时长", "awake_time_min", " min", "normal"),
             ("浅睡", "light_sleep_min", " min", "normal"),
             ("快速眼动", "rem_sleep_min", " min", "normal")
         ]

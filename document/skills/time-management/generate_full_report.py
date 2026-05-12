@@ -49,16 +49,20 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
     
     db = StudyLogger(config) if StudyLogger else None
     
-    # 1. 提取 aTimeLogger 数据 (仅在需要时)
+    # 1. 提取 aTimeLogger 数据
     atimelogger_data = None
-    if include_time_analysis:
-        if db and not force_pull:
+    # 核心改进：只要有睡眠数据注入（正在进行 AI 分析），就必须拉取 aTimeLogger 以计算入睡/起床用时
+    need_atm = include_time_analysis or (injected_sleep_data is not None)
+    
+    if need_atm:
+        if db and not force_pull and include_time_analysis:
             atimelogger_data = db.get_atm_data(date_str)
         
         if not atimelogger_data:
             extractor = AtimeloggerExtractor(config.get('atimelogger', {}))
             atimelogger_data = extractor.extract_daily_data(date_str)
-            if atimelogger_data and db:
+            # 仅在完整模式下才落库保存 aTimeLogger
+            if atimelogger_data and db and include_time_analysis:
                 db.save_atm_data(date_str, atimelogger_data)
     
     # 2. 加载华为健康睡眠数据
@@ -75,6 +79,24 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
         if total_min > 0:
             sleep_data['sleep_cycles'] = round(total_min / 90.0, 2)
         
+        # 补全清醒时长逻辑 (总在床时间 - 夜间睡眠时长)
+        # 2026-05-12 示例: 00:20 -> 07:07 (407 min), 总睡眠 382 min, 则清醒 25 min
+        if not sleep_data.get('awake_time_min') or float(sleep_data.get('awake_time_min')) == 0:
+            try:
+                s_t = sleep_data.get('sleep_start')
+                e_t = sleep_data.get('sleep_end')
+                if s_t and e_t and total_min > 0:
+                    sh, sm = map(int, s_t.split(':'))
+                    eh, em = map(int, e_t.split(':'))
+                    start_total = sh * 60 + sm
+                    end_total = eh * 60 + em
+                    if end_total < start_total: end_total += 24 * 60
+                    in_bed_min = end_total - start_total
+                    awake_calc = max(0, in_bed_min - total_min)
+                    sleep_data['awake_time_min'] = awake_calc
+                    print(f"  [补全] 清醒时长自动修正为: {awake_calc} min")
+            except: pass
+
         parser = ScreenshotParser()
         activities = atimelogger_data.get('activities', []) if atimelogger_data else []
         fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
