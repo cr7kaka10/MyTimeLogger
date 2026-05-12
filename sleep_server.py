@@ -366,6 +366,24 @@ class SleepDataHandler(BaseHTTPRequestHandler):
 class _SignalBridge(QObject):
     image_received = pyqtSignal(str, str) # path, session_id
 
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """自定义多线程服务器，静默处理客户端主动断开产生的报错"""
+    def handle_error(self, request, client_address):
+        import sys
+        import errno
+        exc_type, exc_value, _ = sys.exc_info()
+        
+        # 常见网络中断错误码：10053 (WSAECONNABORTED), 10054 (WSAECONNRESET)
+        stop_signals = (errno.WSAECONNABORTED, errno.WSAECONNRESET, errno.EPIPE)
+        
+        if exc_value and hasattr(exc_value, 'errno') and exc_value.errno in stop_signals:
+            logger.debug(f"SSE/HTTP Connection reset by client {client_address}")
+        elif exc_type and issubclass(exc_type, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            logger.debug(f"SSE/HTTP Client {client_address} closed connection.")
+        else:
+            # 只有真正的程序逻辑错误才会打印 Traceback
+            super().handle_error(request, client_address)
+
 class SleepServer:
     def __init__(self, port=5055):
         self.port = port
@@ -374,8 +392,8 @@ class SleepServer:
 
     def start(self):
         try:
-            # 使用 ThreadingHTTPServer 支持并发处理（解决 SSE 阻塞上传的问题）
-            self.server = ThreadingHTTPServer(("0.0.0.0", self.port), SleepDataHandler)
+            # 使用自定义的 QuietThreadingHTTPServer 屏蔽底层 socket 报错
+            self.server = QuietThreadingHTTPServer(("0.0.0.0", self.port), SleepDataHandler)
             self.server._signal_bridge = self.signal_bridge
             threading.Thread(target=self.server.serve_forever, daemon=True).start()
             logger.info(f"🌙 睡眠服务已启动推送模式 -> http://0.0.0.0:{self.port}")
