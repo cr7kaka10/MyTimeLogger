@@ -818,7 +818,7 @@ class MyTimeLoggerGUI(QWidget):
             self._sleep_statistics_window.raise_()
             self._sleep_statistics_window.activateWindow()
 
-    def _on_sleep_image_uploaded(self, temp_path):
+    def _on_sleep_image_uploaded(self, temp_path, session_id="default"):
         """收到手机上传的截图，确保睡眠窗口已创建并触发分析"""
         if self._sleep_statistics_window is None:
             from sleep_statistics import SleepStatisticsWindow
@@ -829,7 +829,7 @@ class MyTimeLoggerGUI(QWidget):
                 (screen.height() - self._sleep_statistics_window.height()) // 2
             )
         # 手动转发到窗口（因为窗口可能刚创建，没赶上本次信号）
-        self._sleep_statistics_window._on_image_received(temp_path)
+        self._sleep_statistics_window._on_image_received(temp_path, session_id)
 
     def toggle_daily_checklist(self):
         """切换日清单窗口显隐"""
