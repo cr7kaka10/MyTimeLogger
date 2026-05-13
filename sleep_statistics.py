@@ -160,8 +160,9 @@ class AIWorker(QThread):
                 missing.append(key)
         
         if missing:
-            print(f"  [校验失败] 缺失核心原始指标: {', '.join(missing)}")
-            return False
+            msg = f"缺失核心原始指标: {', '.join(missing)}"
+            print(f"  [校验失败] {msg}")
+            return False, msg
             
         # ====== 核心数学校验 (v6.2) ======
         try:
@@ -173,13 +174,14 @@ class AIWorker(QThread):
             # 数学恒等式：总时长 = 深睡 + 浅睡 + REM (必须绝对相等)
             sum_stages = deep + light + rem
             if total != sum_stages:
-                print(f"  [校验失败] 数学逻辑错误: 总时长({total}) != 阶段之和({sum_stages}) [深{deep}+浅{light}+REM{rem}]")
-                return False
+                msg = f"数学校验失败: 总时长({total}) != 阶段之和({sum_stages}) [深{deep}+浅{light}+REM{rem}]"
+                print(f"  [校验失败] {msg}")
+                return False, msg
             print(f"  [校验通过] 数学逻辑自洽: {total} == {sum_stages}")
         except Exception as e:
             print(f"  [校验跳过] 数学检查异常: {e}")
             
-        return True
+        return True, ""
 
         # 检查额外指标是否大部分提取成功 (允许部分缺失但不能全是0)
         extra = ["light_sleep_min", "rem_sleep_min", "awake_count", "sleep_continuity", "breathing_score"]
@@ -206,11 +208,22 @@ class AIWorker(QThread):
         # 纯数字类字段
         num_fields = [
             "sleep_score", "sleep_cycles", "awake_count", 
-            "deep_sleep_ratio", "sleep_continuity", "breathing_score"
+            "deep_sleep_ratio", "light_sleep_ratio", "rem_sleep_ratio", 
+            "sleep_continuity", "breathing_score"
         ]
         for f in num_fields:
             if f in data: data[f] = clean_num(data[f])
             
+        # 自动补算缺失的比例
+        t = data.get("total_sleep_min", 0)
+        if t and t > 0:
+            if data.get("deep_sleep_ratio") is None and data.get("deep_sleep_min") is not None:
+                data["deep_sleep_ratio"] = round(to_min(data["deep_sleep_min"]) / t * 100)
+            if data.get("light_sleep_ratio") is None and data.get("light_sleep_min") is not None:
+                data["light_sleep_ratio"] = round(to_min(data["light_sleep_min"]) / t * 100)
+            if data.get("rem_sleep_ratio") is None and data.get("rem_sleep_min") is not None:
+                data["rem_sleep_ratio"] = round(to_min(data["rem_sleep_min"]) / t * 100)
+                
         return data
 
     def run(self):
@@ -414,10 +427,14 @@ class AIWorker(QThread):
                             raise ValueError(f"模型输出不符合 JSON 格式，请检查模型稳定性。输出内容: {raw[:50]}...")
                         
                         # 数据校验
-                        if self.validate_data(self.sleep_data):
+                        is_valid, reason = self.validate_data(self.sleep_data)
+                        if is_valid:
                             # 记录模型名称
                             self.sleep_data['extracted_by'] = v_model
                             break # 校验通过，退出重试循环
+                        else:
+                            print(f"  [后台提示] 模型 {v_model} 提取数据不完整/不自洽: {reason}")
+                            self.update_progress(f"⚠️ {v_model} 识别异常: {reason}")
                         
                         if attempt < total_attempts:
                             self.update_progress(f"⚠️ 提取不完整，正在进行第 {attempt} 次重试...")

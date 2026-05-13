@@ -233,6 +233,8 @@ class StudyLogger:
                         sleep_start TEXT,
                         sleep_end TEXT,
                         deep_sleep_ratio INTEGER,
+                        light_sleep_ratio INTEGER,
+                        rem_sleep_ratio INTEGER,
                         sleep_continuity INTEGER,
                         breathing_score INTEGER,
                         sleep_cycles FLOAT,
@@ -1640,7 +1642,8 @@ class StudyLogger:
                 data.get('deep_sleep_min'), data.get('light_sleep_min'),
                 data.get('rem_sleep_min'), data.get('awake_count'),
                 data.get('sleep_start'), data.get('sleep_end'),
-                data.get('deep_sleep_ratio'), data.get('sleep_continuity'),
+                data.get('deep_sleep_ratio'), data.get('light_sleep_ratio'),
+                data.get('rem_sleep_ratio'), data.get('sleep_continuity'),
                 data.get('breathing_score'), data.get('sleep_cycles'),
                 data.get('awake_min'), data.get('fall_asleep_min'),
                 data.get('wake_up_min'), data.get('analysis_report'),
@@ -1652,15 +1655,19 @@ class StudyLogger:
                     INSERT INTO huawei_sleep_data (
                         date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
+                        light_sleep_ratio, rem_sleep_ratio,
                         sleep_continuity, breathing_score, sleep_cycles, awake_min, 
                         fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE 
                         sleep_score=VALUES(sleep_score), total_sleep_min=VALUES(total_sleep_min),
                         deep_sleep_min=VALUES(deep_sleep_min), light_sleep_min=VALUES(light_sleep_min),
                         rem_sleep_min=VALUES(rem_sleep_min), awake_count=VALUES(awake_count),
                         sleep_start=VALUES(sleep_start), sleep_end=VALUES(sleep_end),
-                        deep_sleep_ratio=VALUES(deep_sleep_ratio), sleep_continuity=VALUES(sleep_continuity),
+                        deep_sleep_ratio=VALUES(deep_sleep_ratio), 
+                        light_sleep_ratio=VALUES(light_sleep_ratio),
+                        rem_sleep_ratio=VALUES(rem_sleep_ratio),
+                        sleep_continuity=VALUES(sleep_continuity),
                         breathing_score=VALUES(breathing_score), sleep_cycles=VALUES(sleep_cycles),
                         awake_min=VALUES(awake_min), fall_asleep_min=VALUES(fall_asleep_min),
                         wake_up_min=VALUES(wake_up_min), analysis_report=VALUES(analysis_report),
@@ -1672,15 +1679,19 @@ class StudyLogger:
                     INSERT INTO huawei_sleep_data (
                         date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, 
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
+                        light_sleep_ratio, rem_sleep_ratio,
                         sleep_continuity, breathing_score, sleep_cycles, awake_min, 
                         fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(date) DO UPDATE SET 
                         sleep_score=excluded.sleep_score, total_sleep_min=excluded.total_sleep_min,
                         deep_sleep_min=excluded.deep_sleep_min, light_sleep_min=excluded.light_sleep_min,
                         rem_sleep_min=excluded.rem_sleep_min, awake_count=excluded.awake_count,
                         sleep_start=excluded.sleep_start, sleep_end=excluded.sleep_end,
-                        deep_sleep_ratio=excluded.deep_sleep_ratio, sleep_continuity=excluded.sleep_continuity,
+                        deep_sleep_ratio=excluded.deep_sleep_ratio, 
+                        light_sleep_ratio=excluded.light_sleep_ratio,
+                        rem_sleep_ratio=excluded.rem_sleep_ratio,
+                        sleep_continuity=excluded.sleep_continuity,
                         breathing_score=excluded.breathing_score, sleep_cycles=excluded.sleep_cycles,
                         awake_min=excluded.awake_min, fall_asleep_min=excluded.fall_asleep_min,
                         wake_up_min=excluded.wake_up_min, analysis_report=excluded.analysis_report,
@@ -1823,6 +1834,7 @@ class StudyLogger:
             cols = (
                 "date, sleep_score, total_sleep_min, deep_sleep_min, light_sleep_min, "
                 "rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, "
+                "light_sleep_ratio, rem_sleep_ratio, "
                 "sleep_continuity, breathing_score, sleep_cycles, awake_min, "
                 "fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at"
             )
@@ -1847,15 +1859,17 @@ class StudyLogger:
                 "sleep_start": row[7],
                 "sleep_end": row[8],
                 "deep_sleep_ratio": row[9],
-                "sleep_continuity": row[10],
-                "breathing_score": row[11],
-                "sleep_cycles": row[12],
-                "awake_min": row[13],
-                "fall_asleep_min": row[14],
-                "wake_up_min": row[15],
-                "analysis_report": row[16],
-                "sleep_reflection": row[17],
-                "updated_at": row[18]
+                "light_sleep_ratio": row[10],
+                "rem_sleep_ratio": row[11],
+                "sleep_continuity": row[12],
+                "breathing_score": row[13],
+                "sleep_cycles": row[14],
+                "awake_min": row[15],
+                "fall_asleep_min": row[16],
+                "wake_up_min": row[17],
+                "analysis_report": row[18],
+                "sleep_reflection": row[19],
+                "updated_at": row[20]
             }
         except Exception as e:
             logging.error(f"获取华为睡眠数据失败: {e}")
