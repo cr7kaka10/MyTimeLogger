@@ -170,12 +170,12 @@ class AIWorker(QThread):
             light = to_min(data.get("light_sleep_min", 0))
             rem = to_min(data.get("rem_sleep_min", 0))
             
-            # 数学恒等式：总时长 = 深睡 + 浅睡 + REM (允许 2 分钟以内的舍入误差)
+            # 数学恒等式：总时长 = 深睡 + 浅睡 + REM (必须绝对相等)
             sum_stages = deep + light + rem
-            if abs(total - sum_stages) > 2:
+            if total != sum_stages:
                 print(f"  [校验失败] 数学逻辑错误: 总时长({total}) != 阶段之和({sum_stages}) [深{deep}+浅{light}+REM{rem}]")
                 return False
-            print(f"  [校验通过] 数学逻辑自洽: {total} ≈ {sum_stages}")
+            print(f"  [校验通过] 数学逻辑自洽: {total} == {sum_stages}")
         except Exception as e:
             print(f"  [校验跳过] 数学检查异常: {e}")
             
