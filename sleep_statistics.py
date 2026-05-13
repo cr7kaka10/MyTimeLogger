@@ -1110,12 +1110,12 @@ class SleepStatisticsWindow(QWidget):
         self.full_btn.clicked.connect(lambda: self._run_ai_analysis(include_time_analysis=True))
         btn_row.addWidget(self.full_btn)
 
-        self.refresh_btn = QPushButton("🔄 刷新")
+        self.refresh_btn = QPushButton("🔄 强制刷新")
         self.refresh_btn.setFixedHeight(36)
-        self.refresh_btn.setFixedWidth(60)
+        self.refresh_btn.setFixedWidth(85)
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.setStyleSheet(f"""
-            QPushButton {{ background: #D8DEE9; color: {TEXT_PRIMARY}; border-radius: 6px; font-size: 12px; }}
+            QPushButton {{ background: #D8DEE9; color: {TEXT_PRIMARY}; border-radius: 6px; font-size: 12px; text-align: center; }}
             QPushButton:hover {{ background: #C4CDD9; }}
         """)
         self.refresh_btn.clicked.connect(self.force_refresh_data)
@@ -1340,9 +1340,9 @@ class SleepStatisticsWindow(QWidget):
         self._ai_worker.error.connect(self._on_ai_error)
         # 无论成功失败都恢复按钮
         self._ai_worker.finished.connect(lambda: self.refresh_btn.setEnabled(True))
-        self._ai_worker.finished.connect(lambda: self.refresh_btn.setText("🔄 刷新"))
+        self._ai_worker.finished.connect(lambda: self.refresh_btn.setText("🔄 强制刷新"))
         self._ai_worker.error.connect(lambda: self.refresh_btn.setEnabled(True))
-        self._ai_worker.error.connect(lambda: self.refresh_btn.setText("🔄 刷新"))
+        self._ai_worker.error.connect(lambda: self.refresh_btn.setText("🔄 强制刷新"))
         self._ai_worker.start()
 
     def _update_ui_with_data(self, data):
@@ -1642,6 +1642,8 @@ class SleepStatisticsWindow(QWidget):
         self.full_btn.setEnabled(True)
         self.sleep_btn.setText("🌙 睡眠分析")
         self.full_btn.setText("📑 完整分析")
+        self.refresh_btn.setEnabled(True)
+        self.refresh_btn.setText("🔄 强制刷新")
         
         if not sleep_data: return
         
@@ -1709,6 +1711,8 @@ class SleepStatisticsWindow(QWidget):
         self.full_btn.setEnabled(True)
         self.sleep_btn.setText("🌙 睡眠分析")
         self.full_btn.setText("📑 完整分析")
+        self.refresh_btn.setEnabled(True)
+        self.refresh_btn.setText("🔄 强制刷新")
         # 失败时也尝试清理临时文件
         self._cleanup_all_pending_images()
 
