@@ -163,8 +163,22 @@ class AIWorker(QThread):
             print(f"  [校验失败] 缺失核心原始指标: {', '.join(missing)}")
             return False
             
-        # ====== 逻辑自洽性检查 (移除，遵循所见即所得) ======
-        # 不再通过数学公式反推原始数据，防止 AI 幻觉
+        # ====== 核心数学校验 (v6.2) ======
+        try:
+            total = to_min(data.get("total_sleep_min", 0))
+            deep = to_min(data.get("deep_sleep_min", 0))
+            light = to_min(data.get("light_sleep_min", 0))
+            rem = to_min(data.get("rem_sleep_min", 0))
+            
+            # 数学恒等式：总时长 = 深睡 + 浅睡 + REM (允许 2 分钟以内的舍入误差)
+            sum_stages = deep + light + rem
+            if abs(total - sum_stages) > 2:
+                print(f"  [校验失败] 数学逻辑错误: 总时长({total}) != 阶段之和({sum_stages}) [深{deep}+浅{light}+REM{rem}]")
+                return False
+            print(f"  [校验通过] 数学逻辑自洽: {total} ≈ {sum_stages}")
+        except Exception as e:
+            print(f"  [校验跳过] 数学检查异常: {e}")
+            
         return True
 
         # 检查额外指标是否大部分提取成功 (允许部分缺失但不能全是0)
@@ -321,7 +335,8 @@ class AIWorker(QThread):
                                 "14. breathing_score (呼吸质量)\n"
                                 "15. analysis_report (解读与建议文本)\n\n"
                                 "注意：严禁提取或计算 sleep_cycles, awake_min, fall_asleep_min, wake_up_min，这些将由系统公式处理。\n"
-                                "必须确保 total_sleep_min 对应截图中的'夜间睡眠'数值，不做任何加减校验。"
+                                "必须确保 total_sleep_min 对应截图中的'夜间睡眠'数值。\n"
+                                "重要：必须核对数值，确保 total_sleep_min = deep_sleep_min + light_sleep_min + rem_sleep_min。"
                             )
                         
                         if hint_year:
@@ -1279,10 +1294,21 @@ class SleepStatisticsWindow(QWidget):
         self.trend_chart.set_metric(key)
 
     def force_refresh_data(self):
-        """强制重新拉取网站数据并更新报告"""
+        """强制全流程更新：支持重走 OCR 识别和数据同步"""
         date_str = self.current_date.strftime("%Y-%m-%d")
         
-        # 1. 尝试从数据库获取现有的睡眠基础数据
+        # 1. 寻找已归档的截图 (真理复核)
+        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "attachments")
+        archived_img = os.path.join(attachments_dir, f"sleep_{date_str}.jpg")
+        
+        if os.path.exists(archived_img):
+            logger.info(f"🔄 发现归档截图: {archived_img}，将触发全流程 OCR 重解析...")
+            self._selected_image = archived_img
+            self._run_ai_analysis(include_time_analysis=True, force_sync=True)
+            return
+
+        # 2. 如果没图，则回退到原有的仅时间同步逻辑
+        # 尝试从数据库获取现有的睡眠基础数据
         sleep_data = self.db.get_huawei_sleep_data(date_str)
         
         # 还原 analysis 结构
@@ -1291,23 +1317,15 @@ class SleepStatisticsWindow(QWidget):
             sleep_data["analysis"] = {"summary": report_content}
         
         if not sleep_data:
-            # 如果数据库没有，再看看有没有旧 JSON
-            data_path = resource_path(os.path.join("skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
-            if os.path.exists(data_path):
-                try:
-                    with open(data_path, 'r', encoding='utf-8') as f:
-                        sleep_data = json.load(f)
-                except: pass
-        
-        if not sleep_data:
-            QMessageBox.information(self, "无法刷新", "该日期暂无睡眠基础数据，请先上传截图进行 AI 分析。")
+            QMessageBox.information(self, "无法刷新", "该日期暂无归档截图或数据库记录，无法进行强制更新。")
             return
 
-        # 2. 启动 AI Worker 进行强制同步
-        self.ai_btn.setEnabled(False)
+        # 3. 启动线程进行强制同步 (无图模式)
+        self.sleep_btn.setEnabled(False)
+        self.full_btn.setEnabled(False)
         self.refresh_btn.setEnabled(False)
         self.refresh_btn.setText("⏳ 同步中...")
-        self.analysis_text.setText("🔄 正在强制同步 aTimeLogger 网站最新数据并重新生成报告...")
+        self.analysis_text.setText("🔄 正在强制同步 aTimeLogger 最新数据并重新分析报告...")
 
         ai_cfg = self.config.get("ai_model_config", {})
         self._ai_worker = AIWorker(
