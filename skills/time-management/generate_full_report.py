@@ -10,6 +10,8 @@ import json
 from datetime import datetime, timedelta
 from collections import defaultdict
 from pathlib import Path
+import httpx
+from openai import OpenAI
 
 def format_val(v):
     if v is None: return "N/A"
@@ -79,29 +81,42 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
         if total_min > 0:
             sleep_data['sleep_cycles'] = round(total_min / 90.0, 2)
         
-        # 补全清醒时长逻辑 (总在床时间 - 夜间睡眠时长)
-        # 2026-05-12 示例: 00:20 -> 07:07 (407 min), 总睡眠 382 min, 则清醒 25 min
-        if not sleep_data.get('awake_time_min') or float(sleep_data.get('awake_time_min')) == 0:
-            try:
-                s_t = sleep_data.get('sleep_start')
-                e_t = sleep_data.get('sleep_end')
-                if s_t and e_t and total_min > 0:
-                    sh, sm = map(int, s_t.split(':'))
-                    eh, em = map(int, e_t.split(':'))
-                    start_total = sh * 60 + sm
-                    end_total = eh * 60 + em
-                    if end_total < start_total: end_total += 24 * 60
-                    in_bed_min = end_total - start_total
-                    awake_calc = max(0, in_bed_min - total_min)
-                    sleep_data['awake_time_min'] = awake_calc
-                    print(f"  [补全] 清醒时长自动修正为: {awake_calc} min")
-            except: pass
+
 
         parser = ScreenshotParser()
         activities = atimelogger_data.get('activities', []) if atimelogger_data else []
         fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
         sleep_data['fall_asleep_min'] = round(float(fall_asleep_min), 2)
         sleep_data['wake_up_min'] = round(float(wake_up_min), 2)
+
+        # ====== 核心步骤: 数据计算 (Data Calculation) ======
+        # 强制按公式计算派生指标，确保逻辑一致
+        try:
+            print("[数据计算] 正在根据原始数据计算派生指标...")
+            s_t = sleep_data.get('sleep_start')
+            e_t = sleep_data.get('sleep_end')
+            t_min = float(sleep_data.get('total_sleep_min', 0))
+            
+            if s_t and e_t:
+                sh, sm = map(int, s_t.split(':'))
+                eh, em = map(int, e_t.split(':'))
+                start_total = sh * 60 + sm
+                end_total = eh * 60 + em
+                if end_total < start_total: 
+                    end_total += 24 * 60
+                
+                # 1. 总在床时长
+                in_bed_min = end_total - start_total
+                # 2. 清醒时长 = 总在床时长 - 夜间睡眠时长 (total_sleep_min)
+                sleep_data['awake_min'] = max(0, in_bed_min - t_min)
+                
+            # 3. 睡眠周期 = 夜间睡眠时长 / 90
+            if t_min > 0:
+                sleep_data['sleep_cycles'] = round(t_min / 90.0, 2)
+                
+        except Exception as e:
+            print(f"  [数据计算] 异常: {e}")
+        # ====================================================
 
     # 3. 分析
     combined_data = combine_data(atimelogger_data, sleep_data, date_str)
@@ -137,18 +152,91 @@ def combine_data(atimelogger_data, sleep_data, date_str):
     }
 
 def perform_deep_analysis(data):
-    summary = data.get('summary', {})
-    activity_breakdown = summary.get('activity_breakdown', {})
+    """
+    根据 SKILL.md 的指导思想，调用文本大模型进行深度复盘。
+    如果没有配置 AI，则回退到基础统计逻辑。
+    """
+    import json
+    import os
+    
+    # 1. 尝试加载 AI 配置
+    config = {}
+    try:
+        # 定位到根目录的 config.json
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(os.path.dirname(current_dir))
+        cfg_path = os.path.join(root_dir, "config.json")
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                config = json.load(f).get("ai_model_config", {})
+    except: pass
+    
+    # 2. 从 SKILL.md 读取分析指令
+    prompt_tpl = ""
+    try:
+        skill_path = os.path.join(os.path.dirname(__file__), "SKILL.md")
+        if os.path.exists(skill_path):
+            with open(skill_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                if "```analysis_prompt" in content:
+                    prompt_tpl = content.split("```analysis_prompt")[1].split("```")[0].strip()
+    except: pass
+    
+    # 3. 如果有 AI 配置且有提示词，发起请求
+    api_key = config.get("text_api_key")
+    if api_key and prompt_tpl:
+        try:
+            base_url = config.get("text_base_url")
+            model = config.get("text_model", "glm-4-flash")
+            
+            # 准备脱敏数据
+            input_data = {
+                "sleep_metrics": data.get("sleep", {}),
+                "time_stats": data.get("summary", {})
+            }
+            
+            client = OpenAI(api_key=api_key, base_url=base_url, http_client=httpx.Client(verify=False))
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": prompt_tpl},
+                    {"role": "user", "content": f"请基于以下数据生成分析结果：\n{json.dumps(input_data, ensure_ascii=False)}"}
+                ],
+                temperature=0.7,
+                # 某些模型支持 json_object，不支持的也会因为 prompt 要求返回 JSON
+            )
+            
+            content = resp.choices[0].message.content
+            if not content:
+                raise Exception("大模型返回分析内容为空")
+            raw_content = content.strip()
+            # 清理可能的 markdown 标签
+            if "```json" in raw_content:
+                raw_content = raw_content.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw_content:
+                raw_content = raw_content.split("```")[1].split("```")[0].strip()
+                
+            result = json.loads(raw_content)
+            print(f"✅ AI 深度分析完成 (Model: {model})")
+            return result
+        except Exception as e:
+            print(f"⚠️ AI 分析调用失败，回退到基础逻辑: {e}")
+
+    # 4. 基础兜底逻辑 (计算得分)
+    activity_breakdown = data.get('summary', {}).get('activity_breakdown', {})
     productive_hrs = activity_breakdown.get('生产', 0) / 3600
+    sleep_score = data.get('sleep', {}).get('sleep_score', 0)
     
     score = 60
     if productive_hrs > 3: score += 20
-    if data.get('sleep', {}).get('sleep_score', 0) > 80: score += 20
+    if sleep_score > 80: score += 20
     
     return {
-        'summary': {'efficiency_score': min(100, score)},
-        'insights': ["保持专注是提升效率的关键。"],
-        'recommendations': ["建议睡前 1 小时放下手机。"]
+        'efficiency_score': min(100, score),
+        'summary': "今天表现不错，继续保持！" if score >= 80 else "还有提升空间，加油！",
+        'insights': ["保持专注是提升效率的关键。", "合理的睡眠能显著提升次日状态。"],
+        'recommendations': ["建议睡前 1 小时放下手机。", "明天尝试增加一个番茄钟的生产时间。"],
+        'issues': ["睡眠时长略显不足"] if sleep_score < 70 else []
     }
 
 def generate_full_report_file(data, analysis, date_str, include_time_analysis=True):
@@ -157,10 +245,18 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
     summary = data.get('summary', {})
     activities = data.get('atimelogger', {}).get('activities', []) if data.get('atimelogger') else []
     
+    model_info = sleep.get('extracted_by', '未知模型')
     lines = [
         f"# 📔 深度复盘报告 - {date_str}",
         "",
-        f"> **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | **状态**: `{'全天复盘' if include_time_analysis else '晨间速报'}`",
+        f"> **生成时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | **解析模型**: `{model_info}`",
+        "",
+        "---",
+        "",
+        "## 📈 [复盘摘要]",
+        "",
+        f"**效率评分**: `{analysis.get('efficiency_score', '--')}` / 100",
+        f"**今日总结**: {analysis.get('summary', '数据已汇总')}",
         "",
         "---",
         "",
@@ -175,10 +271,15 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             "| 指标 | 详细数据 | 状态评估 |",
             "| :--- | :--- | :--- |",
             f"| 📊 **睡眠评分** | {sleep.get('sleep_score', '--')} 分 | {'优秀' if int(sleep.get('sleep_score',0)) >= 85 else '良好'} |",
+            f"| 🕒 **总时长** | {format_val(float(sleep.get('total_sleep_min', 0))/60)} 小时 | {'✅ 达标' if float(sleep.get('total_sleep_min',0)) >= 420 else '⚠️ 偏少'} |",
             f"| 🔄 **睡眠周期** | {format_val(sleep.get('sleep_cycles', 0))} 个 | {'✅ 达标' if float(sleep.get('sleep_cycles',0)) >= 5 else '⚠️ 略少'} |",
-            f"| 💤 **深睡时长** | {sleep.get('deep_sleep_min', '--')} min | - |",
-            f"| 🌙 **入睡用时** | {sleep.get('fall_asleep_min', '--')} min | {'✅ 极快' if float(sleep.get('fall_asleep_min',0)) < 15 else '正常'} |",
+            f"| 💤 **深睡时长** | {sleep.get('deep_sleep_min', '--')} min | {'参考: 60-120' if float(sleep.get('deep_sleep_min',0)) > 0 else '-'} |",
+            f"| 📈 **深睡比例** | {sleep.get('deep_sleep_ratio', '--')} % | {'20%-60% 达标' if sleep.get('deep_sleep_ratio') else '-'} |",
+            f"| 🔗 **睡眠连续性** | {sleep.get('sleep_continuity', '--')} 分 | {'> 70 分' if sleep.get('sleep_continuity') else '-'} |",
+            f"| 🫁 **呼吸质量** | {sleep.get('breathing_score', '--')} 分 | {'> 90 分' if sleep.get('breathing_score') else '-'} |",
+            f"| 🌙 **入睡用时** | {sleep.get('fall_asleep_min', '--')} min | {'✅ 极快' if float(sleep.get('fall_asleep_min',0)) < 20 else '正常'} |",
             f"| ☀️ **起床用时** | {sleep.get('wake_up_min', '--')} min | {'✅ 迅速' if float(sleep.get('wake_up_min',0)) < 15 else '赖床'} |",
+            f"| ☕ **清醒时长** | {sleep.get('awake_min', '--')} min | {'参考: < 15' if float(sleep.get('awake_min',0)) > 0 else '-'} |",
             f"| 📅 **记录日期** | {date_str} | - |",
             "",
             "### 1.2 睡眠自我评价",
@@ -187,10 +288,12 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
         refl = sleep.get('sleep_reflection', '').strip()
         lines.append(f"> {refl if refl else '*今日未记录主观评价*'}")
         
+        interp = sleep.get('analysis_report', '').strip()
+        
         lines.extend([
             "",
             "### 1.3 华为健康建议",
-            f"> {sleep.get('official_interpretation', '暂无官方建议')}",
+            f"> {interp if interp else '暂无官方建议'}",
             "",
         ])
     else:
@@ -232,15 +335,35 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             dur = f"{act.get('duration', 0)//3600:02d}:{(act.get('duration', 0)%3600)//60:02d}"
             lines.append(f"| {i} | {act.get('type')} | {st} - {et} | {dur} | {act.get('comment', '')} |")
 
+    # AI 深度建议 (Insight & Recommendations)
     lines.extend([
         "",
         "---",
         "",
-        "## 💡 深度建议",
+        "## 💡 [AI 深度洞察]",
         "",
     ])
-    for insight in analysis.get('insights', []): lines.append(f"- {insight}")
-    for rec in analysis.get('recommendations', []): lines.append(f"- {rec}")
+    for insight in analysis.get('insights', []):
+        lines.append(f"**{insight}**" if insight.startswith('⚠️') else f"- {insight}")
+        
+    lines.extend([
+        "",
+        "### 🎯 行动建议",
+        "",
+    ])
+    for rec in analysis.get('recommendations', []):
+        lines.append(f"- {rec}")
+
+    # 增加问题点提示
+    issues = analysis.get('issues', [])
+    if issues:
+        lines.extend([
+            "",
+            "### ⚠️ 核心问题点",
+            "",
+        ])
+        for issue in issues:
+            lines.append(f"- {issue}")
 
     lines.append(f"\n\n---\n*Generated by MyTimeLogger v4.2*")
 

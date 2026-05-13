@@ -5,15 +5,56 @@ import base64
 import logging
 import shutil
 import traceback
+import time
+import httpx
+from openai import OpenAI
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
-    QPushButton, QFrame, QStackedWidget, QGridLayout,
+    QPushButton, QCalendarWidget, QDateEdit, QDateTimeEdit, QDialog, QFrame, QGridLayout,
     QLineEdit, QTextEdit, QTabWidget, QGraphicsOpacityEffect,
     QMessageBox, QFileDialog, QSplitter
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QThread, QRectF, QPointF
 from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QBrush, QLinearGradient, QPainterPath
+import re
+
+# ==================== 通用工具函数 ====================
+def to_min(val):
+    """将各种格式的时间字符串或数值转换为分钟数"""
+    if val is None or val == "": return 0
+    if isinstance(val, (int, float)): return val
+    s = str(val).lower()
+    # 处理 "1小时20分", "1h 20m" 等
+    h_match = re.search(r'(\d+)\s*(?:h|小时|时)', s)
+    m_match = re.search(r'(\d+)\s*(?:m|分钟|分)', s)
+    total = 0
+    if h_match: total += int(h_match.group(1)) * 60
+    if m_match: total += int(m_match.group(1))
+    if total > 0: return total
+    # 纯数字字符串 (处理 "80min", "约25" 等)
+    try: 
+        clean_s = re.sub(r'[^\d.]', '', s)
+        return float(clean_s) if clean_s else 0
+    except: return 0
+
+def clean_num(val):
+    """提取字符串中的数字"""
+    if val is None or val == "": return 0
+    if isinstance(val, (int, float)): return val
+    try: 
+        clean_s = re.sub(r'[^\d.]', '', str(val))
+        return float(clean_s) if clean_s else 0
+    except: return 0
+
+def format_val(v):
+    """格式化数值显示，去除多余的 .0"""
+    if v is None: return ""
+    try:
+        fv = float(v)
+        if fv == int(fv): return str(int(fv))
+        return f"{fv:.1f}"
+    except: return str(v)
 
 from config import save_config
 from utils import resource_path
@@ -35,6 +76,7 @@ CST = timezone(timedelta(hours=8))
 
 def clean_url(url):
     """自动处理用户填写的 URL，确保其符合 OpenAI SDK 要求（不含 /chat/completions）"""
+    if not url or not isinstance(url, str): return ""
     url = url.strip().rstrip("/")
     if url.endswith("/chat/completions"):
         url = url[:-len("/chat/completions")].rstrip("/")
@@ -62,8 +104,8 @@ class AITestWorker(QThread):
             test_content = "hi"
             messages = [{"role": "user", "content": test_content}]
             if self.is_vision:
-                # 视觉模型测试：传一个极小的透明像素 base64 以验证视觉能力
-                pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                # 视觉模型测试：传一个 64x64 的黑色块图片，以验证视觉能力（解决 1x1 像素过小导致某些模型报错的问题）
+                pixel = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH5gYKEi8yN9iXFAAAACpJREFUeNrtwTEBAAAAwiD7p14HbAAAAAAAAAAAAAAAAAAAAAAAAAAAALgB9VAAAT67988AAAAASUVORK5CYII="
                 messages[0]["content"] = [
                     {"type": "text", "text": "hi"},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{pixel}"}}
@@ -85,7 +127,7 @@ class AIWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None, session_id=None):
+    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None, session_id=None, include_time_analysis=True):
         super().__init__()
         self.ai_cfg = ai_cfg
         self.image_path = image_path
@@ -93,6 +135,7 @@ class AIWorker(QThread):
         self.force_pull = force_pull
         self.date_str = date_str
         self.session_id = session_id # 用于 SSE 推送
+        self.include_time_analysis = include_time_analysis
 
     def update_progress(self, msg):
         """同时更新本地 UI 和 Web 推送"""
@@ -103,119 +146,279 @@ class AIWorker(QThread):
                 broker.push(self.session_id, {"status": "progress", "msg": msg})
             except: pass
 
-    def validate_data(self, data):
-        """校验华为睡眠数据完整性"""
-        required = ["sleep_score", "deep_sleep_min", "sleep_cycles"]
+    @staticmethod
+    def validate_data(data):
+        """校验华为睡眠数据完整性 (仅校验 AI 提取的原始数据)"""
+        # 核心原始指标：评分、深睡、深睡比例、入睡/醒来时刻、总时长
+        # 注意：sleep_cycles, awake_min, fall_asleep_min, wake_up_min 是后续计算出来的，不在此校验
+        required = ["sleep_score", "deep_sleep_min", "deep_sleep_ratio", "sleep_start", "sleep_end", "total_sleep_min"]
+        missing = []
         for key in required:
             val = data.get(key)
-            if val is None or (isinstance(val, (int, float)) and val <= 0):
-                return False
+            # 允许 0，但不允许 None 或空字符串
+            if val is None or val == "":
+                missing.append(key)
+        
+        if missing:
+            print(f"  [校验失败] 缺失核心原始指标: {', '.join(missing)}")
+            return False
+            
+        # ====== 逻辑自洽性检查 (移除，遵循所见即所得) ======
+        # 不再通过数学公式反推原始数据，防止 AI 幻觉
+        return True
+
         # 检查额外指标是否大部分提取成功 (允许部分缺失但不能全是0)
-        extra = ["light_sleep_min", "rem_sleep_min", "awake_count"]
+        extra = ["light_sleep_min", "rem_sleep_min", "awake_count", "sleep_continuity", "breathing_score"]
         extracted_count = sum(1 for k in extra if data.get(k) and data.get(k) > 0)
-        return extracted_count >= 1
+        if extracted_count < 1:
+            print(f"  [校验失败] 补充指标全部缺失")
+            return False
+        return True
+
+    def normalize_data(self, data):
+        """对 AI 返回的原始数据进行‘填坑’和归一化处理"""
+        if not data or not isinstance(data, dict): return data
+        
+        # 时长类字段
+
+        # 时长类字段
+        time_fields = [
+            "deep_sleep_min", "light_sleep_min", "rem_sleep_min", 
+            "awake_min", "fall_asleep_min", "wake_up_min", "total_sleep_min"
+        ]
+        for f in time_fields:
+            if f in data: data[f] = to_min(data[f])
+            
+        # 纯数字类字段
+        num_fields = [
+            "sleep_score", "sleep_cycles", "awake_count", 
+            "deep_sleep_ratio", "sleep_continuity", "breathing_score"
+        ]
+        for f in num_fields:
+            if f in data: data[f] = clean_num(data[f])
+            
+        return data
 
     def run(self):
         max_retries = 2
-        attempt = 0
+        total_attempts = 6
+        import random
         
         try:
-            while attempt <= max_retries:
-                attempt += 1
-                try:
-                    from openai import OpenAI
-                    import time
-                    
-                    # ── 步骤 1: 视觉解析 ──
-                    if not self.image_path or not os.path.exists(self.image_path):
-                        self.error.emit("❌ 未找到图片文件。")
-                        return
-
-                    msg_prefix = f"📸 正在解析截图 ({attempt}/{max_retries+1})..." if attempt > 1 else "📸 正在解析截图内容..."
-                    self.update_progress(msg_prefix)
-                    
-                    v_url = clean_url(self.ai_cfg.get("vision_base_url", ""))
-                    v_key = self.ai_cfg.get("vision_api_key", "")
-                    v_model = self.ai_cfg.get("vision_model", "glm-4v-flash")
-                    
-                    import httpx
-                    # 关键改进：针对国内网络不稳，使用自定义客户端并禁用 SSL 强校验，增加超时至 60s
-                    http_client = httpx.Client(
-                        verify=False, 
-                        timeout=httpx.Timeout(60.0, connect=10.0),
-                        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-                    )
-                    client_v = OpenAI(api_key=v_key, base_url=v_url, http_client=http_client)
-                    
-                    # 图片预处理
-                    final_img_path = self.image_path
-                    temp_img_path = None
+            # ── 步骤 0: 判断是否需要进行视觉解析 ──
+            if not self.image_path or not os.path.exists(self.image_path):
+                if self.sleep_data:
+                    self.update_progress("✅ 检测到已有睡眠数据，跳过识别环节...")
+                else:
+                    self.error.emit("❌ 未找到截图文件，且数据库中无今日数据。")
+                    return
+            else:
+                # ── 步骤 1: 视觉解析循环 ──
+                for attempt in range(1, total_attempts + 1):
                     try:
-                        from PIL import Image
-                        with Image.open(self.image_path) as img:
-                            w, h = img.size
-                            if h > 2048:
-                                new_h = 2048
-                                new_w = int(w * (new_h / h))
-                                img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                                temp_img_path = self.image_path + ".v.jpg"
-                                img.convert("RGB").save(temp_img_path, "JPEG", quality=90)
-                                final_img_path = temp_img_path
-                    except: pass
-
-                    with open(final_img_path, "rb") as f:
-                        img_b64 = base64.b64encode(f.read()).decode()
-                    if temp_img_path and os.path.exists(temp_img_path): os.remove(temp_img_path)
-
-                    # 视觉 Prompt (V4.2 完整版)
-                    prompt = """提取以下字段并以 JSON 返回：
-1. sleep_date: 截图中的日期 (YYYY-MM-DD)
-2. sleep_score: 睡眠得分 (整数)
-3. sleep_cycles: 睡眠周期个数 (数字)
-4. deep_sleep_min: 深睡时长 (分钟)
-5. light_sleep_min: 浅睡时长 (分钟)
-6. rem_sleep_min: 快速眼动时长 (分钟)
-7. awake_count: 清醒次数 (整数)
-8. awake_time_min: 清醒时长 (分钟)
-9. fall_asleep_min: 入睡用时 (分钟)
-10. wake_up_min: 起床用时 (分钟)
-11. official_interpretation: 华为运动健康的解读与建议 (详细文本)
-12. sleep_start: 入睡时间 (HH:mm)
-13. sleep_end: 醒来时间 (HH:mm)
-14. total_sleep_min: 总睡眠时长 (分钟)
-注意：务必提取完整。只返回纯 JSON 块。"""
-
-                    vision_resp = client_v.chat.completions.create(
-                        model=v_model,
-                        messages=[{"role": "user", "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                            {"type": "text", "text": prompt}
-                        ]}],
-                        temperature=0.1
-                    )
-                    raw = vision_resp.choices[0].message.content.strip()
-                    if "```" in raw: raw = raw.split("```")[1].replace("json", "").strip()
-                    self.sleep_data = json.loads(raw)
-                    
-                    # 数据校验
-                    if self.validate_data(self.sleep_data):
-                        break # 校验通过，退出重试循环
-                    
-                    if attempt <= max_retries:
-                        self.update_progress(f"⚠️ 提取不完整，正在进行第 {attempt} 次重试...")
-                        time.sleep(2) # 增加退避间隔
-                    else:
-                        self.update_progress("⚠️ 已达到最大重试次数，将使用现有提取结果。")
+                        # 核心逻辑：三模型轮替尝试 (1:主, 2:备, 3:终极, 4:主, 5:备, 6:终极)
+                        has_backup = bool(self.ai_cfg.get("backup_api_key"))
+                        has_ultra = bool(self.ai_cfg.get("ultra_api_key"))
                         
-                except Exception as loop_e:
-                    if attempt > max_retries:
-                        raise loop_e
-                    # 针对连接错误做特殊提示
-                    err_msg = str(loop_e)
-                    if "Connection error" in err_msg:
-                        err_msg = "网络连接失败，请检查 API 地址或网络环境"
-                    self.update_progress(f"⚠️ 分析出错，正在重试({attempt})... {err_msg}")
-                    time.sleep(3) # 遇到网络问题多等一会儿
+                        # 核心逻辑：模型轮替优先级调整 (1:终极, 2:主, 3:备, 4:终极, 5:主, 6:备)
+                        model_idx = (attempt - 1) % 3
+                        if model_idx == 0 and has_ultra:
+                            # 优先尝试付费/高稳模型
+                            use_type = "ultra"
+                        elif model_idx == 1:
+                            # 其次尝试主模型
+                            use_type = "main"
+                        elif model_idx == 2 and has_backup:
+                            # 最后回退到备用
+                            use_type = "backup"
+                        else:
+                            # 兜底回退到主模型
+                            use_type = "main"
+                        
+                        v_url = clean_url(self.ai_cfg.get(f"{use_type}_base_url" if use_type != "main" else "vision_base_url", ""))
+                        v_key = self.ai_cfg.get(f"{use_type}_api_key" if use_type != "main" else "vision_api_key", "")
+                        v_model = self.ai_cfg.get(f"{use_type}_model" if use_type != "main" else "vision_model", "glm-4v-flash")
+                        
+                        # 进度提示
+                        if use_type == "main": model_type = "📸 主"
+                        elif use_type == "backup": model_type = "🛡️ 备用"
+                        else: model_type = "🚀 终极"
+                        
+                        msg_prefix = f"{model_type}模型解析中 ({attempt}/{total_attempts})..."
+                        self.update_progress(msg_prefix)
+                        
+                        # 关键改进：针对国内网络不稳，使用自定义客户端并禁用 SSL 强校验，增加超时至 60s
+                        http_client = httpx.Client(
+                            verify=False, 
+                            timeout=httpx.Timeout(60.0, connect=10.0),
+                            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+                        )
+                        client_v = OpenAI(api_key=v_key, base_url=v_url, http_client=http_client)
+                        
+                        # 尝试从文件名提取年份
+                        hint_year = str(datetime.now().year)
+                        try:
+                            import re
+                            basename = os.path.basename(self.image_path)
+                            # 核心修正：限定年份范围在 2020-2039，防止误匹配时间戳
+                            match = re.search(r'(20[2-3]\d)', basename)
+                            if match:
+                                hint_year = match.group(1)
+                                print(f"文件名识别到年份建议: {hint_year}")
+                        except: pass
+                        
+                        # 图片预处理
+                        final_img_path = self.image_path
+                        temp_img_path = None
+                        try:
+                            from PIL import Image
+                            with Image.open(self.image_path) as img:
+                                w, h = img.size
+                                if h > 2048:
+                                    new_h = 2048
+                                    new_w = int(w * (new_h / h))
+                                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                                    temp_img_path = self.image_path + ".v.jpg"
+                                    img.convert("RGB").save(temp_img_path, "JPEG", quality=90)
+                                    final_img_path = temp_img_path
+                        except: pass
+    
+                        with open(final_img_path, "rb") as f:
+                            img_b64 = base64.b64encode(f.read()).decode()
+                        if temp_img_path and os.path.exists(temp_img_path): os.remove(temp_img_path)
+    
+                        # 从 SKILL.md 读取视觉 Prompt
+                        prompt = ""
+                        try:
+                            skill_path = os.path.join(os.path.dirname(__file__), "skills", "time-management", "SKILL.md")
+                            if os.path.exists(skill_path):
+                                with open(skill_path, "r", encoding="utf-8") as f:
+                                    content = f.read()
+                                    # 优先查找特定标签
+                                    if "```vision_prompt" in content:
+                                        prompt = content.split("```vision_prompt")[1].split("```")[0].strip()
+                                    elif "```text" in content:
+                                        prompt = content.split("```text")[1].split("```")[0].strip()
+                        except: pass
+                        
+                        if not prompt:
+                            # 兜底 Prompt (保持与 SKILL.md 同步的强约束)
+                            prompt = (
+                                "请从睡眠截图中精确提取以下 13 个原始指标并以纯 JSON 格式返回。严禁任何开场白、Markdown 符号或额外计算：\n"
+                                "1. sleep_date (日期, YYYY-MM-DD)\n"
+                                "2. sleep_score (睡眠评分)\n"
+                                "3. total_sleep_min (夜间睡眠时长, 对应'夜间睡眠')\n"
+                                "4. deep_sleep_min (深睡时长)\n"
+                                "5. light_sleep_min (浅睡时长)\n"
+                                "6. rem_sleep_min (快速眼动/REM时长)\n"
+                                "7. awake_count (清醒次数)\n"
+                                "8. sleep_start (入睡时刻, e.g. 23:30)\n"
+                                "9. sleep_end (醒来时刻, e.g. 07:00)\n"
+                                "10. deep_sleep_ratio (深睡比例 %)\n"
+                                "11. light_sleep_ratio (浅睡比例 %)\n"
+                                "12. rem_sleep_ratio (快速眼动比例 %)\n"
+                                "13. deep_sleep_continuity (深睡连续性)\n"
+                                "14. breathing_score (呼吸质量)\n"
+                                "15. analysis_report (解读与建议文本)\n\n"
+                                "注意：严禁提取或计算 sleep_cycles, awake_min, fall_asleep_min, wake_up_min，这些将由系统公式处理。\n"
+                                "必须确保 total_sleep_min 对应截图中的'夜间睡眠'数值，不做任何加减校验。"
+                            )
+                        
+                        if hint_year:
+                            prompt += f"\n\n注意：当前上下文年份为 {hint_year}。请将此年份与截图中识别到的月、日组合成完整的 sleep_date。"
+    
+                        vision_resp = client_v.chat.completions.create(
+                            model=v_model,
+                            messages=[{"role": "user", "content": [
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                                {"type": "text", "text": prompt}
+                            ]}],
+                            temperature=0.1
+                        )
+                        content = vision_resp.choices[0].message.content
+                        if not content:
+                            raise Exception("模型返回内容为空")
+                        raw = content.strip()
+                        
+                        # ── 鲁棒的 JSON 强力提取逻辑 ──
+                        def extract_json(text):
+                            # 1. 尝试寻找第一个 { 和最后一个 }
+                            import re
+                            match = re.search(r'(\{.*\})', text, re.DOTALL)
+                            if match:
+                                candidate = match.group(1)
+                                try:
+                                    return json.loads(candidate)
+                                except:
+                                    # 如果整体解析失败，尝试从头开始逐个闭合括号（应对多余括号情况）
+                                    brace_count = 0
+                                    first_brace = -1
+                                    for i, char in enumerate(text):
+                                        if char == '{':
+                                            if first_brace == -1: first_brace = i
+                                            brace_count += 1
+                                        elif char == '}':
+                                            brace_count -= 1
+                                            if brace_count == 0 and first_brace != -1:
+                                                try:
+                                                    return json.loads(text[first_brace:i+1])
+                                                except: continue
+                            return None
+    
+                        # 优先匹配 Markdown 块
+                        self.sleep_data = None
+                        if "```" in raw:
+                            try:
+                                json_part = raw.split("```")[1].replace("json", "").strip()
+                                self.sleep_data = json.loads(json_part)
+                            except: pass
+                        
+                        if not self.sleep_data:
+                            self.sleep_data = extract_json(raw)
+                        
+                        # ── 鲁棒的数据归一化 (填坑逻辑) ──
+                        if self.sleep_data:
+                            self.sleep_data = self.normalize_data(self.sleep_data)
+                            # 智能识别日期校对 (杜绝错图、重图)
+                            extracted_date = self.sleep_data.get("sleep_date")
+                            if extracted_date:
+                                try:
+                                    target_dt = datetime.strptime(self.date_str, "%Y-%m-%d")
+                                    ext_dt = datetime.strptime(extracted_date, "%Y-%m-%d")
+                                    diff_days = abs((target_dt - ext_dt).days)
+                                    if diff_days > 1:
+                                        # 判定为选错图或 AI 幻觉，直接拦截报错
+                                        raise Exception(f"日期不匹配！截图日期是 {extracted_date}，而当前处理日期是 {self.date_str}。请确认是否选错了图。")
+                                except Exception as e:
+                                    if "日期不匹配" in str(e): raise e
+    
+                        if not self.sleep_data:
+                            # 如果完全没找到 {}，且 raw 看起来像个数字（如 "71分"）
+                            # 这种情况下 json.loads(raw) 会报 Extra Data，我们需要捕获并给出清晰错误
+                            print(f"警告：模型未返回标准 JSON 结构。原始输出: {raw[:100]}")
+                            raise ValueError(f"模型输出不符合 JSON 格式，请检查模型稳定性。输出内容: {raw[:50]}...")
+                        
+                        # 数据校验
+                        if self.validate_data(self.sleep_data):
+                            # 记录模型名称
+                            self.sleep_data['extracted_by'] = v_model
+                            break # 校验通过，退出重试循环
+                        
+                        if attempt < total_attempts:
+                            self.update_progress(f"⚠️ 提取不完整，正在进行第 {attempt} 次重试...")
+                            time.sleep(2) # 增加退避间隔
+                        else:
+                            self.update_progress("⚠️ 已达到最大重试次数，将使用现有提取结果。")
+                        
+                    except Exception as loop_e:
+                        if attempt >= total_attempts:
+                            raise loop_e
+                        # 针对连接错误做特殊提示
+                        err_msg = str(loop_e)
+                        if "Connection error" in err_msg:
+                            err_msg = "网络连接失败，请检查 API 地址或网络环境"
+                        self.update_progress(f"⚠️ 分析出错，正在重试({attempt})... {err_msg}")
+                        time.sleep(3) # 遇到网络问题多等一会儿
 
             # ── 步骤 2: 定日期并实时同步数据 (移出循环，确保识别完成后执行) ──
             if not self.sleep_data:
@@ -224,22 +427,29 @@ class AIWorker(QThread):
             target_date = self.sleep_data.get("sleep_date")
             if not target_date or len(target_date) < 8:
                 target_date = datetime.now().strftime("%Y-%m-%d")
-            
+            else:
+                # ====== 强制年份拦截网 ======
+                # 如果 AI 幻觉出了旧年份(如2024)，强制替换为今年，因为睡眠分析都是分析最近的
+                current_year = str(datetime.now().year)
+                if not target_date.startswith(current_year):
+                    target_date = current_year + target_date[4:]
+                    self.sleep_data["sleep_date"] = target_date
+
             self.sleep_data['date'] = target_date
             self.update_progress(f"📅 日期: {target_date}，正在拉取数据...")
 
             import sys
-            skill_dir = os.path.join(os.path.dirname(__file__), "document", "skills", "time-management")
+            skill_dir = os.path.join(os.path.dirname(__file__), "skills", "time-management")
             if skill_dir not in sys.path:
                 sys.path.insert(0, skill_dir)
             from generate_full_report import generate_comprehensive_report
 
-            # 核心改进：即时分析不包含 Part 2
+            # 核心改进：即时分析根据参数决定是否包含 Part 2
             report_path = generate_comprehensive_report(
                 target_date, 
                 injected_sleep_data=self.sleep_data,
                 force_pull=True,
-                include_time_analysis=False
+                include_time_analysis=self.include_time_analysis
             )
             
             if report_path and os.path.exists(report_path):
@@ -438,9 +648,19 @@ class AIConfigWidget(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(15, 15, 15, 15)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background: transparent;")
+        
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(container)
+        layout.setSpacing(12)
+        layout.setContentsMargins(15, 10, 15, 10)
 
         # 视觉部分
         v_group, v_test_btn = self._create_group("📸 1. 视觉模型 (用于识别截图)", "用于将睡眠详情图片解析为结构化数字。")
@@ -453,6 +673,8 @@ class AIConfigWidget(QWidget):
         v_test_btn.clicked.connect(lambda: self._test_connection(True))
         layout.addWidget(v_group)
 
+
+
         # 文本部分
         t_group, t_test_btn = self._create_group("🧠 2. 文本模型 (用于生成报告)", "用于根据识别出的数字生成深度的文字分析建议。")
         t_layout = t_group.layout()
@@ -462,6 +684,27 @@ class AIConfigWidget(QWidget):
         t_test_btn.clicked.connect(lambda: self._test_connection(False))
         layout.addWidget(t_group)
 
+        # 备用模型部分
+        b_group, b_test_btn = self._create_group("🛡️ 3. 备用模型 (自动容灾)", "当主模型 3 次重试失败后，自动切换至此配置进行最后分析。")
+        b_layout = b_group.layout()
+        self.b_url = self._make_field("API 地址 (Base URL):", ai_cfg.get("backup_base_url", ""), b_layout)
+        self.b_key = self._make_field("API Key:", ai_cfg.get("backup_api_key", ""), b_layout, is_password=True)
+        self.b_model = self._make_field("模型名称 (Model Name):", ai_cfg.get("backup_model", ""), b_layout)
+        b_test_btn.clicked.connect(lambda: self._test_connection(True, is_backup=True))
+        layout.addWidget(b_group)
+
+        # 终极备份模型部分
+        u_group, u_test_btn = self._create_group("🚀 4. 终极备份模型 (付费版/高稳)", "建议配置硅基流动付费模型（如 Qwen2-VL-72B）或 GPT-4o。")
+        u_layout = u_group.layout()
+        self.u_url = self._make_field("API 地址 (Base URL):", ai_cfg.get("ultra_base_url", ""), u_layout)
+        self.u_key = self._make_field("API Key:", ai_cfg.get("ultra_api_key", ""), u_layout, is_password=True)
+        self.u_model = self._make_field("模型名称 (Model Name):", ai_cfg.get("ultra_model", ""), u_layout)
+        u_test_btn.clicked.connect(lambda: self._test_connection(True, is_ultra=True))
+        layout.addWidget(u_group)
+
+        # 底部留白，防止最后一个按钮被遮挡
+        layout.addSpacing(20)
+
         self.save_btn = QPushButton("💾 保存全部配置")
         self.save_btn.setFixedHeight(38)
         self.save_btn.setStyleSheet(f"background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold;")
@@ -469,6 +712,19 @@ class AIConfigWidget(QWidget):
         self.save_btn.clicked.connect(self._save_config)
         layout.addWidget(self.save_btn)
         layout.addStretch()
+
+        scroll.setWidget(container)
+        main_layout.addWidget(scroll)
+
+    def _apply_preset(self, url, v_model, t_model, is_backup=False):
+        if is_backup:
+            self.b_url.setText(url)
+            self.b_model.setText(v_model)
+        else:
+            self.v_url.setText(url)
+            self.t_url.setText(url)
+            self.v_model.setText(v_model)
+            self.t_model.setText(t_model)
 
     def _create_group(self, title, desc):
         group = QFrame()
@@ -495,25 +751,30 @@ class AIConfigWidget(QWidget):
         return group, test_btn
 
     def _make_field(self, label_text, value, parent_layout, is_password=False):
-        row = QHBoxLayout()
-        row.setSpacing(10)
+        row = QVBoxLayout()
+        row.setSpacing(4)
         lbl = QLabel(label_text)
-        lbl.setFixedWidth(120)
-        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; border: none;")
+        lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: bold; border: none;")
         edit = QLineEdit(value)
+        edit.setMinimumHeight(32) # 确保高度充足
         if is_password: edit.setEchoMode(QLineEdit.EchoMode.Password)
-        edit.setStyleSheet(f"QLineEdit {{ border: 1px solid {BORDER_COLOR}; border-radius: 4px; padding: 5px; font-size: 12px; }}")
+        edit.setStyleSheet(f"QLineEdit {{ border: 1px solid #E5E9F0; border-radius: 4px; padding: 6px; font-size: 12px; background: white; }}")
         row.addWidget(lbl)
         row.addWidget(edit)
         parent_layout.addLayout(row)
         return edit
 
-    def _test_connection(self, is_vision):
+    def _test_connection(self, is_vision, is_backup=False, is_ultra=False):
         if self._test_worker and self._test_worker.isRunning(): return
         
-        url = self.v_url.text() if is_vision else self.t_url.text()
-        key = self.v_key.text() if is_vision else self.t_key.text()
-        model = self.v_model.text() if is_vision else self.t_model.text()
+        if is_ultra:
+            url, key, model = self.u_url.text(), self.u_key.text(), self.u_model.text()
+        elif is_backup:
+            url, key, model = self.b_url.text(), self.b_key.text(), self.b_model.text()
+        else:
+            url = self.v_url.text() if is_vision else self.t_url.text()
+            key = self.v_key.text() if is_vision else self.t_key.text()
+            model = self.v_model.text() if is_vision else self.t_model.text()
         
         if not key.strip():
             QMessageBox.warning(self, "错误", "请先填写 API Key")
@@ -547,6 +808,12 @@ class AIConfigWidget(QWidget):
         c["text_base_url"]   = self.t_url.text().strip()
         c["text_api_key"]    = self.t_key.text().strip()
         c["text_model"]      = self.t_model.text().strip()
+        c["backup_base_url"] = self.b_url.text().strip()
+        c["backup_api_key"]  = self.b_key.text().strip()
+        c["backup_model"]    = self.b_model.text().strip()
+        c["ultra_base_url"]  = self.u_url.text().strip()
+        c["ultra_api_key"]   = self.u_key.text().strip()
+        c["ultra_model"]     = self.u_model.text().strip()
         save_config(self.config)
         QMessageBox.information(self, "成功", "AI 配置已分流保存！")
 
@@ -682,9 +949,25 @@ class SleepStatisticsWindow(QWidget):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setStyleSheet(f"QPushButton {{ border: 1px solid {BORDER_COLOR}; border-radius: 15px; color: {TEXT_PRIMARY}; }} QPushButton:hover {{ background: #F0F2F5; }}")
         
-        self.date_label = QLabel(self.current_date.strftime("%Y-%m-%d"))
-        self.date_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY}; background: transparent; border: none;")
-        self.date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.date_label = QPushButton(self.current_date.strftime("%Y-%m-%d"))
+        self.date_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.date_label.setStyleSheet(f"""
+            QPushButton {{ 
+                font-size: 16px; 
+                font-weight: bold; 
+                color: {TEXT_PRIMARY}; 
+                background: transparent; 
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 4px 12px;
+            }} 
+            QPushButton:hover {{ 
+                background: #F0F2F5; 
+                color: {GREEN_ACCENT};
+                border: 1px solid {BORDER_COLOR};
+            }}
+        """)
+        self.date_label.clicked.connect(self._show_calendar_popup)
         
         self.prev_btn.clicked.connect(lambda: self.change_date(-1))
         self.next_btn.clicked.connect(lambda: self.change_date(1))
@@ -715,17 +998,20 @@ class SleepStatisticsWindow(QWidget):
         self.metrics = {}
         # 重新定义指标顺序：周期和深睡排在最前面，并设为 priority (橙色)
         metric_names = [
-            ("睡眠周期", "sleep_cycles", " 个", "priority"),
-            ("深睡时长", "deep_sleep_min", " min", "priority"),
-            ("入睡用时", "fall_asleep_min", " min", "highlight"),
-            ("起床用时", "wake_up_min", " min", "highlight"),
-            ("清醒次数", "awake_count", " 次", "normal"),
-            ("清醒时长", "awake_time_min", " min", "normal"),
-            ("浅睡", "light_sleep_min", " min", "normal"),
-            ("快速眼动", "rem_sleep_min", " min", "normal")
+            ("睡眠周期", "sleep_cycles", " 个", "priority", "参考值：> 5.0 个"),
+            ("深睡时长", "deep_sleep_min", " min", "priority", "参考值：60 - 120 min"),
+            ("入睡用时", "fall_asleep_min", " min", "highlight", "参考值：< 20 min"),
+            ("起床用时", "wake_up_min", " min", "highlight", "参考值：< 15 min"),
+            ("清醒次数", "awake_count", " 次", "normal", "参考值：<= 2 次"),
+            ("清醒时长", "awake_min", " min", "normal", "参考值：< 15 min"),
+            ("深睡比例", "deep_sleep_ratio", " %", "normal", "参考值：20% - 60%"),
+            ("睡眠连续性", "sleep_continuity", " 分", "normal", "参考值：> 70 分"),
+            ("呼吸质量", "breathing_score", " 分", "normal", "参考值：> 90 分"),
+            ("浅睡", "light_sleep_min", " min", "normal", "参考值：20% - 60%"),
+            ("快速眼动", "rem_sleep_min", " min", "normal", "参考值：10% - 30%")
         ]
-        for i, (label, key, unit, mode) in enumerate(metric_names):
-            card = self._create_metric_card(label, mode)
+        for i, (label, key, unit, mode, tip) in enumerate(metric_names):
+            card = self._create_metric_card(label, mode, tip)
             self.grid.addWidget(card, i // 4, i % 4)
             self.metrics[key] = (card.findChild(QLabel, "val"), unit)
         
@@ -789,15 +1075,25 @@ class SleepStatisticsWindow(QWidget):
         self.pick_img_btn.clicked.connect(self._pick_image)
         btn_row.addWidget(self.pick_img_btn)
 
-        self.ai_btn = QPushButton("🚀 AI 分析")
-        self.ai_btn.setFixedHeight(36)
-        self.ai_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.ai_btn.setStyleSheet(f"""
-            QPushButton {{ background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; font-size: 12px; }}
-            QPushButton:hover {{ background: #8FBF65; }}
+        self.sleep_btn = QPushButton("🌙 睡眠分析")
+        self.sleep_btn.setFixedHeight(36)
+        self.sleep_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sleep_btn.setStyleSheet(f"""
+            QPushButton {{ background: #8FBF65; color: white; border-radius: 6px; font-weight: bold; font-size: 12px; }}
+            QPushButton:hover {{ background: #A2D178; }}
         """)
-        self.ai_btn.clicked.connect(self._run_ai_analysis)
-        btn_row.addWidget(self.ai_btn)
+        self.sleep_btn.clicked.connect(lambda: self._run_ai_analysis(include_time_analysis=False))
+        btn_row.addWidget(self.sleep_btn)
+
+        self.full_btn = QPushButton("📑 完整分析")
+        self.full_btn.setFixedHeight(36)
+        self.full_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.full_btn.setStyleSheet(f"""
+            QPushButton {{ background: {GREEN_ACCENT}; color: white; border-radius: 6px; font-weight: bold; font-size: 12px; }}
+            QPushButton:hover {{ background: #3E8B81; }}
+        """)
+        self.full_btn.clicked.connect(lambda: self._run_ai_analysis(include_time_analysis=True))
+        btn_row.addWidget(self.full_btn)
 
         self.refresh_btn = QPushButton("🔄 刷新")
         self.refresh_btn.setFixedHeight(36)
@@ -867,8 +1163,11 @@ class SleepStatisticsWindow(QWidget):
 
         main_layout.addWidget(content)
 
-    def _create_metric_card(self, title, mode="normal"):
+    def _create_metric_card(self, title, mode="normal", tip=""):
         card = QFrame()
+        if tip:
+            card.setToolTip(tip)
+            
         if mode == "priority":
             # 橙色模式：最高优先级
             bg_color = "#FFF4E5" # 极淡橘背景
@@ -993,7 +1292,7 @@ class SleepStatisticsWindow(QWidget):
         
         if not sleep_data:
             # 如果数据库没有，再看看有没有旧 JSON
-            data_path = resource_path(os.path.join("document", "skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
+            data_path = resource_path(os.path.join("skills", "time-management", "huawei_health_data", f"sleep_{date_str}.json"))
             if os.path.exists(data_path):
                 try:
                     with open(data_path, 'r', encoding='utf-8') as f:
@@ -1048,6 +1347,33 @@ class SleepStatisticsWindow(QWidget):
             except:
                 return str(v)
 
+        # --- 智能补算逻辑 (针对历史数据或 AI 遗漏) ---
+        # 如果某些计算型指标缺失，尝试根据原始数据即时推算
+        t_min = to_min(data.get("total_sleep_min", 0))
+        if t_min > 0:
+            if not data.get("sleep_cycles"):
+                data["sleep_cycles"] = round(t_min / 90.0, 2)
+            
+            # 补算清醒时长：(醒来 - 入睡) - 睡眠时长
+            s_t = data.get("sleep_start")
+            e_t = data.get("sleep_end")
+            if s_t and e_t:
+                try:
+                    def t_to_m(t):
+                        if not t or not isinstance(t, str): return 0
+                        # 处理中文冒号和空格
+                        t = t.replace("：", ":").strip()
+                        if ":" not in t: return 0
+                        h, m = map(int, t.split(":"))
+                        return h * 60 + m
+                    m1 = t_to_m(s_t)
+                    m2 = t_to_m(e_t)
+                    if m2 < m1: m2 += 24 * 60 # 跨天处理
+                    
+                    # 无论原值是多少，都通过公式动态展示最新的清醒时长
+                    data["awake_min"] = max(0, (m2 - m1) - t_min)
+                except: pass
+
         # 遍历指标项，格式化显示
         for key, (label, unit) in self.metrics.items():
             val = data.get(key)
@@ -1073,7 +1399,7 @@ class SleepStatisticsWindow(QWidget):
         if report:
             self.analysis_text.setMarkdown(str(report))
         else:
-            self.analysis_text.setText("数据已加载，点击《🚀 AI 分析》生成智能报告。")
+            self.analysis_text.setText("数据已加载，点击《📑 完整分析》生成深度复盘报告。")
             
         self._current_sleep_data = data  # 缓存当前数据供 AI 使用
 
@@ -1083,6 +1409,99 @@ class SleepStatisticsWindow(QWidget):
         for label, unit in self.metrics.values():
             label.setText("--")
         self.analysis_text.setText("该日期暂无睡眠记录文件。")
+
+    def _show_calendar_popup(self):
+        """弹出深度定制的艺术风日历"""
+        if not hasattr(self, "_calendar_widget"):
+            from PyQt6.QtWidgets import QCalendarWidget
+            self._calendar_widget = QCalendarWidget(self)
+            self._calendar_widget.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.NoDropShadowWindowHint | Qt.WindowType.FramelessWindowHint)
+            self._calendar_widget.setGridVisible(False)
+            self._calendar_widget.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+            
+            # --- 极致美化：现代艺术风格 CSS ---
+            self._calendar_widget.setStyleSheet(f"""
+                QCalendarWidget {{
+                    background-color: #FFFFFF;
+                    border: 1px solid #E5E9F0;
+                    border-radius: 15px;
+                    font-size: 13px; /* 修复 QFont 警告 */
+                }}
+                /* 导航栏：白底黑字，加大字号 */
+                QCalendarWidget QWidget#qt_calendar_navigationbar {{
+                    background-color: #FFFFFF;
+                    border-bottom: 1px solid #F0F2F5;
+                    border-top-left-radius: 15px;
+                    border-top-right-radius: 15px;
+                    min-height: 40px;
+                }}
+                /* 月份/年份按钮：移除系统自带的丑陋下拉箭头 */
+                QCalendarWidget QToolButton {{
+                    color: #2E3440;
+                    font-family: "Segoe UI", "Microsoft YaHei";
+                    font-size: 14px;
+                    font-weight: bold;
+                    background-color: transparent;
+                    border: none;
+                    margin: 2px;
+                    padding: 5px;
+                }}
+                QCalendarWidget QToolButton::menu-indicator {{
+                    image: none; /* 彻底移除那个对不齐的 V 箭头 */
+                }}
+                QCalendarWidget QToolButton:hover {{
+                    background-color: #F8F9FB;
+                    border-radius: 8px;
+                    color: {GREEN_ACCENT};
+                }}
+                
+                /* 左右箭头按钮 */
+                #qt_calendar_prevmonth, #qt_calendar_nextmonth {{
+                    qproperty-icon: none;
+                    background-color: transparent;
+                    width: 30px;
+                }}
+                
+                /* 日期网格 */
+                QCalendarWidget QTableView {{
+                    outline: 0;
+                    background-color: #FFFFFF;
+                    selection-background-color: {GREEN_ACCENT};
+                    selection-color: #FFFFFF;
+                }}
+                /* 星期头（周一至周日） */
+                QCalendarWidget QWidget {{ alternate-background-color: #FFFFFF; }}
+                QCalendarWidget QAbstractItemView:enabled {{
+                    color: #4C566A;
+                    font-size: 13px;
+                    selection-background-color: {GREEN_ACCENT};
+                    selection-color: #FFFFFF;
+                }}
+                /* 禁用日期（非本月） */
+                QCalendarWidget QAbstractItemView:disabled {{
+                    color: #D8DEE9;
+                }}
+            """)
+            
+            # 监听选中
+            self._calendar_widget.clicked.connect(self._on_calendar_date_selected)
+            self._calendar_widget.activated.connect(self._on_calendar_date_selected)
+
+        # 弹出位置定位
+        pos = self.date_label.mapToGlobal(QPoint(0, self.date_label.height() + 10))
+        self._calendar_widget.setSelectedDate(self.current_date)
+        # 微调位置让日历在按钮下方居中
+        self._calendar_widget.move(pos.x() - (self._calendar_widget.width() - self.date_label.width()) // 2, pos.y())
+        self._calendar_widget.show()
+
+    def _on_calendar_date_selected(self, qdate):
+        """处理日历选择后的跳转"""
+        self._calendar_widget.hide()
+        new_date = qdate.toPyDate()
+        self.current_date = new_date
+        self.date_label.setText(self.current_date.strftime("%Y-%m-%d"))
+        self._update_nav_buttons() # 关键：同步更新前进/后退按钮状态
+        self.load_data()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1111,14 +1530,14 @@ class SleepStatisticsWindow(QWidget):
             fname = os.path.basename(path)
             self.img_path_label.setText(f"✅ 已选择: {fname}")
 
-    def _run_ai_analysis(self, force_sync=True, image_path=None, session_id=None):
+    def _run_ai_analysis(self, force_sync=True, image_path=None, session_id=None, include_time_analysis=False):
         """执行 AI 分析逻辑。若提供了 image_path，则先进行视觉日期解析"""
         if self._ai_worker and self._ai_worker.isRunning():
             return
 
         ai_cfg = self.config.get("ai_model_config", {})
-        v_key = ai_cfg.get("vision_api_key", "").strip()
-        t_key = ai_cfg.get("text_api_key", "").strip()
+        v_key = str(ai_cfg.get("vision_api_key") or "").strip()
+        t_key = str(ai_cfg.get("text_api_key") or "").strip()
         
         if not v_key or not t_key:
             QMessageBox.warning(self, "请先配置", "请确保「AI 配置」页的「视觉」和「文本」API Key 均已填写。")
@@ -1139,10 +1558,39 @@ class SleepStatisticsWindow(QWidget):
                 QMessageBox.information(self, "无数据", "请先选择截图，或切换日期使 JSON 数据加载。")
             return
 
-        self.ai_btn.setEnabled(False)
-        self.ai_btn.setText("⏳ 分析中...")
+        # Step 0: 增量分析优化逻辑 (根据 SKILL.md 指导思想)
+        # 如果是完整分析模式，且数据库里已经有数据，且用户没选新图，则检查数据完整性
+        is_incremental = False
+        if include_time_analysis and self._current_sleep_data and not has_image:
+            # 增加完整性校验：只有通过校验的数据才能跳过 OCR
+            if AIWorker.validate_data(self._current_sleep_data):
+                is_incremental = True
+                logger.info(f"检测到 {self.current_date} 已有完整睡眠数据，跳过视觉提取。")
+            else:
+                logger.info(f"检测到 {self.current_date} 睡眠数据不完整，将重新执行 OCR 流程。")
+
+        self.sleep_btn.setEnabled(False)
+        self.full_btn.setEnabled(False)
+        self.sleep_btn.setText("⏳ 分析中..." if not include_time_analysis else "🌙 睡眠分析")
+        self.full_btn.setText("⏳ 分析中..." if include_time_analysis else "📑 完整分析")
         self.analysis_text.setPlaceholderText("")
-        self.analysis_text.setText("🔄 正在同步最新时间数据并开始分析...")
+        
+        if is_incremental:
+            self.analysis_text.setText("✅ 已存在完整睡眠数据，正在跳过识别，直接拉取时间数据并生成复盘建议...")
+        else:
+            if include_time_analysis and self._current_sleep_data and not has_image:
+                self.analysis_text.setText("⚠️ 数据库记录不完整，需要重新进行视觉解析，请选择截图...")
+                # 这种情况需要让用户选图，所以不能直接启动
+                self.sleep_btn.setEnabled(True)
+                self.full_btn.setEnabled(True)
+                self.sleep_btn.setText("🌙 睡眠分析")
+                self.full_btn.setText("📑 完整分析")
+                self._pick_image()
+                if not self._selected_image: return # 用户取消了选图
+                # 选完图后重新调用自己
+                self._run_ai_analysis(force_sync=force_sync, image_path=self._selected_image, session_id=session_id, include_time_analysis=include_time_analysis)
+                return
+            self.analysis_text.setText("🔄 正在同步最新时间数据并开始分析...")
 
         # 1. 如果是自动触发或强制同步，先触发一次后台同步
         if force_sync:
@@ -1155,14 +1603,15 @@ class SleepStatisticsWindow(QWidget):
             except Exception as e:
                 logger.warning(f"同步失败，将使用现有数据: {e}")
 
-        # 2. 启动线程 (AIWorker 内部会调用 generate_comprehensive_report)
+        # 2. 启动线程 (AIWorker 内部会根据 image_path 是否为 None 决定是否跑 OCR)
         self._ai_worker = AIWorker(
             ai_cfg=ai_cfg,
-            image_path=img_to_use if has_image else None,
-            sleep_data=None if has_image else self._current_sleep_data,
+            image_path=img_to_use if (has_image and not is_incremental) else None,
+            sleep_data=self._current_sleep_data if is_incremental else (None if has_image else self._current_sleep_data),
             date_str=self.current_date.strftime("%Y-%m-%d"),
             force_pull=force_sync,
-            session_id=session_id
+            session_id=session_id,
+            include_time_analysis=include_time_analysis
         )
         self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
         self._ai_worker.finished.connect(self._on_ai_finished)
@@ -1171,8 +1620,10 @@ class SleepStatisticsWindow(QWidget):
 
     def _on_ai_finished(self, report, sleep_data):
         """AI 分析完成：智能识别日期、自动归档并渲染"""
-        self.ai_btn.setEnabled(True)
-        self.ai_btn.setText("🚀 AI 分析")
+        self.sleep_btn.setEnabled(True)
+        self.full_btn.setEnabled(True)
+        self.sleep_btn.setText("🌙 睡眠分析")
+        self.full_btn.setText("📑 完整分析")
         
         if not sleep_data: return
         
@@ -1236,8 +1687,10 @@ class SleepStatisticsWindow(QWidget):
 
     def _on_ai_error(self, msg):
         self.analysis_text.setText(msg)
-        self.ai_btn.setEnabled(True)
-        self.ai_btn.setText("🚀 AI 分析")
+        self.sleep_btn.setEnabled(True)
+        self.full_btn.setEnabled(True)
+        self.sleep_btn.setText("🌙 睡眠分析")
+        self.full_btn.setText("📑 完整分析")
         # 失败时也尝试清理临时文件
         self._cleanup_all_pending_images()
 

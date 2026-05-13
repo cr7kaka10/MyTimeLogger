@@ -37,10 +37,6 @@ pip install requests
 python generate_full_report.py 2026-03-18
 ```
 
-### 处理睡眠截图
-
-将华为健康睡眠截图的文本内容保存到 `huawei_health_data/sleep_YYYY-MM-DD.json`
-
 ## 报告内容
 
 - 执行摘要和效率评分

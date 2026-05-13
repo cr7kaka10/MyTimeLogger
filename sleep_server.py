@@ -19,7 +19,7 @@ CST = timezone(timedelta(hours=8))
 
 # 数据存储目录
 SLEEP_DATA_DIR = resource_path(
-    os.path.join("document", "skills", "time-management", "huawei_health_data")
+    os.path.join("skills", "time-management", "huawei_health_data")
 )
 ATTACHMENTS_DIR = resource_path("attachments")
 
@@ -342,8 +342,9 @@ class SleepDataHandler(BaseHTTPRequestHandler):
                 self._set_headers(400); return
             
             orig_filename, file_data = files["file"]
-            ext = os.path.splitext(orig_filename)[1].lower() if "." in orig_filename else ".png"
-            temp_filename = f"sleep_pending_{int(time.time())}{ext}"
+            # 简单清理下文件名，保留日期信息
+            clean_name = "".join(c for c in orig_filename if c.isalnum() or c in ".-_")
+            temp_filename = f"sleep_pending_{int(time.time())}_{clean_name}"
             os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
             save_path = os.path.join(ATTACHMENTS_DIR, temp_filename)
             

@@ -11,7 +11,7 @@
 """
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -135,30 +135,26 @@ class ScreenshotParser:
         return sleep_data
 
     def _verify_and_fix_data(self, data):
-        """数据复核程序：确保关键计算指标（周期、清醒时长、入睡用时等）逻辑自洽"""
+        """数据复核程序：确保关键派生指标（周期、清醒时长等）按公式计算得出"""
         try:
-            # 1. 核对清醒时长
-            # 清醒时长必须等于 (醒来时间 - 入睡时间) - 夜间睡眠时长
-            # 这里的 night_sleep_duration 是华为定义的“深睡+浅睡+REM”
+            # 1. 计算清醒时长 (必须依赖已有的 total_sleep_min)
+            # 清醒时长 = (醒来时间 - 入睡时间) - 夜间睡眠时长
             awake_sec = self._calculate_awake_time(data)
             data['awake_time'] = awake_sec
             data['awake_min'] = round(awake_sec / 60.0, 2)
 
-            # 2. 核对睡眠周期 (按总时长 / 90分钟)
+            # 2. 计算睡眠周期 (按总时长 / 90分钟)
             total_min = data.get('total_sleep_min', 0)
             if total_min > 0:
                 data['sleep_cycles'] = round(total_min / 90.0, 2)
             
-            # 3. 入睡用时与起床用时（由于依赖外部 atimelogger，这里主要核对数值合理性）
-            # 如果出现极端负值或过大值，通常是日期解析或同步错误，需要标记或修正
-            f_asleep = data.get('fall_asleep_min', data.get('fall_asleep_time', 0))
-            if f_asleep < -30 or f_asleep > 240:
-                # 记录可能存在的异常，但由于依赖外部活动，这里保持解析结果，除非明显错误
-                pass
-            
-            # 统一字段名（兼容性）
-            data['fall_asleep_time'] = data.get('fall_asleep_min', f_asleep)
-            data['wake_up_time'] = data.get('wake_up_min', 0)
+            # 3. 统一字段名（兼容性）
+            # fall_asleep_min 和 wake_up_min 通常在外部由 atimelogger 联动计算
+            # 这里仅做字段补全
+            if 'fall_asleep_min' not in data:
+                data['fall_asleep_min'] = data.get('fall_asleep_time', 0)
+            if 'wake_up_min' not in data:
+                data['wake_up_min'] = data.get('wake_up_time', 0)
 
         except Exception as e:
             print(f"⚠️ 数据复核过程中出错: {e}")
@@ -403,11 +399,12 @@ class ScreenshotParser:
                     finish_time = datetime.fromisoformat(finish_time.replace('Z', '+00:00'))
                 
                 # 确保华为健康时间也有时区信息或都没有
+                china_tz = timezone(timedelta(hours=8))
                 if start_time and start_time.tzinfo and not huawei_bedtime.tzinfo:
-                    # 如果aTimeLogger时间有时区但华为健康时间没有，去掉时区
-                    start_time = start_time.replace(tzinfo=None)
+                    # 安全地将 aTimeLogger 时间转为北京时间后去掉 tzinfo
+                    start_time = start_time.astimezone(china_tz).replace(tzinfo=None)
                 if finish_time and finish_time.tzinfo and not huawei_wake_time.tzinfo:
-                    finish_time = finish_time.replace(tzinfo=None)
+                    finish_time = finish_time.astimezone(china_tz).replace(tzinfo=None)
                 
                 # 计算入睡需要的时间：aTimeLogger上床/睡觉开始时间 → 华为健康入睡时间
                 if '上床' in activity_type or '就寝' in activity_type or 'bed' in activity_type.lower() or '睡觉' in activity_type:

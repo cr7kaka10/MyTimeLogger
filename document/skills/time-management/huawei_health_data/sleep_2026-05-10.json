@@ -1,7 +1,0 @@
-{
-  "raw_ocr": "{\n\"sleep_date\": \"5月9日\",\n\"sleep_score\": 77,\n\"sleep_start\": \"00:15\",\n\"sleep_end\": \"06:59\",\n\"total_sleep_min\": 394,\n\"deep_sleep_min\": 58,\n\"light_sleep_min\": 277,\n\"rem_sleep_min\": 59,\n\"deep_sleep_ratio\": 15,\n\"awake_count\": 3,\n\"sleep_continuity\": 61,\n\"breathing_score\": 100,\n\"official_interpretation\": \"睡眠质量一般。睡眠期间醒了3次，高于正常范围，易醒问题较为明显。最近7天有多次重复发生该问题。长期易醒会造成身体恢复不佳，可能会增加高血压等心血管疾病的患病风险。针对易醒问题，建议饮食中增加牛奶",
-  "date": "2026-05-10",
-  "awake_time": 0,
-  "fall_asleep_time": 0,
-  "wake_up_time": 0
-}
