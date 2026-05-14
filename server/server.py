@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-\"\"\"FastAPI server endpoint for sleep screenshot analysis.\"\"\"
+"""FastAPI server endpoint for sleep screenshot analysis."""
 
 import asyncio
 import json
@@ -73,7 +73,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_sc
     return user
 
 def get_current_user_optional(x_auth_token: str | None = Header(default=None, alias="X-Auth-Token"), credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False))):
-    \"\"\"支持 Legacy Token 和 Bearer Token\"\"\"
+    """支持 Legacy Token 和 Bearer Token"""
     if credentials:
         user = store.get_user_by_session(credentials.credentials)
         if user: return user
@@ -346,7 +346,7 @@ async def generate_report(request: Request, user: dict = Depends(get_current_use
         # 如果没有任务，创建一个占位任务
         store.create_job(request_id, "", user_id=user["id"], date=date)
 
-    # 启动后台任务进行完整 analysis
+    # 启动后台任务进行完整分析
     _run_analysis(request_id, image_path, user_id=user["id"])
     
     # 等待分析完成（简化处理：轮询数据库直到状态为 done）
