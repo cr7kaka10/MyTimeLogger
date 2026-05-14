@@ -31,9 +31,12 @@ project_root = os.path.abspath(os.path.join(SKILL_DIR, "..", "..", ".."))
 if project_root not in sys.path: sys.path.append(project_root)
 
 try:
-    from database import StudyLogger
+    from app.models.database import StudyLogger
 except ImportError:
-    StudyLogger = None
+    try:
+        from database import StudyLogger
+    except ImportError:
+        StudyLogger = None
 
 from modules.atimelogger_extractor import AtimeloggerExtractor
 from modules.screenshot_parser import ScreenshotParser
@@ -51,7 +54,9 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
-    db = StudyLogger(config) if StudyLogger else None
+    # 如果没传 db，才尝试自动创建
+    if db is None and StudyLogger:
+        db = StudyLogger(config)
     
     # 1. 提取 aTimeLogger 数据
     atimelogger_data = None

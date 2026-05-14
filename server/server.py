@@ -54,8 +54,12 @@ ATTACHMENTS_DIR = resource_path(os.path.join("server", "attachments"))
 
 ensure_server_runtime_config()
 
+from app.models.database import StudyLogger
+
 app = FastAPI(title="MyTimeLogger Sleep Server API", version="1.0")
 store = ServerSleepStore()
+# 初始化主数据库连接，用于拉取 TimeLogger 数据生成完整报告
+time_logger_db = StudyLogger()
 progress_queues: dict[str, queue.Queue] = {}
 
 
@@ -148,8 +152,8 @@ def _run_analysis(request_id, image_path, user_id, full=True):
     analyzer = SleepAnalyzer(
         ai_cfg=build_ai_cfg(),
         image_path=image_path,
-        include_time_analysis=False,
-        db=None,
+        include_time_analysis=full,  # 如果是完整分析，包含时间管理部分
+        db=time_logger_db,          # 传入主数据库连接
         progress_callback=progress,
     )
     
