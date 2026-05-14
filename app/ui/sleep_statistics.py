@@ -446,9 +446,10 @@ class SleepTrendChart(QWidget):
 
 class AIConfigWidget(QWidget):
     """AI 分离配置面板"""
-    def __init__(self, config, parent=None):
+    def __init__(self, config, parent=None, sleep_server=None):
         super().__init__(parent)
         self.config = config
+        self.sleep_server = sleep_server
         self._test_worker = None
         self._build_ui()
 
@@ -608,7 +609,20 @@ class AIConfigWidget(QWidget):
         c["backup_api_key"]  = self.b_key.text().strip()
         c["backup_model"]    = self.b_model.text().strip()
         save_config(self.config)
-        QMessageBox.information(self, "成功", "AI 配置已保存！")
+        
+        # 尝试同步到云端服务端
+        sync_msg = ""
+        if self.sleep_server:
+            try:
+                import requests
+                url = f"http://127.0.0.1:{self.sleep_server.port}/update_ai_config"
+                resp = requests.post(url, json=c, timeout=3)
+                if resp.status_code == 200:
+                    sync_msg = "\n\n✅ 云端服务端配置已同步成功！"
+            except Exception as e:
+                sync_msg = f"\n\n❌ 云端同步失败: {e}"
+
+        QMessageBox.information(self, "成功", f"AI 配置已本地保存！{sync_msg}")
 
 
 class SleepStatisticsWindow(QWidget):
@@ -616,6 +630,7 @@ class SleepStatisticsWindow(QWidget):
     def __init__(self, config, parent=None, sleep_server=None):
         super().__init__(parent)
         self.config = config
+        self.sleep_server = sleep_server
         self.resize(800, 600)
         self.setMinimumSize(800, 600)
         self.setWindowFlags(
@@ -948,7 +963,7 @@ class SleepStatisticsWindow(QWidget):
         self.trend_chart.set_metric("sleep_cycles")
 
         # 配置页
-        self.config_page = AIConfigWidget(self.config)
+        self.config_page = AIConfigWidget(self.config, sleep_server=self.sleep_server)
         self.tabs.addTab(self.config_page, "AI 配置")
 
         right_layout.addWidget(self.tabs)

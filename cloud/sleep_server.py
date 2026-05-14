@@ -523,7 +523,55 @@ class SleepDataHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/upload"): self._handle_upload()
         elif self.path.startswith("/submit_evaluation"): self._handle_evaluation()
+        elif self.path.startswith("/update_ai_config"): self._handle_ai_config()
         else: self._set_headers(404)
+
+    def _handle_ai_config(self):
+        """接收并持久化来自客户端的 AI 配置"""
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(content_length).decode())
+            
+            # 更新 .env 文件 (如果存在) 或创建新的
+            env_path = os.path.join(os.path.dirname(__file__), ".env")
+            env_content = []
+            
+            # 我们主要同步 vision 和 text 相关配置
+            mapping = {
+                "vision_base_url": "VISION_BASE_URL",
+                "vision_api_key":  "VISION_API_KEY",
+                "vision_model":    "VISION_MODEL",
+                "text_base_url":   "TEXT_BASE_URL",
+                "text_api_key":    "TEXT_API_KEY",
+                "text_model":      "TEXT_MODEL"
+            }
+            
+            # 读取现有内容以便保留非 AI 相关的配置
+            existing_env = {}
+            if os.path.exists(env_path):
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if "=" in line and not line.startswith("#"):
+                            k, v = line.strip().split("=", 1)
+                            existing_env[k] = v
+            
+            # 更新配置
+            for cfg_key, env_key in mapping.items():
+                if cfg_key in data:
+                    existing_env[env_key] = data[cfg_key]
+            
+            # 写回文件
+            with open(env_path, "w", encoding="utf-8") as f:
+                for k, v in existing_env.items():
+                    f.write(f"{k}={v}\n")
+            
+            logger.info("✅ 云端 AI 配置已同步并持久化。")
+            self._set_headers(200)
+            self.wfile.write(json.dumps({"status": "ok", "message": "Cloud config updated"}).encode())
+        except Exception as e:
+            logger.error(f"同步配置失败: {e}")
+            self._set_headers(500)
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode())
 
     def _handle_upload(self):
         try:
