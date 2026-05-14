@@ -7,11 +7,15 @@ dist/
 
 # 本地配置
 config.json
+.env
 
 # 数据文件
 study_log.csv
 study_log.db
 statistics.html
+cloud_sleep_jobs.db
+cloud_data/
+cloud_attachments/
 
 # 只保留空 log 文件夹，忽略内部所有内容
 log/**

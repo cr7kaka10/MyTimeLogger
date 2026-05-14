@@ -14,7 +14,13 @@ import sqlite3
 import logging
 from datetime import datetime, timedelta
 
-from PyQt6.QtCore import QObject, pyqtSignal
+try:
+    from PyQt6.QtCore import QObject, pyqtSignal
+except ImportError:
+    # Server-side fallback if PyQt6 is not installed
+    class QObject: pass
+    def pyqtSignal(*args, **kwargs): return None
+
 
 from utils import resource_path
 from config import DEFAULT_CONFIG

@@ -394,3 +394,380 @@
 
 **状态**: 手机端已从简单的上传器进化为功能完备的“移动睡眠工作站”。
 **提交**: commit `7e1a4d2` (包含 markdown 库依赖及 UI 大改版)
+
+## 2026-05-14 睡眠分析云端化 v1 落地 (v7.0)
+
+**1. 纯 Python 分析核心抽离：**
+- 新增 `sleep_analyzer.py`，将原本绑定在 `sleep_statistics.AIWorker(QThread)` 中的视觉解析、JSON 提取、数据归一化、数学恒等式校验、日期纠偏和报告生成逻辑抽成无 PyQt 依赖的 `SleepAnalyzer`。
+- `AIWorker.run()` 已改为薄适配器，桌面端旧流程继续复用原有信号、按钮状态和 SSE 推送。
+
+**2. 云端 Buffer 与 FastAPI 服务：**
+- 新增 `cloud_sleep_store.py`，使用 SQLite 表 `cloud_sleep_jobs` 保存上传任务、状态、结果、错误和同步确认信息。
+- 新增 `cloud_sleep_api.py`，提供 `/upload`、`/status/{request_id}`、`/events/{request_id}`、`/sync_data`、`/ack_sync`、`/recent`、`/reflection` 等接口。
+- 除 `/ping` 和首页外，云端接口统一使用 `X-Auth-Token` 校验，Token 与 AI Key 均从环境变量读取。
+
+**3. PC 端云同步客户端：**
+- 新增 `cloud_sleep_client.py`，按 `config.json` 的 `cloud_sleep_sync` 配置主动拉取云端已完成睡眠分析结果。
+- 同步写入本地 `huawei_sleep_data`，遵守 `updated_at` 增量规则，并保留本地非空 `sleep_reflection`，避免云端空评价覆盖。
+- `gui.py` 启动后 3 秒自动执行首次云同步，之后按 `sync_interval_sec` 定时执行，并在主状态文字中显示云同步状态。
+
+**4. 配置、依赖与文档：**
+- `config.py` 默认配置新增 `cloud_sleep_sync`。
+- `requirements.txt` 补充 `openai`、`Pillow`、`markdown`、`fastapi`、`uvicorn`、`python-multipart`。
+- `document/server_deployment_plan.md` 已改写为实际执行/部署说明。
+- 新增 `scratch/test_sleep_analyzer_core.py` 与 `scratch/test_cloud_sleep_store.py` 作为核心逻辑和 Buffer 存储冒烟测试。
+
+**5. Docker 一键部署补充：**
+- 新增 `Dockerfile`、`docker-compose.yml`、`.dockerignore`、`.env.example`，服务以 `uvicorn cloud_sleep_api:app --host 0.0.0.0 --port 8000` 运行。
+- 新增 `cloud_runtime_config.py`，容器内通过环境变量生成最小 `config.json` 和 `skills/time-management/config.json`，避免把本地完整隐私配置打进镜像。
+- 新增 `scratch/create_cloud_env_from_local.py`，可从本机配置复制模型/aTimeLogger 参数并自动生成 `SLEEP_AUTH_TOKEN`。
+- 新增 `scratch/enable_local_cloud_sync.py`，可把 PC 端同步配置指向本机 Docker 服务。
+
+**状态**: 云端化 v1 代码通路已完成：本地旧流程仍可走 `SleepAnalyzer`，云端服务可接收上传并后台分析，PC 客户端具备主动拉取同步能力。下一步应在真实 API Key 和服务器环境中进行端到端上传测试。
+
+## 2026-05-14 交接给 Gemini 的云端化细节补充 (v7.0 handoff)
+
+### 当前真实进度
+
+本轮已经把“计划文档”推进到了可运行代码层面，核心目标是让睡眠分析服务可以脱离 PC GUI，在 Docker/FastAPI 中独立运行：
+
+1. **本地旧流程保持兼容**
+   - `sleep_statistics.py` 中的 `AIWorker.run()` 已从大段内联逻辑改成调用 `sleep_analyzer.SleepAnalyzer`。
+   - 旧的 PyQt 信号、按钮状态、`sleep_server.py` 本地 SSE 推送仍由 `AIWorker` 负责分发。
+   - 也就是说：桌面端原来的“选图/手机局域网上传 -> 睡眠窗口分析”路径理论上不应被破坏。
+
+2. **云端服务代码已基本完成**
+   - `cloud_sleep_api.py` 是 FastAPI 入口。
+   - `cloud_sleep_store.py` 是云端 Buffer SQLite 存储。
+   - `sleep_analyzer.py` 是无 PyQt 依赖的纯分析核心。
+   - `cloud_sleep_client.py` 是 PC 端主动拉取同步客户端。
+   - `cloud_runtime_config.py` 是 Docker/云端模式下生成最小运行配置的辅助模块。
+
+3. **Docker 一键部署文件已补齐**
+   - `Dockerfile`
+   - `docker-compose.yml`
+   - `.dockerignore`
+   - `.env.example`
+   - `scratch/create_cloud_env_from_local.py`
+   - `scratch/enable_local_cloud_sync.py`
+
+4. **文档已同步**
+   - `document/server_deployment_plan.md` 已从早期方案改成实际执行/部署说明。
+   - `document/详细设计文档.md` 已补充云端化架构说明。
+   - `requirements.txt` 已补充云端服务依赖。
+
+### SLEEP_AUTH_TOKEN 是什么
+
+`SLEEP_AUTH_TOKEN` 就是云端睡眠服务的接口密码，不是第三方平台给的 Key。它用于防止公网接口被陌生人上传图片、刷爆模型费用。
+
+生成方式：
+
+```powershell
+python scratch/create_cloud_env_from_local.py
+```
+
+该脚本会：
+- 读取本机 `config.json` 的 `ai_model_config`。
+- 读取 `skills/time-management/config.json` 的 aTimeLogger 配置。
+- 自动生成一个随机 `SLEEP_AUTH_TOKEN`。
+- 写入根目录 `.env`。
+
+注意：
+- `.env` 已写入 `.gitignore`，不要提交。
+- `.env` 里有真实 API Key、aTimeLogger 密码、`SLEEP_AUTH_TOKEN`，不要打印到聊天或日志。
+- 如果怀疑泄露，重新运行 `python scratch/create_cloud_env_from_local.py` 生成新 token，然后重启 Docker。
+
+### Docker 启动方式
+
+本机/服务器首次部署：
+
+```powershell
+python scratch/create_cloud_env_from_local.py
+docker compose up -d --build
+```
+
+查看：
+
+```powershell
+docker compose ps
+docker compose logs -f sleep-cloud
+```
+
+停止：
+
+```powershell
+docker compose down
+```
+
+服务默认端口：
+
+```text
+http://127.0.0.1:8000
+```
+
+健康检查：
+
+```powershell
+curl http://127.0.0.1:8000/ping
+```
+
+如果 PC 端也在同一台机器，要把桌面端同步指向本机 Docker：
+
+```powershell
+python scratch/enable_local_cloud_sync.py
+```
+
+该脚本会读取 `.env` 中的 `SLEEP_AUTH_TOKEN`，然后把本地 `config.json` 的：
+
+```json
+"cloud_sleep_sync": {
+  "enabled": true,
+  "base_url": "http://127.0.0.1:8000",
+  "auth_token": "...",
+  "sync_interval_sec": 300,
+  "last_sync_at": ""
+}
+```
+
+写进去。之后重启 MyTimeLogger，启动 3 秒后会触发首次云端同步。
+
+### API 设计现状
+
+`cloud_sleep_api.py` 已有接口：
+
+- `GET /ping`
+  - 无需 token，返回服务健康状态。
+- `GET /`
+  - 简易手机上传页面。
+- `POST /upload`
+  - 需要 `X-Auth-Token`。
+  - 表单字段：`file`。
+  - 上传图片后立即返回 `request_id`，后台开始分析。
+- `GET /status/{request_id}`
+  - 需要 `X-Auth-Token`。
+  - 查询任务状态与结果。
+- `GET /events/{request_id}`
+  - 需要 `X-Auth-Token`。
+  - SSE 进度推送，当前为基础实现。
+- `GET /sync_data?since=...`
+  - 需要 `X-Auth-Token`。
+  - PC 端拉取已完成分析。
+- `POST /ack_sync`
+  - 需要 `X-Auth-Token`。
+  - PC 端同步成功后回 ACK。
+- `GET /recent?limit=10`
+  - 需要 `X-Auth-Token`。
+  - 手机端查看最近记录。
+- `POST /reflection`
+  - 需要 `X-Auth-Token`。
+  - 手机端补写睡眠评价。
+
+### 云端 Buffer 数据库
+
+`cloud_sleep_store.py` 默认使用 SQLite。
+
+Docker 模式下数据库路径为：
+
+```text
+/app/cloud_data/cloud_sleep_jobs.db
+```
+
+由 `docker-compose.yml` 挂载到宿主机：
+
+```text
+./cloud_data:/app/cloud_data
+```
+
+核心表：
+
+```sql
+cloud_sleep_jobs (
+  request_id TEXT PRIMARY KEY,
+  date TEXT,
+  status TEXT NOT NULL,
+  image_path TEXT,
+  result_json TEXT,
+  analysis_report TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  sync_count INTEGER DEFAULT 0,
+  acked_at TEXT
+)
+```
+
+状态：
+- `queued`
+- `running`
+- `done`
+- `error`
+
+### 已验证项
+
+已跑通过：
+
+```powershell
+python scratch/test_sleep_analyzer_core.py
+python scratch/test_cloud_sleep_store.py
+python -m py_compile cloud_runtime_config.py cloud_sleep_store.py cloud_sleep_api.py scratch/create_cloud_env_from_local.py scratch/enable_local_cloud_sync.py
+docker compose config --quiet
+```
+
+FastAPI 基础导入和 token 校验之前也测试过：
+- `/ping` 返回 `ok`
+- 无 token 访问 `/sync_data` 返回 `401`
+- 正确 token 访问 `/sync_data` 返回 `ok`
+
+### 未完成/必须补测
+
+1. **Docker 镜像尚未实际 build 成功**
+   - 原因不是代码，而是当前机器 Docker Desktop daemon 没启动。
+   - 报错是：
+     ```text
+     failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine
+     ```
+   - Gemini 接手后第一件事：启动 Docker Desktop，然后跑：
+     ```powershell
+     docker compose up -d --build
+     docker compose logs -f sleep-cloud
+     ```
+
+2. **真实 AI 端到端上传未完成**
+   - 还没有用真实截图完整走通：
+     手机/浏览器上传 -> 云端视觉模型 OCR -> 生成报告 -> 写入 Buffer -> PC 拉取入本地库。
+   - 原因：上一轮只做了代码级和接口级冒烟测试，没有实际启动 Docker 服务和调用真实模型。
+
+3. **云端报告生成仍依赖 `generate_full_report.py`**
+   - `sleep_analyzer.py` 调用 `skills/time-management/generate_full_report.py`。
+   - 该脚本会读取：
+     - 根目录 `config.json`
+     - `skills/time-management/config.json`
+   - Docker 模式下由 `cloud_runtime_config.py` 在容器启动时从环境变量生成这两个最小配置。
+   - 重点风险：不要把本机完整 `config.json` COPY 进镜像。`.dockerignore` 已排除 `config.json` 和 `skills/time-management/config.json`。
+
+4. **本地 `config.json` 是 Git 跟踪文件**
+   - 虽然 `.gitignore` 里写了 `config.json`，但仓库当前实际已经追踪它。
+   - 本轮为了避免泄露/污染，最后执行过 `git restore -- config.json`，不把本机密钥配置作为代码改动提交。
+   - Gemini 不要把 `.env` 或真实密钥写进提交。
+
+5. **PC 同步 UI 比较轻量**
+   - 当前只在 `gui.py` 的 `status_label` 显示：
+     - `☁️ 云端睡眠同步中...`
+     - `☁️ 云端睡眠同步完成：N 条`
+     - `☁️ 云端睡眠同步失败: ...`
+   - 这不是最终漂亮 UI，只是 v1 可用状态提示。
+
+### 当前重难点和容易踩坑的地方
+
+1. **不要让云端依赖 PyQt**
+   - `sleep_analyzer.py`、`cloud_sleep_api.py`、`cloud_sleep_store.py`、`cloud_sleep_client.py` 不应直接 import PyQt。
+   - 目前 `database.py` 顶部仍 import `PyQt6.QtCore`，而 `generate_full_report.py` 会 import `StudyLogger`。
+   - Docker 镜像目前通过 `requirements.txt` 安装 `PyQt6`，所以能跑，但这不是最轻量方案。
+   - 后续更干净的方向：拆一个纯数据库模块，或让云端报告生成完全不 import `database.py`。
+
+2. **云端是否需要 aTimeLogger**
+   - `generate_comprehensive_report()` 里有逻辑：只要 `injected_sleep_data is not None`，就会尝试拉 aTimeLogger，用于计算 `fall_asleep_min` 和 `wake_up_min`。
+   - 所以 `.env` 里也复制了 `ATIMELOGGER_USERNAME/PASSWORD`。
+   - 如果服务器无法访问 aTimeLogger，报告仍可能生成，但入睡/起床用时可能为 0 或缺失。
+
+3. **数学恒等式校验很硬**
+   - `SleepAnalyzer.validate_data()` 仍要求：
+     ```text
+     total_sleep_min == deep_sleep_min + light_sleep_min + rem_sleep_min
+     ```
+   - 如果模型 OCR 把“夜间睡眠”和“在床时间”搞混，会进入重试。
+   - 这是当前数据质量核心保护，不要轻易放宽，除非用户明确要求。
+
+4. **日期纠偏逻辑仍偏“近期数据”**
+   - 如果 AI 返回的年份不是当前年份，`SleepAnalyzer` 会强制替换成当前年份。
+   - 这是之前为防止 AI 幻觉 2024 年加入的逻辑。
+   - 如果未来要补录跨年份历史睡眠，必须重新设计这段。
+
+5. **Docker 运行时配置生成**
+   - `cloud_runtime_config.ensure_cloud_runtime_config()` 只有在 `MYTIMELOGGER_CLOUD_MODE=1` 时生效。
+   - `docker-compose.yml` 里设置了：
+     ```yaml
+     MYTIMELOGGER_CLOUD_MODE: "1"
+     CLOUD_RUNTIME_OVERWRITE: "1"
+     CLOUD_SLEEP_DB_PATH: /app/cloud_data/cloud_sleep_jobs.db
+     ```
+   - 本地普通桌面运行不要设置 `MYTIMELOGGER_CLOUD_MODE=1`，避免生成云端最小配置。
+
+6. **`.env` 是当前部署真相**
+   - 生成 Docker `.env` 的脚本是：
+     ```powershell
+     python scratch/create_cloud_env_from_local.py
+     ```
+   - 若用户更换视觉模型、本地 `config.json` 修改后，需要重新运行该脚本，或手动编辑 `.env`。
+
+### Gemini 下一步建议优先级
+
+1. 启动 Docker Desktop，执行：
+   ```powershell
+   docker compose up -d --build
+   docker compose logs -f sleep-cloud
+   ```
+
+2. 验证健康接口：
+   ```powershell
+   curl http://127.0.0.1:8000/ping
+   ```
+
+3. 用 `.env` 中的 `SLEEP_AUTH_TOKEN` 上传一张已有截图测试：
+   ```powershell
+   curl -X POST http://127.0.0.1:8000/upload `
+     -H "X-Auth-Token: <填.env里的token>" `
+     -F "file=@attachments/sleep_2026-05-13.jpg"
+   ```
+
+4. 拿返回的 `request_id` 查询：
+   ```powershell
+   curl http://127.0.0.1:8000/status/<request_id> -H "X-Auth-Token: <token>"
+   ```
+
+5. 如果云端任务变成 `done`，启用 PC 同步：
+   ```powershell
+   python scratch/enable_local_cloud_sync.py
+   ```
+   然后启动 MyTimeLogger，确认本地睡眠数据/趋势图能看到云端同步结果。
+
+6. 如果端到端跑通，再考虑：
+   - 优化手机 HTML 页面。
+   - 加入云端清理任务：已 ACK 7 天后删图片，30 天后删 Buffer。
+   - 加入频率限制，避免公网暴露后被刷。
+   - 改造 Hamibot/AutoX 脚本，把上传地址换成公网域名，并加 `X-Auth-Token`。
+
+### 当前可提交文件清单提示
+
+这轮应提交的源码/文档类文件包括：
+
+- `.gitignore`
+- `.dockerignore`
+- `.env.example`
+- `Dockerfile`
+- `docker-compose.yml`
+- `sleep_analyzer.py`
+- `cloud_sleep_api.py`
+- `cloud_sleep_store.py`
+- `cloud_sleep_client.py`
+- `cloud_runtime_config.py`
+- `config.py`
+- `gui.py`
+- `sleep_statistics.py`
+- `requirements.txt`
+- `scratch/create_cloud_env_from_local.py`
+- `scratch/enable_local_cloud_sync.py`
+- `scratch/test_sleep_analyzer_core.py`
+- `scratch/test_cloud_sleep_store.py`
+- `document/server_deployment_plan.md`
+- `document/详细设计文档.md`
+- `document/memory.md`
+
+不要提交：
+- `.env`
+- `config.json` 的本机密钥变化
+- `cloud_data/`
+- `cloud_attachments/`
+- `cloud_sleep_jobs.db`
+- `__pycache__/`
+- `scratch/__pycache__/`

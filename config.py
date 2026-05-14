@@ -63,6 +63,13 @@ DEFAULT_CONFIG = {
         "text_base_url": "https://open.bigmodel.cn/api/paas/v4",
         "text_api_key": "",
         "text_model": "glm-4-flash"
+    },
+    "cloud_sleep_sync": {              # 云端睡眠分析同步配置
+        "enabled": False,
+        "base_url": "",
+        "auth_token": "",
+        "sync_interval_sec": 300,
+        "last_sync_at": ""
     }
 }
 

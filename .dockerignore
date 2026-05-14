@@ -1,0 +1,17 @@
+.git
+.vscode
+__pycache__
+**/__pycache__
+*.pyc
+build
+dist
+log/*
+!log/.gitkeep
+config.json
+skills/time-management/config.json
+*.db
+cloud_sleep_jobs.db
+cloud_attachments
+attachments
+reports
+.env
