@@ -108,6 +108,15 @@ class SleepAnalyzer:
         self.db = db
         self.progress_callback = progress_callback
 
+        # 逻辑恢复：如果没传 sleep_data 但传了 date_str，去数据库捞一把
+        if not self.sleep_data and self.db and self.date_str:
+            existing = self.db.get_huawei_sleep_data(self.date_str)
+            if existing:
+                # 检查是否是完整数据包 (有核心指标)
+                if self.validate_data(existing)[0]:
+                    self.sleep_data = existing
+                    logger.info(f"从数据库恢复了 {self.date_str} 的已有睡眠数据")
+
     def progress(self, msg):
         if self.progress_callback:
             self.progress_callback(msg)
@@ -387,7 +396,10 @@ class SleepAnalyzer:
 
     def analyze(self):
         try:
-            if not self.image_path or not os.path.exists(self.image_path):
+            # 逻辑恢复：如果已有完整数据（从 DB 恢复或外部传入），直接跳过识别
+            if self.sleep_data and self.validate_data(self.sleep_data)[0]:
+                self.progress("检测到数据库中已有完整睡眠包，跳过 OCR 识别阶段...")
+            elif not self.image_path or not os.path.exists(self.image_path):
                 if self.sleep_data:
                     self.progress("检测到已有睡眠数据，跳过识别环节...")
                 else:

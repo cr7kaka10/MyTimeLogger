@@ -146,12 +146,16 @@ def _run_analysis(request_id, image_path, user_id, full=True):
     store.mark_running(request_id)
     _push_progress(request_id, {"status": "running", "msg": f"开始服务端{'完整' if full else '快速'}睡眠分析..."})
 
+    job = store.get_job(request_id, user_id=user_id)
+    date_str = job.get("date") if job else None
+
     def progress(msg):
         _push_progress(request_id, {"status": "progress", "msg": msg})
 
     analyzer = SleepAnalyzer(
         ai_cfg=build_ai_cfg(),
         image_path=image_path,
+        date_str=date_str,          # 传入日期以实现逻辑复用
         include_time_analysis=full,  # 如果是完整分析，包含时间管理部分
         db=time_logger_db,          # 传入主数据库连接
         progress_callback=progress,
