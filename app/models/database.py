@@ -40,7 +40,20 @@ class StudyLogger:
         self.db_type = self.config.get("db_type", "sqlite")
         db_dir = resource_path("local_data")
         os.makedirs(db_dir, exist_ok=True)
-        self.log_path = os.path.join(db_dir, "study_log.db")
+        self.log_path = os.path.join(db_dir, "my_time_logger.db")
+        
+        # 兼容性迁移：如果存在旧的 study_log.db，且新的 my_time_logger.db 较小，则进行重命名迁移
+        old_path = os.path.join(db_dir, "study_log.db")
+        if os.path.exists(old_path):
+            if not os.path.exists(self.log_path) or os.path.getsize(old_path) > os.path.getsize(self.log_path):
+                try:
+                    if os.path.exists(self.log_path):
+                        os.rename(self.log_path, self.log_path + ".bak")
+                    os.rename(old_path, self.log_path)
+                    logging.info(f"已将数据库从 {old_path} 迁移至 {self.log_path}")
+                except Exception as e:
+                    logging.error(f"数据库迁移失败: {e}")
+
         self._conn = None
 
         if self.db_type == "sqlite":
