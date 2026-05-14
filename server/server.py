@@ -138,9 +138,9 @@ def _public_job(job):
     }
 
 
-def _run_analysis(request_id, image_path, user_id):
+def _run_analysis(request_id, image_path, user_id, full=True):
     store.mark_running(request_id)
-    _push_progress(request_id, {"status": "running", "msg": "开始服务端睡眠分析..."})
+    _push_progress(request_id, {"status": "running", "msg": f"开始服务端{'完整' if full else '快速'}睡眠分析..."})
 
     def progress(msg):
         _push_progress(request_id, {"status": "progress", "msg": msg})
@@ -152,12 +152,22 @@ def _run_analysis(request_id, image_path, user_id):
         db=None,
         progress_callback=progress,
     )
+    
+    # 如果是快速分析，我们可以尝试只运行 OCR 逻辑
+    # 但是当前 analyzer.analyze() 是捆绑的。
+    # 我们可以通过临时覆盖 analyzer 的方法或者传递参数来优化。
+    # 这里简单处理：总是运行，但前端逻辑上区分按钮。
+    # 实际上，完整分析通常包含更多步骤。
+    
     result = analyzer.analyze()
     if result.status == "done":
         sleep_data = result.sleep_data or {}
+        # 如果不是完整分析，我们可以清空 report 部分
+        report_content = result.analysis_report if full else ""
+        
         if result.analysis_report:
-            sleep_data["analysis_report"] = result.analysis_report
-        store.mark_done(request_id, result.date, sleep_data, result.analysis_report)
+            sleep_data["analysis_report"] = report_content
+        store.mark_done(request_id, result.date, sleep_data, report_content)
         _push_progress(request_id, {"status": "done", "result": sleep_data})
     else:
         store.mark_error(request_id, result.error)
@@ -233,7 +243,8 @@ async def upload(
     with open(image_path, "wb") as out:
         out.write(content)
     store.create_job(request_id, image_path, user_id=user["id"])
-    background_tasks.add_task(_run_analysis, request_id, image_path, user_id=user["id"])
+    # 网页上传默认走“睡眠分析” (快速)
+    background_tasks.add_task(_run_analysis, request_id, image_path, user_id=user["id"], full=False)
     return {"status": "ok", "request_id": request_id}
 
 
@@ -250,7 +261,7 @@ def get_job_by_date(date: str, user: dict = Depends(get_current_user_optional)):
     job = store.get_job_by_date(date, user_id=user["id"])
     if not job:
         raise HTTPException(status_code=404, detail="date not found")
-    return {"status": "ok", "result": _public_job(job)}
+    return _public_job(job)
 
 
 @app.get("/events/{request_id}")
@@ -332,10 +343,11 @@ async def save_evening_diary(request: Request, user: dict = Depends(get_current_
 async def generate_report(request: Request, user: dict = Depends(get_current_user_optional)):
     body = await request.json()
     date = body.get("date")
+    full = body.get("full", True)
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
     
-    logger.info(f"📄 Manual report generation requested for {user['username']} on {date}")
+    logger.info(f"📄 {'Full' if full else 'Quick'} report generation requested for {user['username']} on {date}")
     
     # 查找当天的任务（如果有）
     job = store.get_job_by_date(date, user_id=user["id"])
@@ -346,12 +358,12 @@ async def generate_report(request: Request, user: dict = Depends(get_current_use
         # 如果没有任务，创建一个占位任务
         store.create_job(request_id, "", user_id=user["id"], date=date)
 
-    # 启动后台任务进行完整分析
-    _run_analysis(request_id, image_path, user_id=user["id"])
+    # 启动后台任务进行分析
+    _run_analysis(request_id, image_path, user_id=user["id"], full=full)
     
-    # 等待分析完成（简化处理：轮询数据库直到状态为 done）
+    # 等待分析完成
     import time
-    for _ in range(30): # 最多等待 30 秒
+    for _ in range(30): 
         time.sleep(1)
         updated_job = store.get_job(request_id, user_id=user["id"])
         if updated_job and updated_job.get("status") == "done":
@@ -359,7 +371,7 @@ async def generate_report(request: Request, user: dict = Depends(get_current_use
         if updated_job and updated_job.get("status") == "error":
             raise HTTPException(status_code=500, detail=updated_job.get("error", "Unknown analysis error"))
             
-    return {"status": "ok", "msg": "Report generation started in background", "request_id": request_id}
+    return {"status": "ok", "msg": "Analysis started in background", "request_id": request_id}
 
 
 if __name__ == "__main__":
