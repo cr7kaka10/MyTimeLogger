@@ -460,7 +460,10 @@ class ScreenshotParser:
         except Exception as e:
             print(f"  ❌ [Trace] 计算入睡/醒来时间严重失败: {e}")
         
-        return fall_asleep_time, wake_up_time
+        atm_start_str = start_naive.strftime("%H:%M") if 'start_naive' in locals() and start_naive else None
+        atm_end_str = finish_naive.strftime("%H:%M") if 'finish_naive' in locals() and finish_naive else None
+        
+        return fall_asleep_time, wake_up_time, atm_start_str, atm_end_str
     
     def _calculate_fall_asleep_time(self, text):
         """计算入睡需要的时间（分钟）- 从文本解析"""

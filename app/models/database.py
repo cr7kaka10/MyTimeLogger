@@ -162,6 +162,8 @@ class StudyLogger:
                         awake_min INT,
                         fall_asleep_min INT,
                         wake_up_min INT,
+                        atm_sleep_start TEXT,
+                        atm_sleep_end TEXT,
                         analysis_report TEXT,
                         sleep_reflection TEXT,
                         updated_at DATETIME
@@ -249,6 +251,8 @@ class StudyLogger:
                         awake_min INTEGER,
                         fall_asleep_min INTEGER,
                         wake_up_min INTEGER,
+                        atm_sleep_start TEXT,
+                        atm_sleep_end TEXT,
                         analysis_report TEXT,
                         sleep_reflection TEXT,
                         updated_at TIMESTAMP
@@ -284,6 +288,10 @@ class StudyLogger:
                     cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN light_sleep_ratio INTEGER")
                 if 'rem_sleep_ratio' not in h_cols:
                     cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN rem_sleep_ratio INTEGER")
+                if 'atm_sleep_start' not in h_cols:
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN atm_sleep_start TEXT")
+                if 'atm_sleep_end' not in h_cols:
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN atm_sleep_end TEXT")
             conn.commit()
 
             conn.commit()
@@ -1664,7 +1672,8 @@ class StudyLogger:
                 data.get('rem_sleep_ratio'), data.get('sleep_continuity'),
                 data.get('breathing_score'), data.get('sleep_cycles'),
                 data.get('awake_min'), data.get('fall_asleep_min'),
-                data.get('wake_up_min'), data.get('analysis_report'),
+                data.get('wake_up_min'), data.get('atm_sleep_start'),
+                data.get('atm_sleep_end'), data.get('analysis_report'),
                 data.get('sleep_reflection'), now_str
             )
             
@@ -1675,8 +1684,9 @@ class StudyLogger:
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
                         light_sleep_ratio, rem_sleep_ratio,
                         sleep_continuity, breathing_score, sleep_cycles, awake_min, 
-                        fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        fall_asleep_min, wake_up_min, atm_sleep_start, atm_sleep_end, 
+                        analysis_report, sleep_reflection, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE 
                         sleep_score=VALUES(sleep_score), total_sleep_min=VALUES(total_sleep_min),
                         deep_sleep_min=VALUES(deep_sleep_min), light_sleep_min=VALUES(light_sleep_min),
@@ -1688,7 +1698,8 @@ class StudyLogger:
                         sleep_continuity=VALUES(sleep_continuity),
                         breathing_score=VALUES(breathing_score), sleep_cycles=VALUES(sleep_cycles),
                         awake_min=VALUES(awake_min), fall_asleep_min=VALUES(fall_asleep_min),
-                        wake_up_min=VALUES(wake_up_min), analysis_report=VALUES(analysis_report),
+                        wake_up_min=VALUES(wake_up_min), atm_sleep_start=VALUES(atm_sleep_start),
+                        atm_sleep_end=VALUES(atm_sleep_end), analysis_report=VALUES(analysis_report),
                         sleep_reflection=COALESCE(VALUES(sleep_reflection), sleep_reflection),
                         updated_at=VALUES(updated_at)
                 ''', fields)
@@ -1699,8 +1710,9 @@ class StudyLogger:
                         rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, 
                         light_sleep_ratio, rem_sleep_ratio,
                         sleep_continuity, breathing_score, sleep_cycles, awake_min, 
-                        fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        fall_asleep_min, wake_up_min, atm_sleep_start, atm_sleep_end,
+                        analysis_report, sleep_reflection, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(date) DO UPDATE SET 
                         sleep_score=excluded.sleep_score, total_sleep_min=excluded.total_sleep_min,
                         deep_sleep_min=excluded.deep_sleep_min, light_sleep_min=excluded.light_sleep_min,
@@ -1712,7 +1724,8 @@ class StudyLogger:
                         sleep_continuity=excluded.sleep_continuity,
                         breathing_score=excluded.breathing_score, sleep_cycles=excluded.sleep_cycles,
                         awake_min=excluded.awake_min, fall_asleep_min=excluded.fall_asleep_min,
-                        wake_up_min=excluded.wake_up_min, analysis_report=excluded.analysis_report,
+                        wake_up_min=excluded.wake_up_min, atm_sleep_start=excluded.atm_sleep_start,
+                        atm_sleep_end=excluded.atm_sleep_end, analysis_report=excluded.analysis_report,
                         sleep_reflection=COALESCE(excluded.sleep_reflection, sleep_reflection),
                         updated_at=excluded.updated_at
                 ''', fields)
@@ -1854,7 +1867,8 @@ class StudyLogger:
                 "rem_sleep_min, awake_count, sleep_start, sleep_end, deep_sleep_ratio, "
                 "light_sleep_ratio, rem_sleep_ratio, "
                 "sleep_continuity, breathing_score, sleep_cycles, awake_min, "
-                "fall_asleep_min, wake_up_min, analysis_report, sleep_reflection, updated_at"
+                "fall_asleep_min, wake_up_min, atm_sleep_start, atm_sleep_end, "
+                "analysis_report, sleep_reflection, updated_at"
             )
             if self.db_type == "mysql":
                 cursor.execute(f"SELECT {cols} FROM huawei_sleep_data WHERE date = %s", (date_str,))
@@ -1885,9 +1899,11 @@ class StudyLogger:
                 "awake_min": row[15],
                 "fall_asleep_min": row[16],
                 "wake_up_min": row[17],
-                "analysis_report": row[18],
-                "sleep_reflection": row[19],
-                "updated_at": row[20]
+                "atm_sleep_start": row[18],
+                "atm_sleep_end": row[19],
+                "analysis_report": row[20],
+                "sleep_reflection": row[21],
+                "updated_at": row[22]
             }
         except Exception as e:
             logging.error(f"获取华为睡眠数据失败: {e}")

@@ -99,9 +99,11 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
 
         parser = ScreenshotParser()
         activities = atimelogger_data.get('activities', []) if atimelogger_data else []
-        fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
+        fall_asleep_min, wake_up_min, atm_start, atm_end = parser.calculate_sleep_transition_times(sleep_data, activities)
         sleep_data['fall_asleep_min'] = int(round(float(fall_asleep_min)))
         sleep_data['wake_up_min'] = int(round(float(wake_up_min)))
+        sleep_data['atm_sleep_start'] = atm_start
+        sleep_data['atm_sleep_end'] = atm_end
 
         # ====== 核心步骤: 数据计算 (Data Calculation Trace) ======
         calc_trace = []
