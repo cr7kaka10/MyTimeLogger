@@ -6,7 +6,7 @@ import os
 import sqlite3
 from datetime import datetime
 
-from utils import resource_path
+from app.utils.utils import resource_path
 
 
 DONE_STATUSES = {"done"}
@@ -17,7 +17,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta
 
-from utils import resource_path
+from app.utils.utils import resource_path
 
 
 def now_str():

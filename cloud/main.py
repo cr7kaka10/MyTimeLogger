@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import sys
 import os
 import queue
 import shutil
@@ -14,10 +15,16 @@ from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# 确保项目根目录在 sys.path 中，以便找到 app.utils
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
 from .store import CloudSleepStore
 from .runtime_config import ensure_cloud_runtime_config
 from .analyzer import SleepAnalyzer
-from utils import resource_path
+from app.utils.utils import resource_path
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
