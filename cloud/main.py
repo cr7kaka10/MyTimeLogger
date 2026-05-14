@@ -14,14 +14,14 @@ from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from cloud_sleep_store import CloudSleepStore
-from cloud_runtime_config import ensure_cloud_runtime_config
-from sleep_analyzer import SleepAnalyzer
+from .store import CloudSleepStore
+from .runtime_config import ensure_cloud_runtime_config
+from .analyzer import SleepAnalyzer
 from utils import resource_path
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
-ATTACHMENTS_DIR = resource_path("cloud_attachments")
+ATTACHMENTS_DIR = resource_path(os.path.join("cloud", "attachments"))
 
 ensure_cloud_runtime_config()
 
@@ -111,6 +111,11 @@ def _run_analysis(request_id, image_path, user_id):
 
     def progress(msg):
         _push_progress(request_id, {"status": "progress", "msg": msg})
+
+    def _load_prompt(self):
+        # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+        root_dir = os.path.dirname(os.path.dirname(__file__))
+        skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
 
     analyzer = SleepAnalyzer(
         ai_cfg=build_ai_cfg(),
@@ -343,6 +348,9 @@ async def upload(
     os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
     request_id = uuid.uuid4().hex
     safe_name = "".join(c for c in (file.filename or "upload.jpg") if c.isalnum() or c in ".-_")
+    # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    skill_dir = os.path.join(root_dir, "skills", "time-management")
     image_path = os.path.join(ATTACHMENTS_DIR, f"{request_id}_{safe_name}")
     with open(image_path, "wb") as out:
         out.write(content)

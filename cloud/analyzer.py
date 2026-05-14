@@ -227,7 +227,9 @@ class SleepAnalyzer:
         return None
 
     def _load_prompt(self):
-        skill_path = os.path.join(os.path.dirname(__file__), "skills", "time-management", "SKILL.md")
+        # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+        root_dir = os.path.dirname(os.path.dirname(__file__))
+        skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
         try:
             if os.path.exists(skill_path):
                 with open(skill_path, "r", encoding="utf-8") as file:
@@ -408,7 +410,9 @@ class SleepAnalyzer:
             self.sleep_data["date"] = target_date
             self.progress(f"日期: {target_date}，正在拉取数据...")
 
-            skill_dir = os.path.join(os.path.dirname(__file__), "skills", "time-management")
+            # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+            root_dir = os.path.dirname(os.path.dirname(__file__))
+            skill_dir = os.path.join(root_dir, "skills", "time-management")
             if skill_dir not in sys.path:
                 sys.path.insert(0, skill_dir)
             from generate_full_report import generate_comprehensive_report

@@ -1,8 +1,8 @@
 services:
   sleep-cloud:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: cloud/Dockerfile
     container_name: mytimelogger-sleep-cloud
     restart: unless-stopped
     env_file:
@@ -10,11 +10,11 @@ services:
     environment:
       MYTIMELOGGER_CLOUD_MODE: "1"
       CLOUD_RUNTIME_OVERWRITE: "1"
-      CLOUD_SLEEP_DB_PATH: /app/cloud_data/cloud_sleep_jobs.db
+      CLOUD_SLEEP_DB_PATH: /app/cloud/data/cloud_sleep_jobs.db
     ports:
       - "${SLEEP_CLOUD_PORT:-8000}:8000"
     volumes:
-      - ./cloud_data:/app/cloud_data
-      - ./cloud_attachments:/app/cloud_attachments
-      - ./reports:/app/reports
-      - ./log:/app/log
+      - ./data:/app/cloud/data
+      - ./attachments:/app/cloud/attachments
+      - ../reports:/app/reports
+      - ../log:/app/log

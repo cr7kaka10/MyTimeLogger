@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-server.txt .
-RUN pip install --no-cache-dir -r requirements-server.txt
+COPY cloud/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/cloud_data /app/cloud_attachments /app/reports /app/log
+RUN mkdir -p /app/cloud/data /app/cloud/attachments /app/reports /app/log
 
 EXPOSE 8000
 
-CMD ["uvicorn", "cloud_sleep_api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "cloud.main:app", "--host", "0.0.0.0", "--port", "8000"]

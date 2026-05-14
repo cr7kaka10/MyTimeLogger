@@ -235,7 +235,7 @@ class AIWorker(QThread):
 
     def run(self):
         try:
-            from sleep_analyzer import SleepAnalyzer
+            from cloud.analyzer import SleepAnalyzer
 
             analyzer = SleepAnalyzer(
                 ai_cfg=self.ai_cfg,
