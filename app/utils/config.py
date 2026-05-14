@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     "short_break_duration": 10,        # 短休息时长（秒）
     "long_break_threshold": 90 * 60,   # 触发长休息的累计学习时长阈值（秒）
     "long_break_duration": 20 * 60,    # 长休息时长（秒）
-    "music_folder": "assets/music",    # 音效资源文件夹
+    "music_folder": "assets/audio",    # 音效资源文件夹
     "sound_files": {                   # 各场景音效文件名
         "start_short_break": "start_short_break.mp3",
         "start_long_break": "start_long_break.mp3",

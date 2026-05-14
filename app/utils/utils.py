@@ -28,13 +28,19 @@ def resource_path(relative_path):
     Returns:
         拼接后的绝对路径
     """
+    # 路径映射重定向
+    if relative_path == 'config.json':
+        relative_path = os.path.join('config', 'config.json')
+    elif relative_path.startswith('study_music'):
+        relative_path = relative_path.replace('study_music', os.path.join('assets', 'audio'))
+
     # 用户可写/持久化的数据文件列表
     user_data_files = [
         'config.json', 'study_log.db', 'study_log.json',
         'statistics.html', 'study_log.csv'
     ]
 
-    if relative_path in user_data_files or relative_path.endswith('.db') or relative_path.endswith('.json'):
+    if relative_path in user_data_files or relative_path.endswith('.db') or relative_path.endswith('.json') or relative_path.startswith('config'):
         # 用户数据：始终使用可执行文件所在的真实目录
         try:
             if getattr(sys, 'frozen', False):
@@ -43,14 +49,19 @@ def resource_path(relative_path):
                 base_path = os.path.abspath(".")
         except Exception:
             base_path = os.path.abspath(".")
+        
+        # 确保父目录存在（如 config/ 文件夹）
+        full_path = os.path.join(base_path, relative_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
     else:
         # 只读资源：优先使用 PyInstaller 的临时解压目录
         try:
             base_path = sys._MEIPASS
         except Exception:
             base_path = os.path.abspath(".")
+        full_path = os.path.join(base_path, relative_path)
 
-    return os.path.join(base_path, relative_path)
+    return full_path
 
 
 def setup_logging():
