@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FastAPI server endpoint for sleep screenshot analysis."""
+\"\"\"FastAPI server endpoint for sleep screenshot analysis.\"\"\"
 
 import asyncio
 import json
@@ -8,12 +8,17 @@ import os
 import queue
 import shutil
 import uuid
+import logging
 from datetime import datetime
 
 import markdown
 from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Request, UploadFile, Depends, status
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from dotenv import load_dotenv
+
+# 加载当前目录下的 .env 文件
+load_dotenv()
 
 # 确保项目根目录在 sys.path 中，以便找到 app.utils
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,15 +26,28 @@ root_dir = os.path.dirname(current_dir)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from .store import ServerSleepStore
-from .runtime_config import ensure_server_runtime_config
-from .analyzer import SleepAnalyzer
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("server")
+
+try:
+    from .store import ServerSleepStore
+    from .runtime_config import ensure_server_runtime_config
+    from .analyzer import SleepAnalyzer
+except (ImportError, ValueError):
+    from store import ServerSleepStore
+    from runtime_config import ensure_server_runtime_config
+    from analyzer import SleepAnalyzer
+
 from app.utils.utils import resource_path
 import logging
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
+import uvicorn
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 ATTACHMENTS_DIR = resource_path(os.path.join("server", "attachments"))
@@ -55,7 +73,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_sc
     return user
 
 def get_current_user_optional(x_auth_token: str | None = Header(default=None, alias="X-Auth-Token"), credentials: HTTPAuthorizationCredentials | None = Depends(HTTPBearer(auto_error=False))):
-    """支持 Legacy Token 和 Bearer Token"""
+    \"\"\"支持 Legacy Token 和 Bearer Token\"\"\"
     if credentials:
         user = store.get_user_by_session(credentials.credentials)
         if user: return user
@@ -100,17 +118,21 @@ def _push_progress(request_id, payload):
 def _public_job(job):
     if not job:
         return None
+    # 兼容处理：支持从 store._row_to_dict 出来的 sleep_data 字段
     result = job.get("sleep_data") or {}
-    raw_report = job.get("analysis_report") or ""
+    # 优先从字段读取，如果没有则从 result 字典里读
+    raw_report = job.get("analysis_report") or result.get("analysis_report") or ""
+    
     if raw_report:
         result = dict(result)
         result["analysis_report"] = raw_report
         result["analysis_html"] = markdown.markdown(raw_report, extensions=["fenced_code", "tables"])
+    
     return {
-        "request_id": job["request_id"],
-        "date": job.get("date"),
-        "status": job["status"],
-        "updated_at": job["updated_at"],
+        "request_id": job.get("request_id"),
+        "date": job.get("date") or result.get("date") or result.get("sleep_date"),
+        "status": job.get("status"),
+        "updated_at": job.get("updated_at"),
         "error": job.get("error"),
         "result": result,
     }
@@ -122,11 +144,6 @@ def _run_analysis(request_id, image_path, user_id):
 
     def progress(msg):
         _push_progress(request_id, {"status": "progress", "msg": msg})
-
-    def _load_prompt(self):
-        # 路径修正：现在 analyzer.py 在 server/ 子目录下，skills 在根目录
-        root_dir = os.path.dirname(os.path.dirname(__file__))
-        skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
 
     analyzer = SleepAnalyzer(
         ai_cfg=build_ai_cfg(),
@@ -155,7 +172,9 @@ async def register(request: Request):
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password required")
     if store.create_user(username, password):
+        logger.info(f"🆕 New user registered: {username}")
         return {"status": "ok", "msg": "Registration successful"}
+    logger.warning(f"⚠️ Registration failed (user exists): {username}")
     raise HTTPException(status_code=400, detail="Username already exists")
 
 
@@ -167,7 +186,9 @@ async def login(request: Request):
     user_id = store.verify_user(username, password)
     if user_id:
         token = store.create_session(user_id)
+        logger.info(f"✅ User logged in: {username} (ID: {user_id})")
         return {"status": "ok", "token": token, "username": username}
+    logger.warning(f"❌ Login failed for user: {username}")
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
 
@@ -181,182 +202,10 @@ def ping():
     return {"status": "ok", "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=FileResponse)
 def index():
-    return """
-    <!doctype html>
-    <html lang="zh-CN">
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>MyTimeLogger 睡眠云分析</title>
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-      <style>
-        :root{--primary:#6366f1;--primary-hover:#4f46e5;--bg:#0f172a;--card:#1e293b;--text:#f8fafc;--text-muted:#94a3b8}
-        body{font-family:'Inter',-apple-system,sans-serif;background:linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);color:var(--text);margin:0;padding:20px;min-height:100vh}
-        main{max-width:480px;margin:40px auto}
-        .card{background:rgba(30, 41, 59, 0.7);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:32px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.3)}
-        h2{margin:0 0 8px;font-weight:700;background:linear-gradient(to right, #fff, #94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-        .muted{color:var(--text-muted);font-size:14px;line-height:1.6}
-        input{width:100%;box-sizing:border-box;margin-top:16px;padding:14px;border-radius:12px;border:1px solid #334155;background:rgba(15,23,42,0.6);color:#fff;outline:none;transition:border 0.2s}
-        input:focus{border-color:var(--primary)}
-        button{width:100%;margin-top:16px;padding:14px;border-radius:12px;border:0;background:var(--primary);color:#fff;font-weight:600;cursor:pointer;transition:all 0.2s}
-        button:hover{background:var(--primary-hover);transform:translateY(-1px)}
-        button.secondary{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1)}
-        button.secondary:hover{background:rgba(255,255,255,0.1)}
-        .analysis-html td, .analysis-html th{border:1px solid rgba(255,255,255,0.1);padding:8px}
-        #statusInfo{margin-top:16px;padding:12px;border-radius:8px;background:rgba(0,0,0,0.2);display:none;font-size:13px;border:1px solid rgba(255,255,255,0.1)}
-        .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}
-        .metric{background:rgba(255,255,255,0.05);padding:16px;border-radius:16px;text-align:center}
-        .metric b{font-size:20px;display:block;margin-top:4px;color:var(--primary)}
-        .auth-box{display:none}
-        .user-info{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;font-size:14px;color:var(--text-muted)}
-        .logout{cursor:pointer;color:var(--primary)}
-        .logout:hover{text-decoration:underline}
-        .analysis-html{margin-top:20px;font-size:14px;border-top:1px solid rgba(255,255,255,0.1);padding-top:20px}
-        .analysis-html table{width:100%;border-collapse:collapse;margin:10px 0}
-        .analysis-html td, .analysis-html th{border:1px solid rgba(255,255,255,0.1);padding:8px}
-      </style>
-    </head>
-    <body><main>
-      <!-- 登录/注册 -->
-      <div id="authPanel" class="card">
-        <h2 id="authTitle">欢迎回来</h2>
-        <p class="muted" id="authDesc">请登录以同步您的睡眠健康数据</p>
-        <input id="username" placeholder="用户名" />
-        <input id="password" type="password" placeholder="密码" />
-        <button onclick="doAuth()" id="authBtn">登录</button>
-        <button class="secondary" onclick="toggleAuth()" id="toggleBtn">没有账号？注册</button>
-      </div>
-
-      <!-- 主界面 -->
-      <div id="mainPanel" class="card" style="display:none">
-        <div class="user-info">
-          <span>你好，<b id="displayUser">--</b></span>
-          <span class="logout" onclick="logout()">退出</span>
-        </div>
-        <h2>睡眠分析</h2>
-        <p class="muted">上传华为健康截图，AI 将为您深度解析</p>
-        <input id="file" type="file" accept="image/*" style="display:none" onchange="upload()" />
-        <button onclick="document.getElementById('file').click()">选择截图并上传</button>
-        <button class="secondary" onclick="recent()">查看最近记录</button>
-        <div id="statusInfo"></div>
-        <div id="result"></div>
-      </div>
-    </main>
-    <script>
-      let isLogin = true;
-      let token = localStorage.getItem('sleep_token');
-      
-      async function init() {
-        if(token) {
-          const r = await fetch('/auth/me', {headers:{'Authorization':`Bearer ${token}`}});
-          if(r.ok) {
-            const j = await r.json();
-            showMain(j.user.username);
-            return;
-          }
-          localStorage.removeItem('sleep_token');
-        }
-        showAuth();
-      }
-
-      function toggleAuth(){
-        isLogin = !isLogin;
-        authTitle.innerText = isLogin ? '欢迎回来' : '注册账号';
-        authDesc.innerText = isLogin ? '请登录以同步您的睡眠健康数据' : '为家人创建一个独立的睡眠分析账号';
-        authBtn.innerText = isLogin ? '登录' : '立即注册';
-        toggleBtn.innerText = isLogin ? '没有账号？注册' : '已有账号？登录';
-      }
-
-      async function doAuth(){
-        const u = username.value; const p = password.value;
-        if(!u || !p) return alert('请输入用户名和密码');
-        const path = isLogin ? '/auth/login' : '/auth/register';
-        const r = await fetch(path, {method:'POST', body:JSON.stringify({username:u, password:p})});
-        const j = await r.json();
-        if(!r.ok) return alert(j.detail || '操作失败');
-        if(!isLogin) { alert('注册成功，请登录'); toggleAuth(); return; }
-        token = j.token;
-        localStorage.setItem('sleep_token', token);
-        showMain(u);
-      }
-
-      function showMain(user){
-        displayUser.innerText = user;
-        authPanel.style.display = 'none';
-        mainPanel.style.display = 'block';
-      }
-      function showAuth(){
-        authPanel.style.display = 'block';
-        mainPanel.style.display = 'none';
-      }
-      function logout(){
-        localStorage.removeItem('sleep_token');
-        location.reload();
-      }
-
-      async function upload(){
-        try {
-          const f = document.getElementById('file').files[0];
-          if(!f) return;
-          console.log('Starting upload:', f.name, f.size);
-          const fd = new FormData(); fd.append('file', f);
-          const s = document.getElementById('statusInfo');
-          s.style.display = 'block'; s.innerText = '正在上传...';
-          const r = await fetch('/upload', {method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:fd});
-          const j = await r.json();
-          if(!r.ok){ s.innerText = j.detail || '上传失败'; return; }
-          console.log('Upload success, request_id:', j.request_id);
-          poll(j.request_id);
-        } catch (err) {
-          console.error('Upload Error:', err);
-          document.getElementById('statusInfo').innerText = '系统错误: ' + err.message;
-        }
-      }
-
-      async function poll(rid){
-        try {
-          const s = document.getElementById('statusInfo');
-          const r = await fetch('/status/'+rid, {headers:{'Authorization':`Bearer ${token}`}});
-          const j = await r.json();
-          s.innerText = '状态: ' + j.status + (j.msg ? ' - ' + j.msg : '');
-          if(j.status === 'done'){ 
-            render(j.result || {});
-            s.innerText = '分析完成！';
-            return; 
-          }
-          if(j.status === 'error') { s.innerText = '出错: ' + (j.error || '未知错误'); return; }
-          setTimeout(()=>poll(rid), 2500);
-        } catch (err) {
-          console.error('Poll Error:', err);
-        }
-      }
-
-      async function recent(){
-        const r = await fetch('/recent?limit=10', {headers:{'Authorization':`Bearer ${token}`}});
-        const j = await r.json();
-        result.innerHTML = '<div style="margin-top:20px">' + (j.data || []).map(x=>`
-          <div style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.05)">
-            <span style="font-weight:600">${x.date}</span> · 
-            <span style="color:var(--primary)">${x.sleep_data?.sleep_score || '--'}分</span>
-          </div>
-        `).join('') + '</div>';
-      }
-
-      function render(d){
-        result.innerHTML = `
-          <div class="grid">
-            <div class="metric">评分<b>${d.sleep_score || '--'}</b></div>
-            <div class="metric">总睡眠<b>${d.total_sleep_min || '--'} min</b></div>
-          </div>
-          <div class="analysis-html">${d.analysis_html || '暂无深度建议'}</div>
-        `;
-      }
-
-      init();
-    </script></body></html>
-    """
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+    return FileResponse(template_path)
 
 
 @app.post("/upload")
@@ -378,6 +227,9 @@ async def upload(
     root_dir = os.path.dirname(os.path.dirname(__file__))
     skill_dir = os.path.join(root_dir, "skills", "time-management")
     image_path = os.path.join(ATTACHMENTS_DIR, f"{request_id}_{safe_name}")
+    
+    logger.info(f"📤 Upload received: {file.filename} -> {request_id} (User: {user['username']})")
+    
     with open(image_path, "wb") as out:
         out.write(content)
     store.create_job(request_id, image_path, user_id=user["id"])
@@ -386,11 +238,19 @@ async def upload(
 
 
 @app.get("/status/{request_id}")
-def status(request_id: str, user: dict = Depends(get_current_user_optional)):
+def get_job_status(request_id: str, user: dict = Depends(get_current_user_optional)):
     job = store.get_job(request_id, user_id=user["id"])
     if not job:
         raise HTTPException(status_code=404, detail="request_id not found")
     return _public_job(job)
+
+
+@app.get("/status_by_date/{date}")
+def get_job_by_date(date: str, user: dict = Depends(get_current_user_optional)):
+    job = store.get_job_by_date(date, user_id=user["id"])
+    if not job:
+        raise HTTPException(status_code=404, detail="date not found")
+    return {"status": "ok", "result": _public_job(job)}
 
 
 @app.get("/events/{request_id}")
@@ -429,7 +289,15 @@ async def ack_sync(request: Request, user: dict = Depends(get_current_user_optio
 
 @app.get("/recent")
 def recent(limit: int = 10, user: dict = Depends(get_current_user_optional)):
-    return {"status": "ok", "data": store.list_recent(limit, user_id=user["id"])}
+    logger.info(f"📜 Fetching recent records (limit={limit}) for user: {user['username']}")
+    conn = store._connect()
+    try:
+        query = "SELECT * FROM server_sleep_jobs WHERE status='done' AND user_id=? ORDER BY date DESC, updated_at DESC LIMIT ?"
+        rows = conn.execute(query, (user["id"], int(limit))).fetchall()
+        # 必须调用 store._row_to_dict 处理，否则 _public_job 找不到 sleep_data 字段
+        return {"status": "ok", "data": [_public_job(store._row_to_dict(row)) for row in rows]}
+    finally:
+        conn.close()
 
 
 @app.post("/reflection")
@@ -440,5 +308,63 @@ async def reflection(request: Request, user: dict = Depends(get_current_user_opt
     if not date:
         raise HTTPException(status_code=400, detail="date is required")
     if not store.save_reflection(date, text, user_id=user["id"]):
+        logger.warning(f"⚠️ Failed to save morning diary for {user['username']} on {date}")
         raise HTTPException(status_code=404, detail="date not found")
+    logger.info(f"📝 Morning diary saved for {user['username']} on {date}")
     return {"status": "ok"}
+
+
+@app.post("/evening_diary")
+async def save_evening_diary(request: Request, user: dict = Depends(get_current_user_optional)):
+    body = await request.json()
+    date = body.get("date")
+    text = body.get("text", "")
+    if not date:
+        raise HTTPException(status_code=400, detail="date is required")
+    if not store.save_evening_diary(date, text, user_id=user["id"]):
+        logger.warning(f"⚠️ Failed to save evening diary for {user['username']} on {date}")
+        raise HTTPException(status_code=404, detail="date not found")
+    logger.info(f"🌙 Evening diary saved for {user['username']} on {date}")
+    return {"status": "ok"}
+
+
+@app.post("/generate_report")
+async def generate_report(request: Request, user: dict = Depends(get_current_user_optional)):
+    body = await request.json()
+    date = body.get("date")
+    if not date:
+        date = datetime.now().strftime("%Y-%m-%d")
+    
+    logger.info(f"📄 Manual report generation requested for {user['username']} on {date}")
+    
+    # 查找当天的任务（如果有）
+    job = store.get_job_by_date(date, user_id=user["id"])
+    image_path = job.get("image_path") if job else None
+    request_id = job.get("request_id") if job else uuid.uuid4().hex
+    
+    if not job:
+        # 如果没有任务，创建一个占位任务
+        store.create_job(request_id, "", user_id=user["id"], date=date)
+
+    # 启动后台任务进行完整 analysis
+    _run_analysis(request_id, image_path, user_id=user["id"])
+    
+    # 等待分析完成（简化处理：轮询数据库直到状态为 done）
+    import time
+    for _ in range(30): # 最多等待 30 秒
+        time.sleep(1)
+        updated_job = store.get_job(request_id, user_id=user["id"])
+        if updated_job and updated_job.get("status") == "done":
+            return {"status": "ok", "result": _public_job(updated_job)}
+        if updated_job and updated_job.get("status") == "error":
+            raise HTTPException(status_code=500, detail=updated_job.get("error", "Unknown analysis error"))
+            
+    return {"status": "ok", "msg": "Report generation started in background", "request_id": request_id}
+
+
+if __name__ == "__main__":
+    # 直接运行时的本地启动逻辑
+    port = int(os.getenv("SLEEP_SERVER_PORT", 8000))
+    print(f"🚀 MyTimeLogger Server 启动中...")
+    print(f"🔗 访问地址: http://127.0.0.1:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
