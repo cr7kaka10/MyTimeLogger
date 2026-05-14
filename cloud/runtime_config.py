@@ -58,7 +58,7 @@ def ensure_cloud_runtime_config(base_dir=None):
     overwrite = os.getenv("CLOUD_RUNTIME_OVERWRITE", "").lower() in ("1", "true", "yes")
 
     root_config_path = os.path.join(base_dir, "config.json")
-    skill_config_path = os.path.join(base_dir, "skills", "time-management", "config.json")
+    skill_config_path = os.path.join(base_dir, "cloud", "skills", "time-management", "config.json")
 
     if overwrite or not os.path.exists(root_config_path):
         write_json(root_config_path, build_root_config())

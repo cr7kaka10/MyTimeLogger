@@ -16,5 +16,5 @@ services:
     volumes:
       - ./data:/app/cloud/data
       - ./attachments:/app/cloud/attachments
-      - ../reports:/app/reports
-      - ../log:/app/log
+      - ./reports:/app/reports
+      - ./log:/app/log

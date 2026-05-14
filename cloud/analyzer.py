@@ -227,8 +227,8 @@ class SleepAnalyzer:
         return None
 
     def _load_prompt(self):
-        # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
-        root_dir = os.path.dirname(os.path.dirname(__file__))
+        # 路径修正：现在 analyzer.py 和 skills 都在 cloud/ 子目录下
+        root_dir = os.path.dirname(__file__)
         skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
         try:
             if os.path.exists(skill_path):
@@ -410,8 +410,8 @@ class SleepAnalyzer:
             self.sleep_data["date"] = target_date
             self.progress(f"日期: {target_date}，正在拉取数据...")
 
-            # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
-            root_dir = os.path.dirname(os.path.dirname(__file__))
+            # 路径修正：现在 analyzer.py 和 skills 都在 cloud/ 子目录下
+            root_dir = os.path.dirname(__file__)
             skill_dir = os.path.join(root_dir, "skills", "time-management")
             if skill_dir not in sys.path:
                 sys.path.insert(0, skill_dir)

@@ -54,5 +54,12 @@
         "ultra_api_key": "sk-yprqucadfhrrjfaduqvbaigedutohznufqltkuexxjzmutjo",
         "ultra_model": "Qwen/Qwen3-VL-8B-Instruct"
     },
-    "last_reset_time": "2026-05-06 16:18:22"
+    "last_reset_time": "2026-05-06 16:18:22",
+    "cloud_sleep_sync": {
+        "enabled": false,
+        "base_url": "",
+        "auth_token": "",
+        "sync_interval_sec": 300,
+        "last_sync_at": ""
+    }
 }
