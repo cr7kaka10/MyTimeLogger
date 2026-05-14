@@ -1,0 +1,14 @@
+{
+  "atimelogger": {
+    "base_url": "https://app.atimelogger.pro",
+    "username": "1033229709@qq.com",
+    "password": "mufc130130131"
+  },
+  "huawei_health": {
+    "data_directory": "D:\\WorkBuddySpace\\000\\huawei_health_data"
+  },
+  "wechat": {
+    "webhook_url": "",
+    "enabled": false
+  }
+}

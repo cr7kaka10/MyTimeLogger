@@ -325,7 +325,7 @@ class RewardCard(QFrame):
         unlock_task_title = self.reward_data.get('unlock_task_title')
 
         if unlock_task_id:
-            from database import StudyLogger
+            from app.models.database import StudyLogger
             db = StudyLogger({})
             available_count = db.get_available_unlocks(unlock_task_id, self.reward_data.get('id'))
             is_completed = available_count > 0

@@ -3,14 +3,30 @@
 block_cipher = None
 
 a = Analysis(
-    ['my_time_logger.py'],
-    pathex=[],
+    ['../main.py'],
+    pathex=['..'],
     binaries=[],
     datas=[
-        ('study_music', 'study_music'),
-        ('document/*', 'document')
+        ('../assets', 'assets'),
+        ('../config', 'config'),
+        ('../cloud', 'cloud')
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        'app.ui.gui',
+        'app.ui.activity_panel',
+        'app.ui.daily_checklist',
+        'app.ui.habit_tracker',
+        'app.ui.goals_panel',
+        'app.ui.reward_shop',
+        'app.ui.sleep_statistics',
+        'app.core.logic',
+        'app.core.hotkeys',
+        'app.core.ticktick_sync',
+        'app.models.database',
+        'app.models.category_manager',
+        'app.utils.utils',
+        'app.utils.config'
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],
@@ -41,5 +57,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='document/icon.ico',
+    icon='../assets/icons/icon.ico',
 )

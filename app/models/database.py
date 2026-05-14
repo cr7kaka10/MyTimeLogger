@@ -1613,7 +1613,7 @@ class StudyLogger:
             # 记录重置时间点，防止旧记录重新触发奖励结算
             now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self.config["last_reset_time"] = now_str
-            from config import save_config
+            from app.utils.config import save_config
             save_config(self.config)
             
             return True

@@ -254,7 +254,7 @@ class TaskItemWidget(QFrame):
 
     def _set_reward(self):
         from PyQt6.QtWidgets import QInputDialog
-        from database import StudyLogger
+        from app.models.database import StudyLogger
         db = StudyLogger({})
         cfg = db.get_item_reward('task', self.task_data['id'], 0.1)
         
@@ -417,7 +417,7 @@ class DailyChecklistWindow(QWidget):
         QTimer.singleShot(0, self.sync_worker.refresh)
 
     def _on_tasks_ready(self, tasks):
-        from database import StudyLogger
+        from app.models.database import StudyLogger
         db = StudyLogger(self.config)
         for t in tasks:
             t['reward_cfg'] = db.get_item_reward('task', t['id'], 0.1)
@@ -440,7 +440,7 @@ class DailyChecklistWindow(QWidget):
             self.claim_btn.hide()
 
     def _on_claim_clicked(self):
-        from database import StudyLogger
+        from app.models.database import StudyLogger
         db = StudyLogger(self.config)
         unclaimed = db.get_unclaimed_rewards()
         if not unclaimed:
