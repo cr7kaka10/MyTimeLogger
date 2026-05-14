@@ -393,6 +393,7 @@ class SleepAnalyzer:
                 else:
                     raise FileNotFoundError("未找到截图文件，且数据库中无今日数据。")
             else:
+                logger.info(f"开始分析截图: {self.image_path}")
                 self.sleep_data = self._extract_sleep_data()
 
             if not self.sleep_data:

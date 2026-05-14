@@ -18,6 +18,10 @@ from .store import CloudSleepStore
 from .runtime_config import ensure_cloud_runtime_config
 from .analyzer import SleepAnalyzer
 from utils import resource_path
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -193,13 +197,15 @@ def index():
         button:hover{background:var(--primary-hover);transform:translateY(-1px)}
         button.secondary{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1)}
         button.secondary:hover{background:rgba(255,255,255,0.1)}
-        #status{margin-top:16px;padding:12px;border-radius:8px;background:rgba(0,0,0,0.2);display:none}
+        .analysis-html td, .analysis-html th{border:1px solid rgba(255,255,255,0.1);padding:8px}
+        #statusInfo{margin-top:16px;padding:12px;border-radius:8px;background:rgba(0,0,0,0.2);display:none;font-size:13px;border:1px solid rgba(255,255,255,0.1)}
         .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:20px}
         .metric{background:rgba(255,255,255,0.05);padding:16px;border-radius:16px;text-align:center}
         .metric b{font-size:20px;display:block;margin-top:4px;color:var(--primary)}
         .auth-box{display:none}
         .user-info{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;font-size:14px;color:var(--text-muted)}
         .logout{cursor:pointer;color:var(--primary)}
+        .logout:hover{text-decoration:underline}
         .analysis-html{margin-top:20px;font-size:14px;border-top:1px solid rgba(255,255,255,0.1);padding-top:20px}
         .analysis-html table{width:100%;border-collapse:collapse;margin:10px 0}
         .analysis-html td, .analysis-html th{border:1px solid rgba(255,255,255,0.1);padding:8px}
@@ -227,7 +233,7 @@ def index():
         <input id="file" type="file" accept="image/*" style="display:none" onchange="upload()" />
         <button onclick="document.getElementById('file').click()">选择截图并上传</button>
         <button class="secondary" onclick="recent()">查看最近记录</button>
-        <div id="status"></div>
+        <div id="statusInfo"></div>
         <div id="result"></div>
       </div>
     </main>
@@ -284,27 +290,40 @@ def index():
       }
 
       async function upload(){
-        const f = document.getElementById('file').files[0];
-        if(!f) return;
-        const fd = new FormData(); fd.append('file', f);
-        status.style.display = 'block'; status.innerText = '正在上传...';
-        const r = await fetch('/upload', {method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:fd});
-        const j = await r.json();
-        if(!r.ok){ status.innerText = j.detail || '上传失败'; return; }
-        poll(j.request_id);
+        try {
+          const f = document.getElementById('file').files[0];
+          if(!f) return;
+          console.log('Starting upload:', f.name, f.size);
+          const fd = new FormData(); fd.append('file', f);
+          const s = document.getElementById('statusInfo');
+          s.style.display = 'block'; s.innerText = '正在上传...';
+          const r = await fetch('/upload', {method:'POST', headers:{'Authorization':`Bearer ${token}`}, body:fd});
+          const j = await r.json();
+          if(!r.ok){ s.innerText = j.detail || '上传失败'; return; }
+          console.log('Upload success, request_id:', j.request_id);
+          poll(j.request_id);
+        } catch (err) {
+          console.error('Upload Error:', err);
+          document.getElementById('statusInfo').innerText = '系统错误: ' + err.message;
+        }
       }
 
       async function poll(rid){
-        const r = await fetch('/status/'+rid, {headers:{'Authorization':`Bearer ${token}`}});
-        const j = await r.json();
-        status.innerText = '状态: ' + j.status + (j.msg ? ' - ' + j.msg : '');
-        if(j.status === 'done'){ 
-          render(j.result || {});
-          status.innerText = '分析完成！';
-          return; 
+        try {
+          const s = document.getElementById('statusInfo');
+          const r = await fetch('/status/'+rid, {headers:{'Authorization':`Bearer ${token}`}});
+          const j = await r.json();
+          s.innerText = '状态: ' + j.status + (j.msg ? ' - ' + j.msg : '');
+          if(j.status === 'done'){ 
+            render(j.result || {});
+            s.innerText = '分析完成！';
+            return; 
+          }
+          if(j.status === 'error') { s.innerText = '出错: ' + (j.error || '未知错误'); return; }
+          setTimeout(()=>poll(rid), 2500);
+        } catch (err) {
+          console.error('Poll Error:', err);
         }
-        if(j.status === 'error') { status.innerText = '出错: ' + (j.error || '未知错误'); return; }
-        setTimeout(()=>poll(rid), 2500);
       }
 
       async function recent(){
