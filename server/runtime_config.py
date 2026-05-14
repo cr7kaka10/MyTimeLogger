@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Runtime config helpers for Docker/cloud sleep analysis mode."""
+"""Runtime config helpers for Docker/server sleep analysis mode."""
 
 import json
 import os
@@ -35,7 +35,7 @@ def build_skill_config():
             "password": env("ATIMELOGGER_PASSWORD"),
         },
         "huawei_health": {
-            "data_directory": env("HUAWEI_HEALTH_DATA_DIR", "/app/cloud_data/huawei_health_data"),
+            "data_directory": env("HUAWEI_HEALTH_DATA_DIR", "/app/server_data/huawei_health_data"),
         },
         "wechat": {
             "webhook_url": env("WECHAT_WEBHOOK_URL"),
@@ -50,15 +50,15 @@ def write_json(path, data):
         json.dump(data, file, indent=2, ensure_ascii=False)
 
 
-def ensure_cloud_runtime_config(base_dir=None):
+def ensure_server_runtime_config(base_dir=None):
     """Create minimal config files needed by generate_full_report in containers."""
     base_dir = base_dir or os.path.abspath(".")
-    if os.getenv("MYTIMELOGGER_CLOUD_MODE", "").lower() not in ("1", "true", "yes"):
+    if os.getenv("MYTIMELOGGER_SERVER_MODE", "").lower() not in ("1", "true", "yes"):
         return
-    overwrite = os.getenv("CLOUD_RUNTIME_OVERWRITE", "").lower() in ("1", "true", "yes")
+    overwrite = os.getenv("SERVER_RUNTIME_OVERWRITE", "").lower() in ("1", "true", "yes")
 
     root_config_path = os.path.join(base_dir, "config.json")
-    skill_config_path = os.path.join(base_dir, "cloud", "skills", "time-management", "config.json")
+    skill_config_path = os.path.join(base_dir, "server", "skills", "time-management", "config.json")
 
     if overwrite or not os.path.exists(root_config_path):
         write_json(root_config_path, build_root_config())

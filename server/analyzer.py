@@ -3,7 +3,7 @@
 Pure Python sleep analysis pipeline.
 
 This module intentionally has no PyQt dependency so it can be reused by the
-desktop worker and the cloud FastAPI service.
+desktop worker and the server FastAPI service.
 """
 
 import base64
@@ -88,7 +88,7 @@ class SleepAnalysisResult:
 
 
 class SleepAnalyzer:
-    """Reusable sleep screenshot analyzer for desktop and cloud execution."""
+    """Reusable sleep screenshot analyzer for desktop and server execution."""
 
     def __init__(
         self,
@@ -227,7 +227,7 @@ class SleepAnalyzer:
         return None
 
     def _load_prompt(self):
-        # 路径修正：现在 analyzer.py 和 skills 都在 cloud/ 子目录下
+        # 路径修正：现在 analyzer.py 和 skills 都在 server/ 子目录下
         root_dir = os.path.dirname(__file__)
         skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
         try:
@@ -411,7 +411,7 @@ class SleepAnalyzer:
             self.sleep_data["date"] = target_date
             self.progress(f"日期: {target_date}，正在拉取数据...")
 
-            # 路径修正：现在 analyzer.py 和 skills 都在 cloud/ 子目录下
+            # 路径修正：现在 analyzer.py 和 skills 都在 server/ 子目录下
             root_dir = os.path.dirname(__file__)
             skill_dir = os.path.join(root_dir, "skills", "time-management")
             if skill_dir not in sys.path:

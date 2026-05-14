@@ -34,7 +34,7 @@ from .activity_panel import ActivityPanel
 
 class MyTimeLoggerGUI(QWidget):
     """主窗口 GUI，桥接核心逻辑与用户交互"""
-    cloud_sleep_sync_finished = pyqtSignal(bool, str)
+    server_sleep_sync_finished = pyqtSignal(bool, str)
 
     def __init__(self, config):
         super().__init__()
@@ -117,14 +117,14 @@ class MyTimeLoggerGUI(QWidget):
         self.logic.input_reason_requested.connect(self.prompt_for_pause_reason)
         self.logic.input_summary_requested.connect(self.prompt_for_session_summary)
         self.logic.session_logged.connect(self.generate_statistics_html)
-        self.cloud_sleep_sync_finished.connect(self._on_cloud_sleep_sync_finished)
+        self.server_sleep_sync_finished.connect(self._on_server_sleep_sync_finished)
 
         self._build_end_break_button()
         self.generate_statistics_html()
         self.logic.reset_cycle()
-        self._cloud_sleep_sync_running = False
-        self._cloud_sleep_sync_timer = None
-        self._init_cloud_sleep_sync()
+        self._server_sleep_sync_running = False
+        self._server_sleep_sync_timer = None
+        self._init_server_sleep_sync()
 
 
     # ======================== 通知与对话框 ========================
@@ -801,45 +801,45 @@ class MyTimeLoggerGUI(QWidget):
         win = self._ensure_checklist_window()
         win.start_background_sync()
 
-    def _init_cloud_sleep_sync(self):
-        """启动 PC 端云端睡眠结果拉取。"""
-        cfg = self.config.get("cloud_sleep_sync", {})
+    def _init_server_sleep_sync(self):
+        """启动 PC 端服务端睡眠结果拉取。"""
+        cfg = self.config.get("server_sleep_sync", {})
         if not cfg.get("enabled"):
             return
-        self._cloud_sleep_sync_timer = QTimer(self)
+        self._server_sleep_sync_timer = QTimer(self)
         interval = max(60, int(cfg.get("sync_interval_sec", 300) or 300)) * 1000
-        self._cloud_sleep_sync_timer.setInterval(interval)
-        self._cloud_sleep_sync_timer.timeout.connect(self._run_cloud_sleep_sync)
-        self._cloud_sleep_sync_timer.start()
-        QTimer.singleShot(3000, self._run_cloud_sleep_sync)
+        self._server_sleep_sync_timer.setInterval(interval)
+        self._server_sleep_sync_timer.timeout.connect(self._run_server_sleep_sync)
+        self._server_sleep_sync_timer.start()
+        QTimer.singleShot(3000, self._run_server_sleep_sync)
 
-    def _run_cloud_sleep_sync(self):
-        """后台拉取云端睡眠分析结果，避免阻塞 GUI。"""
-        if self._cloud_sleep_sync_running:
+    def _run_server_sleep_sync(self):
+        """后台拉取服务端睡眠分析结果，避免阻塞 GUI。"""
+        if self._server_sleep_sync_running:
             return
-        cfg = self.config.get("cloud_sleep_sync", {})
+        cfg = self.config.get("server_sleep_sync", {})
         if not cfg.get("enabled"):
             return
-        self._cloud_sleep_sync_running = True
-        self.status_label.setText("☁️ 云端睡眠同步中...")
+        self._server_sleep_sync_running = True
+        self.status_label.setText("☁️ 服务端睡眠同步中...")
 
         def worker():
             try:
-                from app.core.cloud_sleep_client import CloudSleepClient
+                from app.core.server_sleep_client import ServerSleepClient
 
-                result = CloudSleepClient(self.config).sync_once(self.logic.local_logger)
-                msg = result.get("message", "云端睡眠同步完成")
+                result = ServerSleepClient(self.config).sync_once(self.logic.local_logger)
+                msg = result.get("message", "服务端睡眠同步完成")
                 ok = True
             except Exception as exc:
-                msg = f"云端睡眠同步失败: {exc}"
+                msg = f"服务端睡眠同步失败: {exc}"
                 ok = False
 
-            self.cloud_sleep_sync_finished.emit(ok, msg)
+            self.server_sleep_sync_finished.emit(ok, msg)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_cloud_sleep_sync_finished(self, ok, msg):
-        self._cloud_sleep_sync_running = False
+    def _on_server_sleep_sync_finished(self, ok, msg):
+        self._server_sleep_sync_running = False
         self.status_label.setText(f"☁️ {msg}")
         if ok and self._sleep_statistics_window is not None:
             self._sleep_statistics_window.load_data()

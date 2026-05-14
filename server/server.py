@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""FastAPI cloud endpoint for sleep screenshot analysis."""
+"""FastAPI server endpoint for sleep screenshot analysis."""
 
 import asyncio
 import json
@@ -21,8 +21,8 @@ root_dir = os.path.dirname(current_dir)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from .store import CloudSleepStore
-from .runtime_config import ensure_cloud_runtime_config
+from .store import ServerSleepStore
+from .runtime_config import ensure_server_runtime_config
 from .analyzer import SleepAnalyzer
 from app.utils.utils import resource_path
 import logging
@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
-ATTACHMENTS_DIR = resource_path(os.path.join("cloud", "attachments"))
+ATTACHMENTS_DIR = resource_path(os.path.join("server", "attachments"))
 
-ensure_cloud_runtime_config()
+ensure_server_runtime_config()
 
-app = FastAPI(title="MyTimeLogger Sleep Cloud API", version="1.0")
-store = CloudSleepStore()
+app = FastAPI(title="MyTimeLogger Sleep Server API", version="1.0")
+store = ServerSleepStore()
 progress_queues: dict[str, queue.Queue] = {}
 
 
@@ -118,13 +118,13 @@ def _public_job(job):
 
 def _run_analysis(request_id, image_path, user_id):
     store.mark_running(request_id)
-    _push_progress(request_id, {"status": "running", "msg": "开始云端睡眠分析..."})
+    _push_progress(request_id, {"status": "running", "msg": "开始服务端睡眠分析..."})
 
     def progress(msg):
         _push_progress(request_id, {"status": "progress", "msg": msg})
 
     def _load_prompt(self):
-        # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+        # 路径修正：现在 analyzer.py 在 server/ 子目录下，skills 在根目录
         root_dir = os.path.dirname(os.path.dirname(__file__))
         skill_path = os.path.join(root_dir, "skills", "time-management", "SKILL.md")
 
@@ -374,7 +374,7 @@ async def upload(
     os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
     request_id = uuid.uuid4().hex
     safe_name = "".join(c for c in (file.filename or "upload.jpg") if c.isalnum() or c in ".-_")
-    # 路径修正：现在 analyzer.py 在 cloud/ 子目录下，skills 在根目录
+    # 路径修正：现在 analyzer.py 在 server/ 子目录下，skills 在根目录
     root_dir = os.path.dirname(os.path.dirname(__file__))
     skill_dir = os.path.join(root_dir, "skills", "time-management")
     image_path = os.path.join(ATTACHMENTS_DIR, f"{request_id}_{safe_name}")

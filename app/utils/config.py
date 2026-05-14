@@ -64,7 +64,7 @@ DEFAULT_CONFIG = {
         "text_api_key": "",
         "text_model": "glm-4-flash"
     },
-    "cloud_sleep_sync": {              # 云端睡眠分析同步配置
+    "server_sleep_sync": {              # 云端睡眠分析同步配置
         "enabled": False,
         "base_url": "",
         "auth_token": "",

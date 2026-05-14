@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""SQLite buffer store for cloud sleep analysis jobs."""
+"""SQLite buffer store for server sleep analysis jobs."""
 
 import json
 import os
@@ -38,9 +38,16 @@ def verify_password(password, stored_hash):
     return hash_password(password, salt) == stored_hash
 
 
-class CloudSleepStore:
+class ServerSleepStore:
     def __init__(self, db_path=None):
-        self.db_path = db_path or os.getenv("CLOUD_SLEEP_DB_PATH") or resource_path("cloud_sleep_jobs.db")
+        self.db_path = db_path or os.getenv("SERVER_SLEEP_DB_PATH") or resource_path("server_sleep_jobs.db")
+        # 兼容性处理：如果旧的数据库文件存在且新的不存在，则重命名
+        old_db_path = resource_path("cloud_sleep_jobs.db")
+        if not os.path.exists(self.db_path) and os.path.exists(old_db_path):
+            try:
+                os.rename(old_db_path, self.db_path)
+            except:
+                pass
         self._initialize()
 
     def _connect(self):
@@ -52,6 +59,12 @@ class CloudSleepStore:
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         conn = self._connect()
         try:
+            # 迁移：将旧的 cloud_sleep_jobs 表重命名为 server_sleep_jobs
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_sleep_jobs'")
+            if cursor.fetchone():
+                conn.execute("ALTER TABLE cloud_sleep_jobs RENAME TO server_sleep_jobs")
+                conn.commit()
+            
             # 用户表
             conn.execute(
                 """
@@ -78,7 +91,7 @@ class CloudSleepStore:
             # 任务表（增加 user_id）
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS cloud_sleep_jobs (
+                CREATE TABLE IF NOT EXISTS server_sleep_jobs (
                     request_id TEXT PRIMARY KEY,
                     user_id INTEGER,
                     date TEXT,
@@ -96,10 +109,10 @@ class CloudSleepStore:
                 """
             )
             # 检查字段是否存在（用于平滑升级）
-            cursor = conn.execute("PRAGMA table_info(cloud_sleep_jobs)")
+            cursor = conn.execute("PRAGMA table_info(server_sleep_jobs)")
             columns = [row["name"] for row in cursor.fetchall()]
             if "user_id" not in columns:
-                conn.execute("ALTER TABLE cloud_sleep_jobs ADD COLUMN user_id INTEGER")
+                conn.execute("ALTER TABLE server_sleep_jobs ADD COLUMN user_id INTEGER")
 
             conn.commit()
         finally:
@@ -180,7 +193,7 @@ class CloudSleepStore:
         try:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO cloud_sleep_jobs
+                INSERT OR REPLACE INTO server_sleep_jobs
                 (request_id, user_id, date, status, image_path, result_json, analysis_report, error, created_at, updated_at, sync_count, acked_at)
                 VALUES (?, ?, NULL, 'queued', ?, NULL, NULL, NULL, ?, ?, 0, NULL)
                 """,
@@ -203,7 +216,7 @@ class CloudSleepStore:
         try:
             conn.execute(
                 """
-                UPDATE cloud_sleep_jobs
+                UPDATE server_sleep_jobs
                 SET status='done', date=?, result_json=?, analysis_report=?, error=NULL, updated_at=?
                 WHERE request_id=?
                 """,
@@ -217,7 +230,7 @@ class CloudSleepStore:
         conn = self._connect()
         try:
             conn.execute(
-                "UPDATE cloud_sleep_jobs SET status=?, error=?, updated_at=? WHERE request_id=?",
+                "UPDATE server_sleep_jobs SET status=?, error=?, updated_at=? WHERE request_id=?",
                 (status, error, now_str(), request_id),
             )
             conn.commit()
@@ -228,9 +241,9 @@ class CloudSleepStore:
         conn = self._connect()
         try:
             if user_id:
-                row = conn.execute("SELECT * FROM cloud_sleep_jobs WHERE request_id=? AND user_id=?", (request_id, user_id)).fetchone()
+                row = conn.execute("SELECT * FROM server_sleep_jobs WHERE request_id=? AND user_id=?", (request_id, user_id)).fetchone()
             else:
-                row = conn.execute("SELECT * FROM cloud_sleep_jobs WHERE request_id=?", (request_id,)).fetchone()
+                row = conn.execute("SELECT * FROM server_sleep_jobs WHERE request_id=?", (request_id,)).fetchone()
             return self._row_to_dict(row) if row else None
         finally:
             conn.close()
@@ -238,7 +251,7 @@ class CloudSleepStore:
     def list_done_since(self, since=None, user_id=None):
         conn = self._connect()
         try:
-            query = "SELECT * FROM cloud_sleep_jobs WHERE status='done'"
+            query = "SELECT * FROM server_sleep_jobs WHERE status='done'"
             params = []
             if since:
                 query += " AND updated_at > ?"
@@ -262,7 +275,7 @@ class CloudSleepStore:
             for request_id in request_ids:
                 cur = conn.execute(
                     """
-                    UPDATE cloud_sleep_jobs
+                    UPDATE server_sleep_jobs
                     SET sync_count=COALESCE(sync_count, 0) + 1, acked_at=?, updated_at=updated_at
                     WHERE request_id=?
                     """,
@@ -277,7 +290,7 @@ class CloudSleepStore:
     def list_recent(self, limit=10, user_id=None):
         conn = self._connect()
         try:
-            query = "SELECT * FROM cloud_sleep_jobs WHERE status='done'"
+            query = "SELECT * FROM server_sleep_jobs WHERE status='done'"
             params = []
             if user_id:
                 query += " AND user_id = ?"
@@ -292,7 +305,7 @@ class CloudSleepStore:
     def save_reflection(self, date, reflection, user_id=None):
         conn = self._connect()
         try:
-            query = "SELECT * FROM cloud_sleep_jobs WHERE status='done' AND date=?"
+            query = "SELECT * FROM server_sleep_jobs WHERE status='done' AND date=?"
             params = [date]
             if user_id:
                 query += " AND user_id = ?"
@@ -305,7 +318,7 @@ class CloudSleepStore:
             data["sleep_reflection"] = reflection
             conn.execute(
                 """
-                UPDATE cloud_sleep_jobs
+                UPDATE server_sleep_jobs
                 SET result_json=?, updated_at=?
                 WHERE request_id=?
                 """,

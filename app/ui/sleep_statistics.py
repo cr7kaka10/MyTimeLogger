@@ -149,7 +149,7 @@ class AIWorker(QThread):
         self.progress.emit(msg)
         if self.session_id:
             try:
-                from cloud.sleep_server import broker
+                from server.sleep_server import broker
                 broker.push(self.session_id, {"status": "progress", "msg": msg})
             except: pass
 
@@ -235,15 +235,15 @@ class AIWorker(QThread):
 
     def run(self):
         try:
-            from app.core.cloud_sleep_client import CloudSleepClient
-            client = CloudSleepClient(self.config)
+            from app.core.server_sleep_client import serverSleepClient
+            client = serverSleepClient(self.config)
 
             if self.image_path and client.enabled():
-                # --- 模式 A: 云端分析 (新流程) ---
-                self.update_progress("📡 正在调用云端分析服务...")
+                # --- 模式 A: 服务端分析 (新流程) ---
+                self.update_progress("📡 正在调用服务端分析服务...")
                 result_data = client.upload_and_analyze(self.image_path, progress_callback=self.update_progress)
                 
-                # 云端返回的是归一化后的数据
+                # 服务端返回的是归一化后的数据
                 self.sleep_data = result_data
                 report = result_data.get("analysis_report", "")
                 
@@ -253,12 +253,12 @@ class AIWorker(QThread):
             else:
                 # --- 模式 B: 本地分析 (回退/兼容流程) ---
                 # 检查本地组件是否存在
-                # 向上三级找到根目录下的 cloud/skills
+                # 向上三级找到根目录下的 server/skills
                 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                if not os.path.exists(os.path.join(root_dir, "cloud", "skills")):
-                     raise Exception("本地分析组件已移除，请在配置中开启‘云端同步’以使用睡眠分析功能。")
+                if not os.path.exists(os.path.join(root_dir, "server", "skills")):
+                     raise Exception("本地分析组件已移除，请在配置中开启‘服务端同步’以使用睡眠分析功能。")
 
-                from cloud.analyzer import SleepAnalyzer
+                from server.analyzer import SleepAnalyzer
                 analyzer = SleepAnalyzer(
                     ai_cfg=self.ai_cfg,
                     image_path=self.image_path,
@@ -609,11 +609,11 @@ class AIConfigWidget(QWidget):
         c["backup_model"]    = self.b_model.text().strip()
         save_config(self.config)
         
-        # 尝试同步到云端服务端
+        # 尝试同步到服务端服务端
         sync_msg = ""
-        cloud_cfg = self.config.get("cloud_sleep_sync", {})
-        base_url = (cloud_cfg.get("base_url") or "").rstrip("/")
-        auth_token = cloud_cfg.get("auth_token") or ""
+        server_cfg = self.config.get("server_sleep_sync", {})
+        base_url = (server_cfg.get("base_url") or "").rstrip("/")
+        auth_token = server_cfg.get("auth_token") or ""
 
         if base_url:
             try:
@@ -622,11 +622,11 @@ class AIConfigWidget(QWidget):
                 headers = {"X-Auth-Token": auth_token}
                 resp = requests.post(url, json=c, headers=headers, timeout=5)
                 if resp.status_code == 200:
-                    sync_msg = "\n\n✅ 云端服务端配置已同步成功！"
+                    sync_msg = "\n\n✅ 服务端服务端配置已同步成功！"
                 else:
-                    sync_msg = f"\n\n❌ 云端同步失败: {resp.status_code}"
+                    sync_msg = f"\n\n❌ 服务端同步失败: {resp.status_code}"
             except Exception as e:
-                sync_msg = f"\n\n❌ 云端连接失败: {e}"
+                sync_msg = f"\n\n❌ 服务端连接失败: {e}"
 
         QMessageBox.information(self, "成功", f"AI 配置已本地保存！{sync_msg}")
 
@@ -1097,7 +1097,7 @@ class SleepStatisticsWindow(QWidget):
         date_str = self.current_date.strftime("%Y-%m-%d")
         
         # 1. 寻找已归档的截图 (真理复核)
-        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud", "attachments")
+        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server", "attachments")
         archived_img = os.path.join(attachments_dir, f"sleep_{date_str}.jpg")
         
         if os.path.exists(archived_img):
@@ -1521,7 +1521,7 @@ class SleepStatisticsWindow(QWidget):
     def _cleanup_all_pending_images(self, exclude_path=None):
         """扫描并删除所有 sleep_pending_ 开头的临时文件"""
         try:
-            attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud", "attachments")
+            attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server", "attachments")
             if not os.path.exists(attachments_dir): return
             
             for f in os.listdir(attachments_dir):
@@ -1550,7 +1550,7 @@ class SleepStatisticsWindow(QWidget):
         
         # 即使不是 pending，我们也尝试按日期重命名备份
         new_name = f"sleep_{date_str}.jpg"
-        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud", "attachments")
+        attachments_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server", "attachments")
         os.makedirs(attachments_dir, exist_ok=True)
         new_path = os.path.join(attachments_dir, new_name)
 
