@@ -46,7 +46,10 @@ def resource_path(relative_path):
             if getattr(sys, 'frozen', False):
                 base_path = os.path.dirname(sys.executable)
             else:
-                base_path = os.path.abspath(".")
+                # 改进：不依赖 CWD，而是根据 utils.py 的位置推导根目录
+                # utils.py 位于 [root]/app/utils/utils.py
+                utils_dir = os.path.dirname(os.path.abspath(__file__))
+                base_path = os.path.dirname(os.path.dirname(utils_dir))
         except Exception:
             base_path = os.path.abspath(".")
         
@@ -56,7 +59,11 @@ def resource_path(relative_path):
     else:
         # 只读资源：优先使用 PyInstaller 的临时解压目录
         try:
-            base_path = sys._MEIPASS
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                utils_dir = os.path.dirname(os.path.abspath(__file__))
+                base_path = os.path.dirname(os.path.dirname(utils_dir))
         except Exception:
             base_path = os.path.abspath(".")
         full_path = os.path.join(base_path, relative_path)
