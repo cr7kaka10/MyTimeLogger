@@ -446,10 +446,9 @@ class SleepTrendChart(QWidget):
 
 class AIConfigWidget(QWidget):
     """AI 分离配置面板"""
-    def __init__(self, config, parent=None, sleep_server=None):
+    def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self.sleep_server = sleep_server
         self._test_worker = None
         self._build_ui()
 
@@ -612,25 +611,31 @@ class AIConfigWidget(QWidget):
         
         # 尝试同步到云端服务端
         sync_msg = ""
-        if self.sleep_server:
+        cloud_cfg = self.config.get("cloud_sleep_sync", {})
+        base_url = (cloud_cfg.get("base_url") or "").rstrip("/")
+        auth_token = cloud_cfg.get("auth_token") or ""
+
+        if base_url:
             try:
                 import requests
-                url = f"http://127.0.0.1:{self.sleep_server.port}/update_ai_config"
-                resp = requests.post(url, json=c, timeout=3)
+                url = f"{base_url}/update_ai_config"
+                headers = {"X-Auth-Token": auth_token}
+                resp = requests.post(url, json=c, headers=headers, timeout=5)
                 if resp.status_code == 200:
                     sync_msg = "\n\n✅ 云端服务端配置已同步成功！"
+                else:
+                    sync_msg = f"\n\n❌ 云端同步失败: {resp.status_code}"
             except Exception as e:
-                sync_msg = f"\n\n❌ 云端同步失败: {e}"
+                sync_msg = f"\n\n❌ 云端连接失败: {e}"
 
         QMessageBox.information(self, "成功", f"AI 配置已本地保存！{sync_msg}")
 
 
 class SleepStatisticsWindow(QWidget):
     """睡眠与 AI 统计主窗口"""
-    def __init__(self, config, parent=None, sleep_server=None):
+    def __init__(self, config, parent=None):
         super().__init__(parent)
         self.config = config
-        self.sleep_server = sleep_server
         self.resize(800, 600)
         self.setMinimumSize(800, 600)
         self.setWindowFlags(
@@ -963,7 +968,7 @@ class SleepStatisticsWindow(QWidget):
         self.trend_chart.set_metric("sleep_cycles")
 
         # 配置页
-        self.config_page = AIConfigWidget(self.config, sleep_server=self.sleep_server)
+        self.config_page = AIConfigWidget(self.config)
         self.tabs.addTab(self.config_page, "AI 配置")
 
         right_layout.addWidget(self.tabs)
