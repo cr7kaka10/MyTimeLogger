@@ -214,48 +214,25 @@ class AtimeloggerExtractor:
                 }
         else:
             # 跨天记录，判定归属
-            # 核心修正：如果是睡眠相关活动，一律以结束日期（起床日期）为准
+            # 核心策略：只要该活动与 target_date 有重叠，就包含进来（哪怕只有1秒）
+            # 1. 睡眠相关活动：归属于结束日期（起床日期）
             is_sleep_related = any(kw in type_info['name'] for kw in self.sleep_keywords)
             
             if is_sleep_related:
-                # 睡眠数据归属于结束日期
                 if finish_date == target_date:
                     return {
-                        'type': type_info['name'],
-                        'start': start,
-                        'finish': finish,
-                        'duration': duration,
-                        'comment': interval.get('comment', ''),
-                        'tags': interval.get('tags', [])
+                        'type': type_info['name'], 'start': start, 'finish': finish,
+                        'duration': duration, 'comment': interval.get('comment', ''), 'tags': interval.get('tags', [])
                     }
             else:
-                # 普通活动：按时间更长的一天归属
-                midnight = datetime.combine(finish_date, datetime.min.time()).replace(tzinfo=self.china_tz)
-                
-                first_day_seconds = (midnight - start).total_seconds()
-                second_day_seconds = (finish - midnight).total_seconds()
-                
-                if first_day_seconds >= second_day_seconds:
-                    # 归属到第一天
-                    if start_date == target_date:
-                        return {
-                            'type': type_info['name'],
-                            'start': start,
-                            'finish': finish,
-                            'duration': duration,
-                            'comment': interval.get('comment', ''),
-                            'tags': interval.get('tags', [])
-                        }
-                else:
-                    # 归属到第二天
-                    if finish_date == target_date:
-                        return {
-                            'type': type_info['name'],
-                            'start': start,
-                            'finish': finish,
-                            'duration': duration,
-                            'comment': interval.get('comment', ''),
-                            'tags': interval.get('tags', [])
-                        }
+                # 2. 普通活动：只要跨越了 target_date 就算
+                # 情况A: 开始于 target_date (必然在 target_date 有时长)
+                # 情况B: 结束于 target_date (必然在 target_date 有时长)
+                # 情况C: 横跨整个 target_date (start < target < finish)
+                if start_date == target_date or finish_date == target_date or (start_date < target_date < finish_date):
+                    return {
+                        'type': type_info['name'], 'start': start, 'finish': finish,
+                        'duration': duration, 'comment': interval.get('comment', ''), 'tags': interval.get('tags', [])
+                    }
         
         return None

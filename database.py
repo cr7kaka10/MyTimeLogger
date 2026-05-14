@@ -261,11 +261,21 @@ class StudyLogger:
                 cursor.execute("SHOW COLUMNS FROM huawei_sleep_data LIKE 'sleep_reflection'")
                 if not cursor.fetchone():
                     cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN sleep_reflection TEXT")
+                cursor.execute("SHOW COLUMNS FROM huawei_sleep_data LIKE 'light_sleep_ratio'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN light_sleep_ratio INTEGER")
+                cursor.execute("SHOW COLUMNS FROM huawei_sleep_data LIKE 'rem_sleep_ratio'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN rem_sleep_ratio INTEGER")
             else:
                 cursor.execute("PRAGMA table_info(huawei_sleep_data)")
                 h_cols = [c[1] for c in cursor.fetchall()]
                 if 'sleep_reflection' not in h_cols:
                     cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN sleep_reflection TEXT")
+                if 'light_sleep_ratio' not in h_cols:
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN light_sleep_ratio INTEGER")
+                if 'rem_sleep_ratio' not in h_cols:
+                    cursor.execute("ALTER TABLE huawei_sleep_data ADD COLUMN rem_sleep_ratio INTEGER")
             conn.commit()
 
             conn.commit()

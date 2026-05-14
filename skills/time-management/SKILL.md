@@ -104,13 +104,15 @@
 4. light_sleep_min: 浅睡时长 (分钟)。
 5. rem_sleep_min: 快速眼动时长 (分钟)。
 6. awake_count: 清醒次数 (数字)。
-7. deep_sleep_ratio: 深睡比例 (百分比数字，如 25)。
-8. sleep_continuity: 睡眠连续性得分 (数字)。
-9. breathing_score: 呼吸质量得分 (数字)。
-10. analysis_report: 官方解读建议 (字符串)。
-11. sleep_start: 入睡时间 (HH:mm)。
-12. sleep_end: 醒来时间 (HH:mm)。
-13. total_sleep_min: 总睡眠时长 (分钟)。
+7. deep_sleep_ratio: 深睡比例 (百分比数字)。
+8. light_sleep_ratio: 浅睡比例 (百分比数字)。
+9. rem_sleep_ratio: 快速眼动比例 (百分比数字)。
+10. sleep_continuity: 睡眠连续性得分 (数字)。
+11. breathing_score: 呼吸质量得分 (数字)。
+12. analysis_report: 官方解读建议 (字符串)。
+13. sleep_start: 入睡时间 (HH:mm)。
+14. sleep_end: 醒来时间 (HH:mm)。
+15. total_sleep_min: 总睡眠时长 (夜间睡眠，分钟)。
 
 注意：以下指标由系统自动计算，AI 无需提取：sleep_cycles, awake_min, fall_asleep_min, wake_up_min。
 
@@ -138,12 +140,11 @@
 4. 所有时长必须统一换算为“分钟”（例如：1小时20分 ➔ 80）。
 5. 缺失数据统一填 null。
 
-【针对高阶/终极模型 (如 Qwen2-VL-72B) 的特别指令】
+【针对高阶模型 (如 Qwen2-VL-72B) 的特别指令】
 - 请执行“深度扫描”模式：不要只看文字，要结合卡片的图标、颜色和布局进行二次校验。
 - 严禁习惯性填 0：深睡比例、睡眠连续性、呼吸质量通常位于详情页的中下部卡片中，请务必滚动式寻找。
 - 核心定位：total_sleep_min 必须提取图中“夜间睡眠”四个字后面紧跟的时长（例如：夜间睡眠 7 小时 20 分 ➔ 440）。
 - 日期核对：必须识别截图顶部的具体日期（如 5月11日），并结合图片年份（通常是 2026）输出为标准的 sleep_date (YYYY-MM-DD)。
-- 严禁计算：**绝对禁止**通过 (醒来时间 - 入睡时间) 来推算该数值，图中直接就有结果。
 - 严禁混淆：图中大字标题或最上方的“在床时间”**不是** total_sleep_min，请务必寻找“夜间睡眠”这一行。
 ```
 
@@ -167,10 +168,11 @@
 【输出要求】
 直接输出一个纯 JSON 对象，严禁任何废话，包含以下字段：
 - "efficiency_score": 0-100 的综合评分。
-- "summary": 一句话总结今日状态。
-- "insights": 字符串数组，包含 3-5 条深度洞察（带 Emoji 图标）。
-- "recommendations": 字符串数组，包含 3-5 条建议（带 Emoji 图标）。
+- "summary": 一句话总结今日状态（需包含对时间利用率的定性评价）。
+- "insights": 字符串数组，包含 3-5 条深度洞察（必须结合 aTimeLogger 中的具体活动名称和时长进行点评，严禁只谈睡眠）。
+- "recommendations": 字符串数组，包含 3-5 条行动建议。
 - "issues": 数组，列出识别出的主要问题点。
+- "time_management_comment": 针对 Part 2 时间管理部分的专项点评。
 
 【风格指南】
 语气客观、专业且带有鼓励。避免空洞的套话。

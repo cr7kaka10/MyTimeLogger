@@ -8,6 +8,8 @@ import traceback
 import time
 import httpx
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta, timezone
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
@@ -35,7 +37,9 @@ def to_min(val):
     # 纯数字字符串 (处理 "80min", "约25" 等)
     try: 
         clean_s = re.sub(r'[^\d.]', '', s)
-        return float(clean_s) if clean_s else 0
+        if not clean_s: return 0
+        # 统一转为 int，如果是 "80.5" 这种带点的字符串则先转 float 再转 int
+        return int(float(clean_s))
     except: return 0
 
 def clean_num(val):
@@ -44,7 +48,9 @@ def clean_num(val):
     if isinstance(val, (int, float)): return val
     try: 
         clean_s = re.sub(r'[^\d.]', '', str(val))
-        return float(clean_s) if clean_s else 0
+        if not clean_s: return 0
+        val = float(clean_s)
+        return int(val) if val == int(val) else val
     except: return 0
 
 def format_val(v):
@@ -127,8 +133,9 @@ class AIWorker(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
 
-    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None, session_id=None, include_time_analysis=True):
+    def __init__(self, ai_cfg, image_path=None, sleep_data=None, force_pull=False, date_str=None, session_id=None, include_time_analysis=True, db=None):
         super().__init__()
+        self.db = db
         self.ai_cfg = ai_cfg
         self.image_path = image_path
         self.sleep_data = sleep_data
@@ -243,36 +250,23 @@ class AIWorker(QThread):
                 # ── 步骤 1: 视觉解析循环 ──
                 for attempt in range(1, total_attempts + 1):
                     try:
-                        # 核心逻辑：三模型轮替尝试 (1:主, 2:备, 3:终极, 4:主, 5:备, 6:终极)
+                        # 核心逻辑：主/备模型交替尝试 (1:主, 2:备, 3:主, 4:备, 5:主, 6:备)
                         has_backup = bool(self.ai_cfg.get("backup_api_key"))
-                        has_ultra = bool(self.ai_cfg.get("ultra_api_key"))
                         
-                        # 核心逻辑：模型轮替优先级调整 (1:终极, 2:主, 3:备, 4:终极, 5:主, 6:备)
-                        model_idx = (attempt - 1) % 3
-                        if model_idx == 0 and has_ultra:
-                            # 优先尝试付费/高稳模型
-                            use_type = "ultra"
-                        elif model_idx == 1:
-                            # 其次尝试主模型
-                            use_type = "main"
-                        elif model_idx == 2 and has_backup:
-                            # 最后回退到备用
+                        # 判定本次使用的模型类型
+                        is_even = (attempt % 2 == 0)
+                        if is_even and has_backup:
                             use_type = "backup"
+                            model_type = "🛡️ 备用"
                         else:
-                            # 兜底回退到主模型
                             use_type = "main"
+                            model_type = "📸 主"
                         
-                        v_url = clean_url(self.ai_cfg.get(f"{use_type}_base_url" if use_type != "main" else "vision_base_url", ""))
-                        v_key = self.ai_cfg.get(f"{use_type}_api_key" if use_type != "main" else "vision_api_key", "")
-                        v_model = self.ai_cfg.get(f"{use_type}_model" if use_type != "main" else "vision_model", "glm-4v-flash")
+                        v_url = clean_url(self.ai_cfg.get("backup_base_url" if use_type == "backup" else "vision_base_url", ""))
+                        v_key = self.ai_cfg.get("backup_api_key" if use_type == "backup" else "vision_api_key", "")
+                        v_model = self.ai_cfg.get("backup_model" if use_type == "backup" else "vision_model", "glm-4v-flash")
                         
-                        # 进度提示
-                        if use_type == "main": model_type = "📸 主"
-                        elif use_type == "backup": model_type = "🛡️ 备用"
-                        else: model_type = "🚀 终极"
-                        
-                        msg_prefix = f"{model_type}模型解析中 ({attempt}/{total_attempts})..."
-                        self.update_progress(msg_prefix)
+                        self.update_progress(f"{model_type}模型解析中 ({attempt}/{total_attempts})...")
                         
                         # 关键改进：针对国内网络不稳，使用自定义客户端并禁用 SSL 强校验，增加超时至 60s
                         http_client = httpx.Client(
@@ -344,7 +338,7 @@ class AIWorker(QThread):
                                 "10. deep_sleep_ratio (深睡比例 %)\n"
                                 "11. light_sleep_ratio (浅睡比例 %)\n"
                                 "12. rem_sleep_ratio (快速眼动比例 %)\n"
-                                "13. deep_sleep_continuity (深睡连续性)\n"
+                                "13. sleep_continuity (深睡连续性)\n"
                                 "14. breathing_score (呼吸质量)\n"
                                 "15. analysis_report (解读与建议文本)\n\n"
                                 "注意：严禁提取或计算 sleep_cycles, awake_min, fall_asleep_min, wake_up_min，这些将由系统公式处理。\n"
@@ -481,7 +475,8 @@ class AIWorker(QThread):
                 target_date, 
                 injected_sleep_data=self.sleep_data,
                 force_pull=True,
-                include_time_analysis=self.include_time_analysis
+                include_time_analysis=self.include_time_analysis,
+                db=self.db
             )
             
             if report_path and os.path.exists(report_path):
@@ -725,14 +720,7 @@ class AIConfigWidget(QWidget):
         b_test_btn.clicked.connect(lambda: self._test_connection(True, is_backup=True))
         layout.addWidget(b_group)
 
-        # 终极备份模型部分
-        u_group, u_test_btn = self._create_group("🚀 4. 终极备份模型 (付费版/高稳)", "建议配置硅基流动付费模型（如 Qwen2-VL-72B）或 GPT-4o。")
-        u_layout = u_group.layout()
-        self.u_url = self._make_field("API 地址 (Base URL):", ai_cfg.get("ultra_base_url", ""), u_layout)
-        self.u_key = self._make_field("API Key:", ai_cfg.get("ultra_api_key", ""), u_layout, is_password=True)
-        self.u_model = self._make_field("模型名称 (Model Name):", ai_cfg.get("ultra_model", ""), u_layout)
-        u_test_btn.clicked.connect(lambda: self._test_connection(True, is_ultra=True))
-        layout.addWidget(u_group)
+        # 底部留白，防止最后一个按钮被遮挡
 
         # 底部留白，防止最后一个按钮被遮挡
         layout.addSpacing(20)
@@ -796,12 +784,10 @@ class AIConfigWidget(QWidget):
         parent_layout.addLayout(row)
         return edit
 
-    def _test_connection(self, is_vision, is_backup=False, is_ultra=False):
+    def _test_connection(self, is_vision, is_backup=False):
         if self._test_worker and self._test_worker.isRunning(): return
         
-        if is_ultra:
-            url, key, model = self.u_url.text(), self.u_key.text(), self.u_model.text()
-        elif is_backup:
+        if is_backup:
             url, key, model = self.b_url.text(), self.b_key.text(), self.b_model.text()
         else:
             url = self.v_url.text() if is_vision else self.t_url.text()
@@ -843,11 +829,8 @@ class AIConfigWidget(QWidget):
         c["backup_base_url"] = self.b_url.text().strip()
         c["backup_api_key"]  = self.b_key.text().strip()
         c["backup_model"]    = self.b_model.text().strip()
-        c["ultra_base_url"]  = self.u_url.text().strip()
-        c["ultra_api_key"]   = self.u_key.text().strip()
-        c["ultra_model"]     = self.u_model.text().strip()
         save_config(self.config)
-        QMessageBox.information(self, "成功", "AI 配置已分流保存！")
+        QMessageBox.information(self, "成功", "AI 配置已保存！")
 
 
 class SleepStatisticsWindow(QWidget):
@@ -1040,7 +1023,8 @@ class SleepStatisticsWindow(QWidget):
             ("睡眠连续性", "sleep_continuity", " 分", "normal", "参考值：> 70 分"),
             ("呼吸质量", "breathing_score", " 分", "normal", "参考值：> 90 分"),
             ("浅睡", "light_sleep_min", " min", "normal", "参考值：20% - 60%"),
-            ("快速眼动", "rem_sleep_min", " min", "normal", "参考值：10% - 30%")
+            ("快速眼动", "rem_sleep_min", " min", "normal", "参考值：10% - 30%"),
+            ("总时长", "total_sleep_min", " min", "normal", "总睡眠时长")
         ]
         for i, (label, key, unit, mode, tip) in enumerate(metric_names):
             card = self._create_metric_card(label, mode, tip)
@@ -1222,7 +1206,7 @@ class SleepStatisticsWindow(QWidget):
         
         l_val = QLabel("--")
         l_val.setObjectName("val")
-        l_val.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: bold;")
+        l_val.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 16px; font-weight: bold;")
         
         layout.addWidget(l_title)
         layout.addWidget(l_val)
@@ -1350,7 +1334,8 @@ class SleepStatisticsWindow(QWidget):
             image_path=None,
             sleep_data=sleep_data,
             force_pull=True,
-            date_str=self.current_date.strftime("%Y-%m-%d")
+            date_str=self.current_date.strftime("%Y-%m-%d"),
+            db=self.db
         )
         self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
         self._ai_worker.finished.connect(self._on_ai_finished)
@@ -1598,7 +1583,8 @@ class SleepStatisticsWindow(QWidget):
         is_incremental = False
         if include_time_analysis and self._current_sleep_data and not has_image:
             # 增加完整性校验：只有通过校验的数据才能跳过 OCR
-            if AIWorker.validate_data(self._current_sleep_data):
+            is_valid, _ = AIWorker.validate_data(self._current_sleep_data)
+            if is_valid:
                 is_incremental = True
                 logger.info(f"检测到 {self.current_date} 已有完整睡眠数据，跳过视觉提取。")
             else:
@@ -1646,7 +1632,8 @@ class SleepStatisticsWindow(QWidget):
             date_str=self.current_date.strftime("%Y-%m-%d"),
             force_pull=force_sync,
             session_id=session_id,
-            include_time_analysis=include_time_analysis
+            include_time_analysis=include_time_analysis,
+            db=self.db
         )
         self._ai_worker.progress.connect(lambda msg: self.analysis_text.append(f"\n{msg}"))
         self._ai_worker.finished.connect(self._on_ai_finished)

@@ -9,9 +9,11 @@ import os
 import json
 from datetime import datetime, timedelta
 from collections import defaultdict
-from pathlib import Path
+import logging
 import httpx
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 def format_val(v):
     if v is None: return "N/A"
@@ -38,7 +40,7 @@ from modules.screenshot_parser import ScreenshotParser
 
 SLEEP_DATA_DIR = os.path.join(SKILL_DIR, "huawei_health_data")
 
-def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull=False, include_time_analysis=True):
+def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull=False, include_time_analysis=True, db=None):
     """
     生成综合分析报告
     include_time_analysis: 是否包含 Part 2 时间管理部分
@@ -57,15 +59,22 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
     need_atm = include_time_analysis or (injected_sleep_data is not None)
     
     if need_atm:
-        if db and not force_pull and include_time_analysis:
+        # 如果是强制刷新模式，或者数据库里没有，则直接拉取最新的
+        if db and not force_pull:
             atimelogger_data = db.get_atm_data(date_str)
+            if atimelogger_data and not atimelogger_data.get('activities'):
+                atimelogger_data = None # 数据库里的空记录也视为无效
         
-        if not atimelogger_data:
+        if not atimelogger_data or force_pull:
+            print(f"🔄 正在从 aTimeLogger 云端同步 {date_str} 的全天记录...")
             extractor = AtimeloggerExtractor(config.get('atimelogger', {}))
             atimelogger_data = extractor.extract_daily_data(date_str)
-            # 仅在完整模式下才落库保存 aTimeLogger
-            if atimelogger_data and db and include_time_analysis:
+            # 及时回写数据库，覆盖旧缓存
+            if atimelogger_data and db:
                 db.save_atm_data(date_str, atimelogger_data)
+        
+        if not atimelogger_data:
+            print("⚠️ 警告: 未获取到 aTimeLogger 数据，将跳过时间管理部分分析。")
     
     # 2. 加载华为健康睡眠数据
     sleep_data = injected_sleep_data
@@ -86,46 +95,70 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
         parser = ScreenshotParser()
         activities = atimelogger_data.get('activities', []) if atimelogger_data else []
         fall_asleep_min, wake_up_min = parser.calculate_sleep_transition_times(sleep_data, activities)
-        sleep_data['fall_asleep_min'] = round(float(fall_asleep_min), 2)
-        sleep_data['wake_up_min'] = round(float(wake_up_min), 2)
+        sleep_data['fall_asleep_min'] = int(round(float(fall_asleep_min)))
+        sleep_data['wake_up_min'] = int(round(float(wake_up_min)))
 
-        # ====== 核心步骤: 数据计算 (Data Calculation) ======
-        # 强制按公式计算派生指标，确保逻辑一致
+        # ====== 核心步骤: 数据计算 (Data Calculation Trace) ======
+        calc_trace = []
         try:
-            print("[数据计算] 正在根据原始数据计算派生指标...")
+            print("\n" + "="*30)
+            print(f"🧮 正在执行 {date_str} 数据逻辑复核...")
+            
             s_t = sleep_data.get('sleep_start')
             e_t = sleep_data.get('sleep_end')
             t_min = float(sleep_data.get('total_sleep_min', 0))
             
+            # 1. 睡眠周期
+            cycles = round(t_min / 90.0, 2)
+            sleep_data['sleep_cycles'] = cycles
+            trace_item = f"1. 睡眠周期: {t_min}min / 90 = {cycles}个"
+            print(f"  [OK] {trace_item}")
+            calc_trace.append(trace_item)
+
             if s_t and e_t:
                 sh, sm = map(int, s_t.split(':'))
                 eh, em = map(int, e_t.split(':'))
                 start_total = sh * 60 + sm
                 end_total = eh * 60 + em
-                if end_total < start_total: 
-                    end_total += 24 * 60
+                if end_total < start_total: end_total += 24 * 60
                 
-                # 1. 总在床时长
+                # 2. 清醒时长
                 in_bed_min = end_total - start_total
-                # 2. 清醒时长 = 总在床时长 - 夜间睡眠时长 (total_sleep_min)
-                sleep_data['awake_min'] = max(0, in_bed_min - t_min)
-                
-            # 3. 睡眠周期 = 夜间睡眠时长 / 90
-            if t_min > 0:
-                sleep_data['sleep_cycles'] = round(t_min / 90.0, 2)
-                
+                awake_min = max(0, in_bed_min - t_min)
+                sleep_data['awake_min'] = int(awake_min)
+                trace_item = f"2. 清醒时长: ({e_t} - {s_t})[{in_bed_min}min] - 睡眠{t_min}min = {int(awake_min)}min"
+                print(f"  [OK] {trace_item}")
+                calc_trace.append(trace_item)
+            
+            # 3. 入睡/起床用时 (从 atimelogger 联动)
+            # 注意：内部逻辑已在 parser 中打印日志
+            sleep_data['fall_asleep_min'] = int(round(float(fall_asleep_min)))
+            sleep_data['wake_up_min'] = int(round(float(wake_up_min)))
+            calc_trace.append(f"3. 入睡用时: {sleep_data['fall_asleep_min']}min (由 aTimeLogger 记录计算)")
+            calc_trace.append(f"4. 起床用时: {sleep_data['wake_up_min']}min (由 aTimeLogger 记录计算)")
+            print(f"  [OK] 关联计算完成: 入睡{sleep_data['fall_asleep_min']}m, 起床{sleep_data['wake_up_min']}m")
+            
+            sleep_data['calc_trace'] = calc_trace # 存入字典供报告使用
+            print("="*30 + "\n")
+            
         except Exception as e:
-            print(f"  [数据计算] 异常: {e}")
+            print(f"  ❌ [数据计算] 严重异常: {e}")
         # ====================================================
 
     # 3. 分析
+    # 4. 强制数据落库：获取到 aTimeLogger 数据后立即存入数据库，确保持久化
+    if atimelogger_data and db:
+        # 注意：atimelogger_data 本身就是活动列表
+        db.save_atm_data(date_str, atimelogger_data)
+        logger.info(f"✅ aTimeLogger 原始数据已同步至数据库: {date_str}")
+
     combined_data = combine_data(atimelogger_data, sleep_data, date_str)
     analysis = perform_deep_analysis(combined_data)
-    
-    # 4. 生成报告文件
+
+    # 5. 生成报告文件
     report_path = generate_full_report_file(combined_data, analysis, date_str, include_time_analysis)
     
-    # 5. 回写数据库
+    # 6. 回写睡眠分析报告
     if sleep_data and db and os.path.exists(report_path):
         with open(report_path, 'r', encoding='utf-8') as f:
             full_content = f.read()
@@ -136,7 +169,7 @@ def generate_comprehensive_report(date_str, injected_sleep_data=None, force_pull
     return report_path
 
 def combine_data(atimelogger_data, sleep_data, date_str):
-    activities = atimelogger_data.get('activities', []) if atimelogger_data else []
+    activities = atimelogger_data if isinstance(atimelogger_data, list) else []
     type_durations = defaultdict(int)
     for act in activities:
         type_durations[act['type']] += act['duration']
@@ -190,9 +223,23 @@ def perform_deep_analysis(data):
             model = config.get("text_model", "glm-4-flash")
             
             # 准备脱敏数据
+            # 准备脱敏数据并处理 datetime 序列化问题
+            clean_activities = []
+            raw_list = data.get("atimelogger", [])
+            if not isinstance(raw_list, list): raw_list = []
+            
+            for act in raw_list:
+                clean_act = act.copy()
+                if isinstance(clean_act.get('start_time'), datetime):
+                    clean_act['start_time'] = clean_act['start_time'].isoformat()
+                if isinstance(clean_act.get('end_time'), datetime):
+                    clean_act['end_time'] = clean_act['end_time'].isoformat()
+                clean_activities.append(clean_act)
+
             input_data = {
                 "sleep_metrics": data.get("sleep", {}),
-                "time_stats": data.get("summary", {})
+                "time_stats": data.get("summary", {}),
+                "raw_activities": clean_activities[:50] 
             }
             
             client = OpenAI(api_key=api_key, base_url=base_url, http_client=httpx.Client(verify=False))
@@ -277,8 +324,8 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             f"| 😲 **清醒次数** | {sleep.get('awake_count', '--')} 次 | {'优秀' if int(sleep.get('awake_count',0)) <= 1 else '正常'} |",
             f"| ☕ **清醒时长** | {sleep.get('awake_min', '--')} min | {'参考: < 15' if float(sleep.get('awake_min',0)) > 0 else '-'} |",
             f"| 📉 **深睡比例** | {sleep.get('deep_sleep_ratio', '--')} % | {'20%-60% 达标' if sleep.get('deep_sleep_ratio') else '-'} |",
-            f"| 🕯️ **浅睡时长** | {sleep.get('light_sleep_min', '--')} min | {'参考: 20%-60%' if sleep.get('light_sleep_min') else '-'} |",
-            f"| 🌀 **REM时长** | {sleep.get('rem_sleep_min', '--')} min | {'参考: 10%-30%' if sleep.get('rem_sleep_min') else '-'} |",
+            f"| 🕯️ **浅睡时长** | {sleep.get('light_sleep_min', '--')} min | - |",
+            f"| 🌀 **REM时长** | {sleep.get('rem_sleep_min', '--')} min | - |",
             f"| 📊 **浅睡比例** | {sleep.get('light_sleep_ratio', '--')} % | - |",
             f"| 📈 **REM比例** | {sleep.get('rem_sleep_ratio', '--')} % | - |",
             f"| 🔗 **睡眠连续性** | {sleep.get('sleep_continuity', '--')} 分 | {'> 70 分' if sleep.get('sleep_continuity') else '-'} |",
@@ -288,6 +335,8 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             f"| 🕒 **总时长** | {format_val(float(sleep.get('total_sleep_min', 0))/60)} 小时 | {'✅ 达标' if float(sleep.get('total_sleep_min',0)) >= 420 else '⚠️ 偏少'} |",
             f"| 📊 **睡眠评分** | {sleep.get('sleep_score', '--')} 分 | {'优秀' if int(sleep.get('sleep_score',0)) >= 85 else '良好'} |",
             f"| 📅 **记录日期** | {date_str} | - |",
+            "",
+            f"> 💡 *注：以上原始数据由 `{model_info}` 视觉提取，经公式核验自洽。*",
             "",
             "### 1.2 睡眠自我评价",
         ])
@@ -302,7 +351,13 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             "### 1.3 华为健康建议",
             f"> {interp if interp else '暂无官方建议'}",
             "",
+            "#### 🧮 逻辑复核 Trace",
+            "```text",
         ])
+        for t in sleep.get('calc_trace', []):
+            lines.append(t)
+        lines.append("```")
+        lines.append("")
     else:
         lines.append("> ⚠️ 今日未同步睡眠数据\n")
 
@@ -312,7 +367,21 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             "",
             "## ⏱️ [Part 2: 时间管理报告]",
             "",
-            "### 2.1 时间分配图",
+            "### 2.1 原始记录流水",
+            "",
+            "| 开始 | 结束 | 项目 | 时长(min) |",
+            "| :--- | :--- | :--- | :--- |"
+        ])
+        
+        for act in activities:
+            start = act.get('start_time', '').split('T')[-1][:5]
+            end = act.get('end_time', '').split('T')[-1][:5]
+            duration = round(act.get('duration', 0) / 60, 1)
+            lines.append(f"| {start} | {end} | {act.get('type', '未知')} | {duration} |")
+        
+        lines.extend([
+            "",
+            "### 2.2 时间分配汇总",
             "",
         ])
         
@@ -334,13 +403,16 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
             "| :-- | :--- | :--- | :--- | :--- |",
         ])
         
-        for i, act in enumerate(activities, 1):
-            st = str(act.get('start'))
-            st = st.split(' ')[1][:5] if ' ' in st else (st.split('T')[1][:5] if 'T' in st else st[:5])
-            et = str(act.get('finish'))
-            et = et.split(' ')[1][:5] if ' ' in et else (et.split('T')[1][:5] if 'T' in et else et[:5])
-            dur = f"{act.get('duration', 0)//3600:02d}:{(act.get('duration', 0)%3600)//60:02d}"
-            lines.append(f"| {i} | {act.get('type')} | {st} - {et} | {dur} | {act.get('comment', '')} |")
+        if not activities:
+            lines.append("> ⚠️ 未检索到当日 aTimeLogger 详细活动记录，请确认是否已同步。\n")
+        else:
+            for i, act in enumerate(activities, 1):
+                st = str(act.get('start'))
+                st = st.split(' ')[1][:5] if ' ' in st else (st.split('T')[1][:5] if 'T' in st else st[:5])
+                et = str(act.get('finish'))
+                et = et.split(' ')[1][:5] if ' ' in et else (et.split('T')[1][:5] if 'T' in et else et[:5])
+                dur = f"{act.get('duration', 0)//3600:02d}:{(act.get('duration', 0)%3600)//60:02d}"
+                lines.append(f"| {i} | {act.get('type')} | {st} - {et} | {dur} | {act.get('comment', '')} |")
 
     # AI 深度建议 (Insight & Recommendations)
     lines.extend([
@@ -371,6 +443,16 @@ def generate_full_report_file(data, analysis, date_str, include_time_analysis=Tr
         ])
         for issue in issues:
             lines.append(f"- {issue}")
+            
+    # 新增：时间管理专项点评
+    tm_comment = analysis.get('time_management_comment')
+    if tm_comment:
+        lines.extend([
+            "",
+            "### ⏳ 时间管理建议",
+            f"> {tm_comment}",
+            "",
+        ])
 
     lines.append(f"\n\n---\n*Generated by MyTimeLogger v4.2*")
 

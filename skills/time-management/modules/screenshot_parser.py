@@ -141,7 +141,7 @@ class ScreenshotParser:
             # 清醒时长 = (醒来时间 - 入睡时间) - 夜间睡眠时长
             awake_sec = self._calculate_awake_time(data)
             data['awake_time'] = awake_sec
-            data['awake_min'] = round(awake_sec / 60.0, 2)
+            data['awake_min'] = int(round(awake_sec / 60.0))
 
             # 2. 计算睡眠周期 (按总时长 / 90分钟)
             total_min = data.get('total_sleep_min', 0)
@@ -392,19 +392,21 @@ class ScreenshotParser:
                 start_time = activity.get('start')
                 finish_time = activity.get('finish')
                 
-                # 处理不同类型的start/finish（可能是datetime或字符串）
+                # 核心修正：aTimeLogger 数据通常带秒，而华为数据仅精确到分钟。
+                # 在计算前抹掉秒和毫秒，确保计算基准完全对齐。
+                china_tz = timezone(timedelta(hours=8))
                 if isinstance(start_time, str):
                     start_time = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
                 if isinstance(finish_time, str):
                     finish_time = datetime.fromisoformat(finish_time.replace('Z', '+00:00'))
+
+                if start_time:
+                    start_time = start_time.astimezone(china_tz).replace(tzinfo=None, second=0, microsecond=0)
+                if finish_time:
+                    finish_time = finish_time.astimezone(china_tz).replace(tzinfo=None, second=0, microsecond=0)
                 
-                # 确保华为健康时间也有时区信息或都没有
-                china_tz = timezone(timedelta(hours=8))
-                if start_time and start_time.tzinfo and not huawei_bedtime.tzinfo:
-                    # 安全地将 aTimeLogger 时间转为北京时间后去掉 tzinfo
-                    start_time = start_time.astimezone(china_tz).replace(tzinfo=None)
-                if finish_time and finish_time.tzinfo and not huawei_wake_time.tzinfo:
-                    finish_time = finish_time.astimezone(china_tz).replace(tzinfo=None)
+                start_naive = start_time
+                finish_naive = finish_time
                 
                 # 计算入睡需要的时间：aTimeLogger上床/睡觉开始时间 → 华为健康入睡时间
                 if '上床' in activity_type or '就寝' in activity_type or 'bed' in activity_type.lower() or '睡觉' in activity_type:
@@ -417,16 +419,19 @@ class ScreenshotParser:
                         
                         # 公式：华为入睡时间 - 上床时间（正数 = 上床后X分钟睡着）
                         time_diff = (huawei_bedtime - start_naive).total_seconds() / 60
+                        print(f"  [Trace] 入睡关联: 华为就寝({huawei_bedtime}) - aTimeLogger上床({start_naive}) = {time_diff:.2f}min")
                         
-                        # 跨天修正：如果差值超过±12小时，说明日期对齐出了问题
+                        # 跨天修正
                         if time_diff > 720:
                             time_diff -= 24 * 60
                         elif time_diff < -720:
                             time_diff += 24 * 60
                         
-                        # 合理范围：0~180分钟（上床后最多3小时才睡）
                         if 0 <= time_diff <= 180:
-                            fall_asleep_time = round(time_diff, 1)
+                            fall_asleep_time = int(round(time_diff))
+                            print(f"    -> 判定合理，入睡用时定为: {fall_asleep_time}min")
+                        else:
+                            print(f"    -> ⚠️ 差值异常({time_diff:.1f}m)，不予计入")
                 
                 # 计算醒来需要的时间：华为醒来时间 → aTimeLogger起床结束时间
                 if '起床' in activity_type or 'wake' in activity_type.lower() or '睡觉' in activity_type:
@@ -438,6 +443,7 @@ class ScreenshotParser:
                         
                         # 公式：起床活动结束时间 - 华为醒来时间（正数 = 醒后X分钟才起床）
                         time_diff = (finish_naive - huawei_wake_time).total_seconds() / 60
+                        print(f"  [Trace] 起床关联: aTimeLogger记录结束({finish_naive}) - 华为醒来({huawei_wake_time}) = {time_diff:.2f}min")
                         
                         # 跨天修正
                         if time_diff > 720:
@@ -445,12 +451,14 @@ class ScreenshotParser:
                         elif time_diff < -720:
                             time_diff += 24 * 60
                         
-                        # 合理范围：0~180分钟
                         if 0 <= time_diff <= 180:
-                            wake_up_time = round(time_diff, 1)
+                            wake_up_time = int(round(time_diff))
+                            print(f"    -> 判定合理，起床用时定为: {wake_up_time}min")
+                        else:
+                            print(f"    -> ⚠️ 差值异常({time_diff:.1f}m)，不予计入")
         
         except Exception as e:
-            print(f"计算入睡/醒来时间失败: {e}")
+            print(f"  ❌ [Trace] 计算入睡/醒来时间严重失败: {e}")
         
         return fall_asleep_time, wake_up_time
     
