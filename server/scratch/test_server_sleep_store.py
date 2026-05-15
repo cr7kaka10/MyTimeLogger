@@ -7,15 +7,15 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from cloud_sleep_store import CloudSleepStore
+from server_sleep_store import serverSleepStore
 
 
 def main():
-    db_path = os.path.join(tempfile.gettempdir(), "mytimelogger_cloud_sleep_store_test.db")
+    db_path = os.path.join(tempfile.gettempdir(), "mytimelogger_server_sleep_store_test.db")
     if os.path.exists(db_path):
         os.remove(db_path)
 
-    store = CloudSleepStore(db_path)
+    store = serverSleepStore(db_path)
     store.create_job("req-1", "image.jpg")
     assert store.get_job("req-1")["status"] == "queued"
 
@@ -35,7 +35,7 @@ def main():
     job = store.get_job("req-1")
     assert job["sleep_data"]["sleep_reflection"] == "good"
 
-    print("cloud_sleep_store ok")
+    print("server_sleep_store ok")
 
 
 if __name__ == "__main__":

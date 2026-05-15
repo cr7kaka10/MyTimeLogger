@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Enable PC cloud sync against the local Docker service."""
+"""Enable PC server sync against the local Docker service."""
 
 import json
 import os
@@ -27,25 +27,25 @@ def read_env(path):
 def main():
     env = read_env(ENV_PATH)
     token = env.get("SLEEP_AUTH_TOKEN", "")
-    port = env.get("SLEEP_CLOUD_PORT", "8000")
+    port = env.get("SLEEP_server_PORT", "8000")
     if not token:
-        raise SystemExit("Missing SLEEP_AUTH_TOKEN. Run scratch/create_cloud_env_from_local.py first.")
+        raise SystemExit("Missing SLEEP_AUTH_TOKEN. Run scratch/create_server_env_from_local.py first.")
 
     with open(CONFIG_PATH, "r", encoding="utf-8") as file:
         cfg = json.load(file)
 
-    cfg["cloud_sleep_sync"] = {
+    cfg["server_sleep_sync"] = {
         "enabled": True,
         "base_url": f"http://127.0.0.1:{port}",
         "auth_token": token,
         "sync_interval_sec": 300,
-        "last_sync_at": cfg.get("cloud_sleep_sync", {}).get("last_sync_at", ""),
+        "last_sync_at": cfg.get("server_sleep_sync", {}).get("last_sync_at", ""),
     }
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as file:
         json.dump(cfg, file, indent=4, ensure_ascii=False)
 
-    print("Local PC cloud_sleep_sync enabled for Docker localhost.")
+    print("Local PC server_sleep_sync enabled for Docker localhost.")
 
 
 if __name__ == "__main__":

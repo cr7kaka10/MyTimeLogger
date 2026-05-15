@@ -32,9 +32,9 @@ def main():
     atm = skill_cfg.get("atimelogger", {})
 
     values = {
-        "SLEEP_CLOUD_PORT": "8000",
+        "SLEEP_server_PORT": "8000",
         "SLEEP_AUTH_TOKEN": secrets.token_urlsafe(32),
-        "CLOUD_SLEEP_DB_PATH": "/app/cloud_data/cloud_sleep_jobs.db",
+        "server_SLEEP_DB_PATH": "/app/server_data/server_sleep_jobs.db",
         "VISION_BASE_URL": ai.get("vision_base_url", "https://open.bigmodel.cn/api/paas/v4"),
         "VISION_API_KEY": ai.get("vision_api_key", ""),
         "VISION_MODEL": ai.get("vision_model", "glm-4v-flash"),
@@ -47,7 +47,7 @@ def main():
         "ATIMELOGGER_BASE_URL": atm.get("base_url", "https://app.atimelogger.pro"),
         "ATIMELOGGER_USERNAME": atm.get("username", ""),
         "ATIMELOGGER_PASSWORD": atm.get("password", ""),
-        "HUAWEI_HEALTH_DATA_DIR": "/app/cloud_data/huawei_health_data",
+        "HUAWEI_HEALTH_DATA_DIR": "/app/server_data/huawei_health_data",
         "WECHAT_WEBHOOK_URL": skill_cfg.get("wechat", {}).get("webhook_url", ""),
         "WECHAT_ENABLED": str(skill_cfg.get("wechat", {}).get("enabled", False)).lower(),
     }

@@ -40,14 +40,11 @@ def verify_password(password, stored_hash):
 
 class ServerSleepStore:
     def __init__(self, db_path=None):
-        self.db_path = db_path or os.getenv("SERVER_SLEEP_DB_PATH") or resource_path("server_sleep_jobs.db")
-        # 兼容性处理：如果旧的数据库文件存在且新的不存在，则重命名
-        old_db_path = resource_path("cloud_sleep_jobs.db")
-        if not os.path.exists(self.db_path) and os.path.exists(old_db_path):
-            try:
-                os.rename(old_db_path, self.db_path)
-            except:
-                pass
+        env_path = os.getenv("SERVER_SLEEP_DB_PATH")
+        # 如果在 Windows 上运行且环境变量里的路径看起来像 Docker 容器路径 (/app/...)，则忽略它，使用本地路径
+        if env_path and os.name == 'nt' and env_path.startswith('/app'):
+            env_path = None
+        self.db_path = db_path or env_path or resource_path(os.path.join("server", "data", "server_sleep_jobs.db"))
         self._initialize()
 
     def _connect(self):
@@ -59,12 +56,6 @@ class ServerSleepStore:
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         conn = self._connect()
         try:
-            # 迁移：将旧的 cloud_sleep_jobs 表重命名为 server_sleep_jobs
-            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_sleep_jobs'")
-            if cursor.fetchone():
-                conn.execute("ALTER TABLE cloud_sleep_jobs RENAME TO server_sleep_jobs")
-                conn.commit()
-            
             # 用户表
             conn.execute(
                 """
@@ -248,6 +239,14 @@ class ServerSleepStore:
         finally:
             conn.close()
 
+    def get_job_by_date(self, date, user_id):
+        conn = self._connect()
+        try:
+            row = conn.execute("SELECT * FROM server_sleep_jobs WHERE date=? AND user_id=? ORDER BY updated_at DESC LIMIT 1", (date, user_id)).fetchone()
+            return self._row_to_dict(row) if row else None
+        finally:
+            conn.close()
+
     def list_done_since(self, since=None, user_id=None):
         conn = self._connect()
         try:
@@ -316,6 +315,33 @@ class ServerSleepStore:
                 return False
             data = json.loads(row["result_json"] or "{}")
             data["sleep_reflection"] = reflection
+            conn.execute(
+                """
+                UPDATE server_sleep_jobs
+                SET result_json=?, updated_at=?
+                WHERE request_id=?
+                """,
+                (json.dumps(data, ensure_ascii=False), now_str(), row["request_id"]),
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def save_evening_diary(self, date, diary_text, user_id=None):
+        conn = self._connect()
+        try:
+            query = "SELECT * FROM server_sleep_jobs WHERE status='done' AND date=?"
+            params = [date]
+            if user_id:
+                query += " AND user_id = ?"
+                params.append(user_id)
+            query += " ORDER BY updated_at DESC LIMIT 1"
+            row = conn.execute(query, tuple(params)).fetchone()
+            if not row:
+                return False
+            data = json.loads(row["result_json"] or "{}")
+            data["evening_diary"] = diary_text
             conn.execute(
                 """
                 UPDATE server_sleep_jobs
